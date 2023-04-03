@@ -3,6 +3,6 @@
     "host": "localhost",
     "port": 9200,
     "scheme": "https",
-    "username": "elastic",
-    "password": "elastic"
+    "username": "",
+    "password": ""
 }
