@@ -1,0 +1,20 @@
+{
+    "steps": [
+        {
+            "step": "doctors-clinicians",
+            "phases": [
+                "index-create",
+                "index"
+            ]
+        }
+    ],
+    "all_phases": [
+        "index-create",
+        "enrichment-policies",
+        "pipelines",
+        "index"
+    ],
+    "configurationDir": "configuration",
+    "dataDir": "data",
+    "logLevel": "INFO"
+}

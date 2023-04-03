@@ -1,0 +1,36 @@
+{
+    "steps": [
+        {
+            "step": "crashes",
+            "phases": [
+                "index-create",
+                "index"
+            ]
+        },
+        {
+            "step": "inspections",
+            "phases": [
+                "index-create",
+                "enrichment-policies",
+                "index"
+            ]
+        },
+        {
+            "step": "carriers",
+            "phases": [
+                "index-create",
+                "pipelines",
+                "index"
+            ]
+        }
+    ],
+    "all_phases": [
+        "index-create",
+        "enrichment-policies",
+        "pipelines",
+        "index"
+    ],
+    "configurationDir": "configuration",
+    "dataDir": "data",
+    "logLevel": "INFO"
+}

@@ -1,0 +1,5 @@
+elasticsearch==8.6.2
+numpy
+pandas
+requests
+tqdm

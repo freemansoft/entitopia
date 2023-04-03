@@ -1,0 +1,15 @@
+[
+    {
+        "name": "inspections-enrichment-policy",
+        "match": {
+            "indices": "inspections-1",
+            "match_field": "DOT_NUMBER",
+            "enrich_fields": [
+                "DOT_NUMBER",
+                "UNIQUE_ID",
+                "VIN",
+                "VIN2"
+            ]
+        }
+    }
+]

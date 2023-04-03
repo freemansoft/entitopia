@@ -1,0 +1,9 @@
+[
+    {
+        "index": "inspections-1",
+        "source": "2023Feb_Inspection.txt",
+        "id_field": "UNIQUE_ID",
+        "num_rows": 10000,
+        "skip_rows": 0
+    }
+]

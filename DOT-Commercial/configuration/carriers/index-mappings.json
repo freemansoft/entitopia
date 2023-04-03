@@ -1,0 +1,128 @@
+[
+    {
+        "index": "carriers-1",
+        "mappings": {
+            "properties": {
+                "DOT_NUMBER": {
+                    "type": "keyword"
+                },
+                "LEGAL_NAME": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "name_clean"
+                        },
+                        "phonetic": {
+                            "type": "text",
+                            "analyzer": "name_phonetic"
+                        }
+                    }
+                },
+                "DBA_NAME": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "name_clean"
+                        },
+                        "phonetic": {
+                            "type": "text",
+                            "analyzer": "name_phonetic"
+                        }
+                    }
+                },
+                "PHY_STREET": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "street_clean"
+                        }
+                    }
+                },
+                "PHY_CITY": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "name_clean"
+                        }
+                    }
+                },
+                "PHY_STATE": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        }
+                    }
+                },
+                "MAILING_STREET": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "street_clean"
+                        }
+                    }
+                },
+                "MAILING_CITY": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "name_clean"
+                        }
+                    }
+                },
+                "MAILING_STATE": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        }
+                    }
+                },
+                "TELEPHONE": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        },
+                        "clean": {
+                            "type": "text",
+                            "analyzer": "phone_clean"
+                        }
+                    }
+                },
+                "EMAIL_ADDRESS": {
+                    "type": "text",
+                    "fields": {
+                        "keyword": {
+                            "type": "keyword"
+                        }
+                    }
+                }
+            }
+        }
+    }
+]
