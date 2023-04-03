@@ -9,6 +9,7 @@ Provide framework for loading data into elasticsearch with just configuration.  
 1. Index Mappings
 1. Index Settings
 1. Implementing pipelines
+1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
 
 # Setup
 1. Have access to a docker cluster.  
