@@ -2,6 +2,7 @@ from elasticsearch import Elasticsearch
 import logging
 import requests
 from datetime import datetime
+from custom_logging_formatter import CustomFormatter
 
 
 import file_utils
@@ -51,9 +52,11 @@ def replace_index_with_now_version(config):
 
 
 def replace_match_indicies_with_now_version(config):
+    logger = logging.getLogger(__name__)
+
     # datetime.now().strftime('%Y.%m.%d-%H%m%S')
     # datetime.now().strftime('%Y.%m.%d')
-    print(config.match.indices)
+    logger.debug("looking for now/d instances in {}".format(config.match.indices))
     if "{now/d}" in config.match.indices:
         config.match.indices = config.match.indices.replace(
             "{now/d}", datetime.now().strftime("%Y.%m.%d")
@@ -66,6 +69,9 @@ def replace_match_indicies_with_now_version(config):
 
 def main():
     logging.basicConfig(level=logging.INFO)
+    root_logger = logging.getLogger()
+    CustomFormatter().replace_formatter(root_logger)
+
     logger = logging.getLogger(__name__)
 
     es_config = file_utils.load_from_file("es_config.json")

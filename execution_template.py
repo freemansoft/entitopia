@@ -2,6 +2,7 @@ import argparse
 from types import SimpleNamespace
 import logging as logging
 import itertools
+from custom_logging_formatter import CustomFormatter
 
 from phase_enrichment_policies import PhaseEnrichmentPolicies
 from phase_index_creation import PhaseindexCreate
@@ -102,22 +103,16 @@ def process_phase_steps(
             )
 
 
-from custom_logging_formatter import CustomFormatter
-
-
 def main():
     """
     Example Usage:
     `python3 execution_template.py --project=DOT-Commercial`
     """
+
     # set the default to be overriden by command line
     logging.basicConfig(level=logging.INFO)
     root_logger = logging.getLogger()
-    # create console handler with a higher log level
-    handler = logging.StreamHandler()
-    handler.setFormatter(CustomFormatter())
-    root_logger.handlers = []
-    root_logger.addHandler(handler)
+    CustomFormatter().replace_formatter(root_logger)
 
     args = parse_args()
     project_config = load_project_config(args.project)

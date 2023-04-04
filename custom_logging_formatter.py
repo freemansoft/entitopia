@@ -24,3 +24,14 @@ class CustomFormatter(logging.Formatter):
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
+
+    def replace_formatter(self, root_logger):
+        """
+        replace the current formatters with this one
+        logger is the where we want the formatter to start, usually the root logger"""
+
+        # create console handler with a higher log level
+        handler = logging.StreamHandler()
+        handler.setFormatter(CustomFormatter())
+        root_logger.handlers = []
+        root_logger.addHandler(handler)
