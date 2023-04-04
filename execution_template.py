@@ -6,7 +6,6 @@ import itertools
 from phase_enrichment_policies import PhaseEnrichmentPolicies
 from phase_index_creation import PhaseindexCreate
 from phase_indexing import PhaseIndexing
-from phase_index_settings import PhaseIndexSettings
 from phase_index_mappings import PhaseIndexMappings
 from phase_pipelines import PhasePipelines
 
@@ -64,12 +63,10 @@ def permutations(outer_key, outer, inner_key, inner):
 def process_phase_step(es, project, step_name, one_phase, project_config):
     logger = logging.getLogger(__name__)
     logger.info("\n======>")
-    logger.info("Starting step:%s phase:%s" %
-                (step_name, one_phase))
+    logger.info("Starting step:%s phase:%s" % (step_name, one_phase))
     # This is an unfortunate set of string matching
     if one_phase == "enrichment-policies":
-        handler = PhaseEnrichmentPolicies(
-            es, project, step_name, project_config)
+        handler = PhaseEnrichmentPolicies(es, project, step_name, project_config)
         handler.handle()
     elif one_phase == "pipelines":
         handler = PhasePipelines(es, project, step_name, project_config)
@@ -77,11 +74,7 @@ def process_phase_step(es, project, step_name, one_phase, project_config):
     elif one_phase == "index-create":
         handler = PhaseindexCreate(es, project, step_name, project_config)
         handler.handle()
-        handler = PhaseIndexSettings(
-            es, project, step_name, project_config)
-        handler.handle()
-        handler = PhaseIndexMappings(
-            es, project, step_name, project_config)
+        handler = PhaseIndexMappings(es, project, step_name, project_config)
         handler.handle()
     elif one_phase == "index":
         handler = PhaseIndexing(es, project, step_name, project_config)

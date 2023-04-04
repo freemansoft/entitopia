@@ -1,17 +1,15 @@
-[
-    {
-        "name": "carrier-with-inspections-pipeline",
-        "index": "carriers-1",
-        "processors": [
-            {
-                "enrich": {
-                    "description": "Join 'inspection' data by 'DOT_NUMBER'",
-                    "policy_name": "inspections-enrichment-policy",
-                    "field": "DOT_NUMBER",
-                    "target_field": "inspections",
-                    "max_matches": "100"
-                }
+{
+    "name": "carrier-with-inspections-pipeline",
+    "index": "carriers-1",
+    "processors": [
+        {
+            "enrich": {
+                "description": "Join 'inspection' data by 'DOT_NUMBER'",
+                "policy_name": "inspections-enrichment-policy",
+                "field": "DOT_NUMBER",
+                "target_field": "inspections",
+                "max_matches": "100"
             }
-        ]
-    }
-]
+        }
+    ]
+}

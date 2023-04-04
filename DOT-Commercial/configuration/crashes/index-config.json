@@ -1,9 +1,7 @@
-[
-    {
-        "index": "crashes-1",
-        "source": "2023Feb_Crash.txt",
-        "id_field": "REPORT_NUMBER",
-        "num_rows": 10000,
-        "skip_rows": 0
-    }
-]
+{
+    "index": "crashes-1",
+    "source": "2023Feb_Crash.txt",
+    "id_field": "REPORT_NUMBER",
+    "num_rows": 10000,
+    "skip_rows": 0
+}

@@ -8,7 +8,7 @@ class PhasePipelines:
         self.project = project
         self.one_step = one_step
         self.project_config = project_config
-        self.pipelines_configs = []
+        self.pipeline_config = []
         self.logger = logging.getLogger(__name__)
 
     def handle(self):
@@ -17,13 +17,12 @@ class PhasePipelines:
             % (self.one_step, self.__class__.__name__)
         )
         self.logger.debug(self.project_config)
-        pipelines_configs = file_utils.load_from_project_file(
+        pipeline_config = file_utils.load_from_project_file(
             self.project,
             self.project_config.configurationDir,
             self.one_step,
             "pipelines.json",
         )
-        self.pipelines_configs = pipelines_configs
-        self.logger.debug("loaded config %s" % str(pipelines_configs))
-        for pipeline_config in pipelines_configs:
-            self.logger.debug("Processing %s" % pipeline_config)
+        self.logger.debug("loaded config %s" % str(pipeline_config))
+        if pipeline_config:
+            self.logger.debug("Processing %s NOT IMPLEMENTED" % pipeline_config)

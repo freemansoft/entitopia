@@ -17,7 +17,6 @@ class PhaseIndexing:
         self.project = project
         self.one_step = one_step
         self.project_config = project_config
-        self.index_configs = []
         self.logger = logging.getLogger(__name__)
 
     def record_action(
@@ -38,43 +37,41 @@ class PhaseIndexing:
             % (self.one_step, self.__class__.__name__)
         )
         self.logger.debug(self.project_config)
-        index_configs = file_utils.load_from_project_file(
+        index_config = file_utils.load_from_project_file(
             self.project,
             self.project_config.configurationDir,
             self.one_step,
             "index-config.json",
         )
-        self.index_configs = index_configs
-        self.logger.info("loaded config %s" % str(index_configs))
+        self.logger.info("loaded config %s" % str(index_config))
 
-        if self.index_configs:
-            for index_config in index_configs:
-                self.logger.debug("loaded config %s" % str(index_config))
-                csv_loader = CsvLoadUtils(
-                    self.project,
-                    self.project_config.dataDir,
-                    self.one_step,
-                    index_config.source,
+        if index_config:
+            self.logger.debug("loaded config %s" % str(index_config))
+            csv_loader = CsvLoadUtils(
+                self.project,
+                self.project_config.dataDir,
+                self.one_step,
+                index_config.source,
+                index_config.num_rows,
+                index_config.skip_rows,
+            )
+            data = csv_loader.load_csv()
+            data.replace({np.nan: None}, inplace=True)
+
+            prog_meter = tqdm.tqdm(unit="docs", total=len(data))
+
+            for success, response in parallel_bulk(
+                client=self.es,
+                thread_count=8,
+                index=index_config.index,
+                actions=self.record_action(
+                    data,
+                    index_config.id_field,
                     index_config.num_rows,
                     index_config.skip_rows,
-                )
-                data = csv_loader.load_csv()
-                data.replace({np.nan: None}, inplace=True)
-
-                prog_meter = tqdm.tqdm(unit="docs", total=len(data))
-
-                for success, response in parallel_bulk(
-                    client=self.es,
-                    thread_count=8,
-                    index=index_config.index,
-                    actions=self.record_action(
-                        data,
-                        index_config.id_field,
-                        index_config.num_rows,
-                        index_config.skip_rows,
-                    ),
-                    raise_on_error=False,
-                    raise_on_exception=False,
-                ):
-                    # every one of these will yield
-                    prog_meter.update(1)
+                ),
+                raise_on_error=False,
+                raise_on_exception=False,
+            ):
+                # every one of these will yield
+                prog_meter.update(1)

@@ -12,7 +12,6 @@ class PhaseEnrichmentPolicies:
         self.project = project
         self.one_step = one_step
         self.project_config = project_configs
-        self.phase_configs = []
         self.logger = logging.getLogger(__name__)
 
     def handle(self):
@@ -21,18 +20,17 @@ class PhaseEnrichmentPolicies:
             % (self.one_step, self.__class__.__name__)
         )
         self.logger.debug(self.project_config)
-        phase_configs = file_utils.load_from_project_file(
+        phase_config = file_utils.load_from_project_file(
             self.project,
             self.project_config.configurationDir,
             self.one_step,
             "enrichment-policies.json",
         )
-        self.phase_configs = phase_configs
-        self.logger.info("loaded config %s" % str(phase_configs))
+        self.logger.info("loaded config %s" % str(phase_config))
 
         enrichClient = client.EnrichClient(self.es)
 
-        for phase_config in phase_configs:
+        if phase_config:
             try:
                 enrichClient.delete_policy(name=phase_config.name)
             except NotFoundError:
