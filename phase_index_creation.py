@@ -37,7 +37,7 @@ class PhaseindexCreate:
 
     def handle(self):
         self.logger.info(
-            "handle() step:{} Phase Handler: {}".format(
+            "Initiating step:{} Phase Handler: {}".format(
                 self.one_step, self.__class__.__name__
             )
         )
