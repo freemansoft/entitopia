@@ -33,8 +33,9 @@ class PhaseIndexing:
 
     def handle(self):
         self.logger.info(
-            "handle() step:%s Phase Handler: %s"
-            % (self.one_step, self.__class__.__name__)
+            "handle() step:{} Phase Handler: {}".format(
+                self.one_step, self.__class__.__name__
+            )
         )
         self.logger.debug(self.project_config)
         index_config = file_utils.load_from_project_file(
@@ -43,11 +44,11 @@ class PhaseIndexing:
             self.one_step,
             "index-config.json",
         )
-        self.logger.info("loaded config %s" % str(index_config))
+        self.logger.info("loaded config {}".format(index_config))
 
         if index_config:
             elasticsearch_utils.replace_index_with_now_version(index_config)
-            self.logger.debug("loaded config %s" % str(index_config))
+            self.logger.debug("loaded config {}".format(index_config))
             csv_loader = CsvLoadUtils(
                 self.project,
                 self.project_config.dataDir,
@@ -62,7 +63,9 @@ class PhaseIndexing:
             prog_meter = tqdm.tqdm(unit="docs", total=len(data))
 
             self.logger.info(
-                "Indexing %d records into index %s" % (len(data), index_config.index)
+                "Indexing {} records into index {}".format(
+                    len(data), index_config.index
+                )
             )
             for success, response in parallel_bulk(
                 client=self.es,

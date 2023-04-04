@@ -17,8 +17,9 @@ class PhaseEnrichmentPolicies:
 
     def handle(self):
         self.logger.info(
-            "handle() step:%s Phase Handler: %s"
-            % (self.one_step, self.__class__.__name__)
+            "handle() step:{} Phase Handler: {}".format(
+                self.one_step, self.__class__.__name__
+            )
         )
         self.logger.debug(self.project_config)
         phase_config = file_utils.load_from_project_file(
@@ -27,7 +28,7 @@ class PhaseEnrichmentPolicies:
             self.one_step,
             "enrichment-policies.json",
         )
-        self.logger.info("loaded config %s" % str(phase_config))
+        self.logger.info("loaded config {}".format(phase_config))
 
         enrichClient = client.EnrichClient(self.es)
 
@@ -39,15 +40,16 @@ class PhaseEnrichmentPolicies:
 
             elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
             self.logger.info(
-                "Processing policy name %s match %s"
-                % (phase_config.name, phase_config.match)
+                "Processing policy name {} match {}".format(
+                    phase_config.name, phase_config.match
+                )
             )
             try:
                 match_json = json.dumps(phase_config.match, default=lambda s: vars(s))
                 match_dicts = json.loads(match_json)
                 r = enrichClient.put_policy(name=phase_config.name, match=match_dicts)
                 self.logger.info(
-                    "Updated policy %s returned %s" % (phase_config.name, str(r))
+                    "Updated policy {} returned {}".format(phase_config.name, r)
                 )
                 r = enrichClient.execute_policy(
                     name=phase_config.name, wait_for_completion=True

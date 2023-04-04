@@ -22,11 +22,11 @@ class PhaseindexCreate:
             self.one_step,
             "index-settings.json",
         )
-        self.logger.info("loaded config %s" % str(index_setting_config))
+        self.logger.info("loaded config {}".format(index_setting_config))
 
         if index_setting_config:
 
-            self.logger.debug("Processing %s" % index_setting_config)
+            self.logger.debug("Processing {}".format(index_setting_config))
             settings_json = json.dumps(
                 index_setting_config.settings, default=lambda s: vars(s)
             )
@@ -37,8 +37,9 @@ class PhaseindexCreate:
 
     def handle(self):
         self.logger.info(
-            "handle() step:%s Phase Handler: %s"
-            % (self.one_step, self.__class__.__name__)
+            "handle() step:{} Phase Handler: {}".format(
+                self.one_step, self.__class__.__name__
+            )
         )
         self.logger.debug(self.project_config)
         phase_config = file_utils.load_from_project_file(
@@ -47,13 +48,13 @@ class PhaseindexCreate:
             self.one_step,
             "index-config.json",
         )
-        self.logger.info("loaded config %s" % str(phase_config))
+        self.logger.info("loaded config {}".format(phase_config))
 
         if phase_config:
             elasticsearch_utils.replace_index_with_now_version(phase_config)
             indiciesClient = client.IndicesClient(self.es)
 
-            self.logger.info("Creating index %s " % (phase_config.index))
+            self.logger.info("Creating index {} ".format(phase_config.index))
             try:
                 # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
                 r = indiciesClient.create(
@@ -62,10 +63,10 @@ class PhaseindexCreate:
                     ignore=400,
                 )
                 self.logger.info(
-                    "Created index %s returned %s" % (phase_config.index, r)
+                    "Created index {} returned {}".format(phase_config.index, r)
                 )
             except (BadRequestError) as e:
-                self.logger.warn("Failed to create or update index: " + str(e))
+                self.logger.warn("Failed to create or update index: {}".format(e))
 
             try:
                 # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
@@ -74,8 +75,9 @@ class PhaseindexCreate:
                     name=phase_config.alias,
                 )
                 self.logger.info(
-                    "Created alias %s on index % returned %s"
-                    % (phase_config.alias, phase_config.index, r)
+                    "Created alias {} on index {} returned {}".format(
+                        phase_config.alias, phase_config.index, r
+                    )
                 )
             except (BadRequestError) as e:
-                self.logger.warn("Failed to create or update alias: " + str(e))
+                self.logger.warn("Failed to create or update alias: {}".format(e))

@@ -15,7 +15,7 @@ class CsvLoadUtils:
         self.logger = logging.getLogger(__name__)
 
     def load_csv(self):
-        file_path = "%s/%s/%s/%s" % (
+        file_path = "{}/{}/{}/{}".format(
             self.project,
             self.data_dir,
             self.one_step,

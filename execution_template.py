@@ -32,7 +32,7 @@ def parse_args():
         help="The root configuration directory Ex: --target=DOT-Commercial",
     )
     args = parser.parse_args()
-    logger.info("Args: %s " % (str(args)))
+    logger.info("Args: {} ".format(args))
     return args
 
 
@@ -63,7 +63,7 @@ def permutations(outer_key, outer, inner_key, inner):
 
 def process_phase_step(es, project, step_name, one_phase, project_config):
     logger = logging.getLogger(__name__)
-    logger.info(" ============> Starting step:%s phase:%s" % (step_name, one_phase))
+    logger.info(" ============> Starting step:{} phase:{}".format(step_name, one_phase))
     # This is an unfortunate set of string matching
     if one_phase == "enrichment-policies":
         handler = PhaseEnrichmentPolicies(es, project, step_name, project_config)
@@ -80,7 +80,7 @@ def process_phase_step(es, project, step_name, one_phase, project_config):
         handler = PhaseIndexing(es, project, step_name, project_config)
         handler.handle()
     else:
-        logger.error("Unrecognized phase: %s" % (step_name.phase))
+        logger.error("Unrecognized phase: {}".format(step_name.phase))
 
 
 def process_phase_steps(
