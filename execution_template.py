@@ -15,7 +15,7 @@ import elasticsearch_utils
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
 
-def project_project_config(project):
+def load_project_config(project):
     return file_utils.load_from_project_file(
         project, None, None, PROJECT_CONFIGURATION_FILE_NAME
     )
@@ -111,7 +111,7 @@ def main():
 
     logger = logging.getLogger()
     args = parse_args()
-    project_config = project_project_config(args.project)
+    project_config = load_project_config(args.project)
     if project_config.logLevel:
         logger.setLevel(project_config.logLevel)
 
