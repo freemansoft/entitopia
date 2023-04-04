@@ -1,5 +1,6 @@
 {
-    "index": "crashes-1",
+    "index": "crashes-{now/d}-000001",
+    "alias": "crashes-000001",
     "source": "2023Feb_Crash.txt",
     "id_field": "REPORT_NUMBER",
     "num_rows": 10000,

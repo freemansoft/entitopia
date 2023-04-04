@@ -1,5 +1,5 @@
 {
-    "index": "carriers-1",
+    "index": "carriers-000001",
     "mappings": {
         "properties": {
             "DOT_NUMBER": {

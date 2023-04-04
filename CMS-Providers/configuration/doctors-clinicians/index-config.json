@@ -1,9 +1,8 @@
-[
-    {
-        "index": "doctors-clinicians-1",
-        "source": "DAC_NationalDownloadableFile.csv",
-        "id_field": "NPI",
-        "num_rows": 10000,
-        "skip_rows": 0
-    }
-]
+{
+    "alias": "doctors-clinicians-000001",
+    "index": "doctors-clinicians-{now/d}-000001",
+    "source": "DAC_NationalDownloadableFile.csv",
+    "id_field": "NPI",
+    "num_rows": 10000,
+    "skip_rows": 0
+}

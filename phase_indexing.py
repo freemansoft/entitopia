@@ -1,5 +1,6 @@
 import logging as logging
 from itertools import islice
+import elasticsearch_utils
 
 import numpy as np
 import pandas as pd
@@ -24,7 +25,6 @@ class PhaseIndexing:
         data,
         id_field,
         num_rows,
-        skip_rows,
     ):
         records = data.to_dict(orient="records")
         for record in islice(records, num_rows):
@@ -46,6 +46,7 @@ class PhaseIndexing:
         self.logger.info("loaded config %s" % str(index_config))
 
         if index_config:
+            elasticsearch_utils.replace_index_with_now_version(index_config)
             self.logger.debug("loaded config %s" % str(index_config))
             csv_loader = CsvLoadUtils(
                 self.project,
@@ -60,6 +61,9 @@ class PhaseIndexing:
 
             prog_meter = tqdm.tqdm(unit="docs", total=len(data))
 
+            self.logger.info(
+                "Indexing %d records into index %s" % (len(data), index_config.index)
+            )
             for success, response in parallel_bulk(
                 client=self.es,
                 thread_count=8,
@@ -68,7 +72,6 @@ class PhaseIndexing:
                     data,
                     index_config.id_field,
                     index_config.num_rows,
-                    index_config.skip_rows,
                 ),
                 raise_on_error=False,
                 raise_on_exception=False,

@@ -16,9 +16,10 @@ PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
 
 def load_project_config(project):
-    return file_utils.load_from_project_file(
+    config = file_utils.load_from_project_file(
         project, None, None, PROJECT_CONFIGURATION_FILE_NAME
     )
+    return config
 
 
 def parse_args():

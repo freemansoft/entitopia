@@ -1,7 +1,7 @@
 {
     "name": "inspections-enrichment-policy",
     "match": {
-        "indices": "inspections-1",
+        "indices": "inspections-{now/d}-000001",
         "match_field": "DOT_NUMBER",
         "enrich_fields": [
             "DOT_NUMBER",

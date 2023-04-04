@@ -1,4 +1,5 @@
 import file_utils
+import elasticsearch_utils
 import logging as logging
 import json
 from csv_load_utils import CsvLoadUtils
@@ -24,6 +25,7 @@ class PhaseindexCreate:
         self.logger.info("loaded config %s" % str(index_setting_config))
 
         if index_setting_config:
+
             self.logger.debug("Processing %s" % index_setting_config)
             settings_json = json.dumps(
                 index_setting_config.settings, default=lambda s: vars(s)
@@ -48,6 +50,7 @@ class PhaseindexCreate:
         self.logger.info("loaded config %s" % str(phase_config))
 
         if phase_config:
+            elasticsearch_utils.replace_index_with_now_version(phase_config)
             indiciesClient = client.IndicesClient(self.es)
 
             self.logger.info("Creating index %s " % (phase_config.index))
@@ -61,6 +64,18 @@ class PhaseindexCreate:
                 self.logger.info(
                     "Created index %s returned %s" % (phase_config.index, r)
                 )
-
             except (BadRequestError) as e:
-                self.logger.info("Failed to create or update index: " + str(e))
+                self.logger.warn("Failed to create or update index: " + str(e))
+
+            try:
+                # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
+                r = indiciesClient.put_alias(
+                    index=phase_config.index,
+                    name=phase_config.alias,
+                )
+                self.logger.info(
+                    "Created alias %s on index % returned %s"
+                    % (phase_config.alias, phase_config.index, r)
+                )
+            except (BadRequestError) as e:
+                self.logger.warn("Failed to create or update alias: " + str(e))

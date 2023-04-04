@@ -1,4 +1,5 @@
 import file_utils
+import elasticsearch_utils
 import logging as logging
 import json
 from csv_load_utils import CsvLoadUtils
@@ -29,6 +30,7 @@ class PhaseIndexMappings:
         self.logger.info("loaded config %s" % str(index_mapping_config))
 
         if index_mapping_config:
+            elasticsearch_utils.replace_index_with_now_version(index_mapping_config)
             indiciesClient = client.IndicesClient(self.es)
             self.logger.debug("Processing %s" % index_mapping_config)
             properties_json = json.dumps(

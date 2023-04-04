@@ -1,5 +1,5 @@
     {
-        "index": "carriers-1",
+        "index": "carriers-000001",
         "settings": {
             "index": {
                 "number_of_shards": 1,

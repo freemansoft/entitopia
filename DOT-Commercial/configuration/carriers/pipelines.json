@@ -1,6 +1,6 @@
 {
     "name": "carrier-with-inspections-pipeline",
-    "index": "carriers-1",
+    "index": "carriers-000001",
     "processors": [
         {
             "enrich": {

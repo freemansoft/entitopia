@@ -1,6 +1,8 @@
 from elasticsearch import Elasticsearch
 import logging
 import requests
+from datetime import datetime
+
 
 import file_utils
 import elasticsearch_utils
@@ -33,6 +35,33 @@ def connect_to_es(es_connection_info):
         logger.info("Elasticsearch connection failed")
 
     return es_client
+
+
+def replace_index_with_now_version(config):
+    # datetime.now().strftime('%Y.%m.%d-%H%m%S')
+    # datetime.now().strftime('%Y.%m.%d')
+    if "{now/d}" in config.index:
+        config.index = config.index.replace(
+            "{now/d}", datetime.now().strftime("%Y.%m.%d")
+        )
+    elif "{now/s}" in config.index:
+        config.index = config.index.replace(
+            "{now/s}", datetime.now().strftime("%Y.%m.%d")
+        )
+
+
+def replace_match_indicies_with_now_version(config):
+    # datetime.now().strftime('%Y.%m.%d-%H%m%S')
+    # datetime.now().strftime('%Y.%m.%d')
+    print(config.match.indices)
+    if "{now/d}" in config.match.indices:
+        config.match.indices = config.match.indices.replace(
+            "{now/d}", datetime.now().strftime("%Y.%m.%d")
+        )
+    elif "{now/s}" in config.match.indices:
+        config.match.indices = config.match.indices.replace(
+            "{now/s}", datetime.now().strftime("%Y.%m.%d")
+        )
 
 
 def main():

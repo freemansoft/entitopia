@@ -1,4 +1,5 @@
 import file_utils
+import elasticsearch_utils
 import logging as logging
 import json
 from csv_load_utils import CsvLoadUtils
@@ -36,6 +37,7 @@ class PhaseEnrichmentPolicies:
             except NotFoundError:
                 pass
 
+            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
             self.logger.info(
                 "Processing policy name %s match %s"
                 % (phase_config.name, phase_config.match)

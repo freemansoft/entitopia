@@ -1,5 +1,6 @@
 {
-    "index": "carriers-1",
+    "index": "carriers-{now/d}-000001",
+    "alias": "carriers-000001",
     "source": "FMCSA_CENSUS1_2023Feb.txt",
     "id_field": "DOT_NUMBER",
     "pipeline": "carrier-with-inspections-pipeline",

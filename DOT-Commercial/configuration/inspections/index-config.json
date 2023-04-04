@@ -1,5 +1,6 @@
 {
-    "index": "inspections-1",
+    "alias": "inspections-000001",
+    "index": "inspections-{now/d}-000001",
     "source": "2023Feb_Inspection.txt",
     "id_field": "UNIQUE_ID",
     "num_rows": 10000,
