@@ -44,7 +44,7 @@ class PhaseIndexing:
             self.one_step,
             "index-config.json",
         )
-        self.logger.info("loaded config {}".format(index_config))
+        self.logger.debug("loaded config {}".format(index_config))
 
         if index_config:
             elasticsearch_utils.replace_index_with_now_version(index_config)

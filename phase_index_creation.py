@@ -22,7 +22,7 @@ class PhaseindexCreate:
             self.one_step,
             "index-settings.json",
         )
-        self.logger.info("loaded config {}".format(index_setting_config))
+        self.logger.debug("loaded config {}".format(index_setting_config))
 
         if index_setting_config:
 
@@ -48,7 +48,7 @@ class PhaseindexCreate:
             self.one_step,
             "index-config.json",
         )
-        self.logger.info("loaded config {}".format(phase_config))
+        self.logger.debug("loaded config {}".format(phase_config))
 
         if phase_config:
             elasticsearch_utils.replace_index_with_now_version(phase_config)
@@ -60,7 +60,7 @@ class PhaseindexCreate:
                 r = indiciesClient.create(
                     index=phase_config.index,
                     settings=self.get_index_settings(),
-                    ignore=400,
+                    # ignore=400,
                 )
                 self.logger.info(
                     "Created index {} returned {}".format(phase_config.index, r)

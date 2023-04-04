@@ -28,7 +28,7 @@ class PhaseIndexMappings:
             self.one_step,
             "index-mappings.json",
         )
-        self.logger.info("loaded config {}".format(index_mapping_config))
+        self.logger.debug("loaded config {}".format(index_mapping_config))
 
         if index_mapping_config:
             elasticsearch_utils.replace_index_with_now_version(index_mapping_config)
@@ -43,7 +43,7 @@ class PhaseIndexMappings:
                 r = indiciesClient.put_mapping(
                     index=index_mapping_config.index,
                     properties=properties_dicts,
-                    ignore=400,
+                    # ignore=400,
                 )
                 self.logger.info(
                     "Updating mappings on index {} returned {}".format(

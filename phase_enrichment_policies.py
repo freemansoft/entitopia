@@ -28,7 +28,7 @@ class PhaseEnrichmentPolicies:
             self.one_step,
             "enrichment-policies.json",
         )
-        self.logger.info("loaded config {}".format(phase_config))
+        self.logger.debug("loaded config {}".format(phase_config))
 
         enrichClient = client.EnrichClient(self.es)
 

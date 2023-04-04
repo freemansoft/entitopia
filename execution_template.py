@@ -102,6 +102,9 @@ def process_phase_steps(
             )
 
 
+from custom_logging_formatter import CustomFormatter
+
+
 def main():
     """
     Example Usage:
@@ -109,12 +112,17 @@ def main():
     """
     # set the default to be overriden by command line
     logging.basicConfig(level=logging.INFO)
+    root_logger = logging.getLogger()
+    # create console handler with a higher log level
+    handler = logging.StreamHandler()
+    handler.setFormatter(CustomFormatter())
+    root_logger.handlers = []
+    root_logger.addHandler(handler)
 
-    logger = logging.getLogger()
     args = parse_args()
     project_config = load_project_config(args.project)
     if project_config.logLevel:
-        logger.setLevel(project_config.logLevel)
+        root_logger.setLevel(project_config.logLevel)
 
     # connect to cluster
     es_config = file_utils.load_from_file("es_config.json")
