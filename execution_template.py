@@ -62,8 +62,7 @@ def permutations(outer_key, outer, inner_key, inner):
 
 def process_phase_step(es, project, step_name, one_phase, project_config):
     logger = logging.getLogger(__name__)
-    logger.info("\n======>")
-    logger.info("Starting step:%s phase:%s" % (step_name, one_phase))
+    logger.info(" ============> Starting step:%s phase:%s" % (step_name, one_phase))
     # This is an unfortunate set of string matching
     if one_phase == "enrichment-policies":
         handler = PhaseEnrichmentPolicies(es, project, step_name, project_config)

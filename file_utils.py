@@ -4,6 +4,7 @@ import logging
 
 
 def load_from_file(file_name):
+    # TODO add is_required flag to change warnign behavior
     logger = logging.getLogger(__name__)
     try:
         logger.debug("Loading from file %s" % (file_name))
@@ -15,11 +16,11 @@ def load_from_file(file_name):
             logger.debug("Loaded %s info : %s" % (file_name, loaded_config))
             return loaded_config
         except Exception as e:
-            logger.error(e)
+            logger.warn(e)
         finally:
             config_file.close()
     except Exception as e:
-        logger.error(e)
+        logger.warn(e)
         return None
 
 
@@ -47,5 +48,5 @@ def load_from_project_file(target_project, config_or_data, target_step, file):
         )
         return load_from_file(configuration_file_name)
     except Exception as e:
-        logger.error(e)
+        logger.warn("Returing: None %e" % e)
         return None
