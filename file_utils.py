@@ -6,13 +6,13 @@ import logging
 def load_from_file(file_name):
     logger = logging.getLogger(__name__)
     try:
-        logger.info("Loading from file %s" % (file_name))
+        logger.debug("Loading from file %s" % (file_name))
         config_file = open(file_name)
         try:
             loaded_config = json.loads(
                 config_file.read(), object_hook=lambda d: SimpleNamespace(**d)
             )
-            logger.info("Loaded %s info : %s" % (file_name, loaded_config))
+            logger.debug("Loaded %s info : %s" % (file_name, loaded_config))
             return loaded_config
         except Exception as e:
             logger.error(e)

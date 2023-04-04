@@ -43,7 +43,7 @@ class PhaseIndexMappings:
                     ignore=400,
                 )
                 self.logger.info(
-                    "Updating mappings on index %s ruetuned %s"
+                    "Updating mappings on index %s returned %s"
                     % (index_mapping_config.index, r)
                 )
 
