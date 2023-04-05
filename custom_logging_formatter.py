@@ -9,11 +9,14 @@ class CustomFormatter(logging.Formatter):
     yellow = "\x1b[33;20m"
     red = "\x1b[31;20m"
     bold_red = "\x1b[31;1m"
+    white = "\x1b[37m;20m"
+    light_purple = "\x1b[94m"
     reset = "\x1b[0m"
     format = "%(asctime)s - %(name)30s - %(levelname)8s - %(message)s (%(filename)s:%(lineno)d)"
 
+    # https://talyian.github.io/ansicolors/
     FORMATS = {
-        logging.DEBUG: grey + format + reset,
+        logging.DEBUG: light_purple + format + reset,
         logging.INFO: grey + format + reset,
         logging.WARNING: yellow + format + reset,
         logging.ERROR: red + format + reset,
@@ -28,7 +31,8 @@ class CustomFormatter(logging.Formatter):
     def replace_formatter(self, root_logger):
         """
         replace the current formatters with this one
-        logger is the where we want the formatter to start, usually the root logger"""
+        logger is the where we want the formatter to start, usually the root logger
+        """
 
         # create console handler with a higher log level
         handler = logging.StreamHandler()

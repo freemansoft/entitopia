@@ -30,15 +30,21 @@ class PhaseEnrichmentPolicies:
         )
         self.logger.debug("loaded config {}".format(phase_config))
 
-        enrichClient = client.EnrichClient(self.es)
-
         if phase_config:
+            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
+            enrichClient = client.EnrichClient(self.es)
+
             try:
+                # TODO check if pipeline is bound to existing policy
+                # can't be dleeted if pipeline bound to it
                 enrichClient.delete_policy(name=phase_config.name)
+            except ConflictError as e:
+                self.logger.warn(
+                    "Failed to delete enrichment policy due to conflict {}".format(e)
+                )
             except NotFoundError:
                 pass
 
-            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
             self.logger.info(
                 "Processing policy name {} match {}".format(
                     phase_config.name, phase_config.match
@@ -56,4 +62,4 @@ class PhaseEnrichmentPolicies:
                 )
 
             except (BadRequestError) as e:
-                self.logger.info("Failed to update policy: " + str(e))
+                self.logger.info("Failed to update policy: {}".format(e))

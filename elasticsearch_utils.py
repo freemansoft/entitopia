@@ -31,7 +31,7 @@ def connect_to_es(es_connection_info):
 
     # test the connection
     if es_client.ping():
-        logger.info("Elasticsearch connection succeed:" + str(es_client.info()))
+        logger.info("Elasticsearch connection succeed: {}".format(es_client.info()))
     else:
         logger.info("Elasticsearch connection failed")
 

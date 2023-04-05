@@ -1,10 +1,9 @@
 {
-    "name": "carrier-with-inspections-pipeline",
-    "index": "carriers-000001",
+    "name": "carrier-with-inspections-pipeline-000001",
     "processors": [
         {
             "enrich": {
-                "description": "Join 'inspection' data by 'DOT_NUMBER'",
+                "description": "slipstream 'inspection' data",
                 "policy_name": "inspections-enrichment-policy",
                 "field": "DOT_NUMBER",
                 "target_field": "inspections",

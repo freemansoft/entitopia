@@ -30,7 +30,7 @@ class CsvLoadUtils:
         number_of_docs = len(results)
 
         self.logger.info(
-            "Read " + str(number_of_docs) + " records from data file " + file_path
+            "Read {} records from data file {}".format(number_of_docs, file_path)
         )
 
         return results

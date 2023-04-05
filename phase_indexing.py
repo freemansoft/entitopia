@@ -23,12 +23,19 @@ class PhaseIndexing:
     def record_action(
         self,
         data,
+        ingestion_pipeline,
         id_field,
         num_rows,
     ):
         records = data.to_dict(orient="records")
         for record in islice(records, num_rows):
             doc = {"_id": record[id_field], "_source": record}
+            if ingestion_pipeline:
+                doc = {
+                    "_id": record[id_field],
+                    "_source": record,
+                    "pipeline": ingestion_pipeline,
+                }
             yield doc
 
     def handle(self):
@@ -67,12 +74,21 @@ class PhaseIndexing:
                     len(data), index_config.index
                 )
             )
+            pipeline = None
+            try:
+                pipeline = index_config.pipeline
+                self.logger.info("Ingesting with pipeline {}".format(pipeline))
+            except AttributeError:
+                # leave pipeline as None
+                pass
+
             for success, response in parallel_bulk(
                 client=self.es,
                 thread_count=8,
                 index=index_config.index,
                 actions=self.record_action(
                     data,
+                    pipeline,
                     index_config.id_field,
                     index_config.num_rows,
                 ),
