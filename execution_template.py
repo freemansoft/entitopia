@@ -77,7 +77,7 @@ def process_phase_step(es, project, step_name, one_phase, project_config):
         handler.handle()
         handler = PhaseIndexMappings(es, project, step_name, project_config)
         handler.handle()
-    elif one_phase == "index":
+    elif one_phase == "index-populate":
         handler = PhaseIndexing(es, project, step_name, project_config)
         handler.handle()
     else:

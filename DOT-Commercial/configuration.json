@@ -4,23 +4,28 @@
             "step": "crashes",
             "phases": [
                 "index-create",
-                "index"
+                "index-populate"
             ]
         },
         {
             "step": "inspections",
             "phases": [
                 "index-create",
+                "index-populate"
+            ]
+        },
+        {
+            "step": "carriers-ingestion",
+            "phases": [
                 "enrichment-policies",
-                "index"
+                "pipelines"
             ]
         },
         {
             "step": "carriers",
             "phases": [
                 "index-create",
-                "pipelines",
-                "index"
+                "index-populate"
             ]
         }
     ],
@@ -28,7 +33,7 @@
         "index-create",
         "enrichment-policies",
         "pipelines",
-        "index"
+        "index-populate"
     ],
     "configurationDir": "configuration",
     "dataDir": "data",

@@ -4,9 +4,12 @@ Provide framework for loading data into elasticsearch with just configuration.  
 # Status
 **Nothing works yet**
 
-## Open Items
+## Open Work Items
 1. Cleaning up exiting
 1. Deleting enrichment policies when they are tied to pipelines
+1. Command line arguments to filter steps and phases
+1. Add support for multiple policies in a policy phase
+1. Add support for multiple pipelines in the pipeline phase
 1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
 
 # Setup

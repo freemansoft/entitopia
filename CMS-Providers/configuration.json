@@ -4,7 +4,7 @@
             "step": "doctors-clinicians",
             "phases": [
                 "index-create",
-                "index"
+                "index-populate"
             ]
         }
     ],
@@ -12,7 +12,7 @@
         "index-create",
         "enrichment-policies",
         "pipelines",
-        "index"
+        "index-populate"
     ],
     "configurationDir": "configuration",
     "dataDir": "data",
