@@ -1,28 +1,28 @@
 {
     "steps": [
         {
-            "step": "crashes",
+            "name": "crashes",
             "phases": [
                 "index-create",
                 "index-populate"
             ]
         },
         {
-            "step": "inspections",
+            "name": "inspections",
             "phases": [
                 "index-create",
                 "index-populate"
             ]
         },
         {
-            "step": "carriers-ingestion",
+            "name": "carriers-ingestion",
             "phases": [
                 "enrichment-policies",
                 "pipelines"
             ]
         },
         {
-            "step": "carriers",
+            "name": "carriers",
             "phases": [
                 "index-create",
                 "index-populate"

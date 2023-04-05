@@ -1,8 +1,7 @@
 import argparse
-from types import SimpleNamespace
 import logging as logging
-import itertools
 from custom_logging_formatter import CustomFormatter
+import copy
 
 from phase_enrichment_policies import PhaseEnrichmentPolicies
 from phase_index_creation import PhaseindexCreate
@@ -14,52 +13,6 @@ import file_utils
 import elasticsearch_utils
 
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
-
-
-def load_project_config(project):
-    config = file_utils.load_from_project_file(
-        project, None, None, PROJECT_CONFIGURATION_FILE_NAME
-    )
-    return config
-
-
-def parse_args():
-    logger = logging.getLogger(__name__)
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--project",
-        required=True,
-        default=None,
-        help="The root configuration directory Ex: --target=DOT-Commercial",
-    )
-    args = parser.parse_args()
-    logger.info("Args: {} ".format(args))
-    return args
-
-
-def permutations(outer_key, outer, inner_key, inner):
-    """
-    return a list of SimpleNameSapce(step:, phase:) objects
-    create product() of tuples and convert product() to list of dictionary{step:, phase:}
-    outer is a tupple of steps
-    inner is a tuple of phases
-    outer_key and inner_key are the labels to be applied to the values in the tuples
-    """
-    logger = logging.getLogger(__name__)
-    # TODO simplify this with a nested set of for loops
-    # TODO tthis approach is techinically interesting and a great ref for future work
-    # create a list of 4-tuples (label:value, label2:value2)
-    all_phases = [
-        list(item) for item in itertools.product(outer_key, outer, inner_key, inner)
-    ]
-    # convert [4-tubles] to [2-key dictionaries]
-    logger.debug([type(item) for item in all_phases])
-    all_phases_dict = [
-        dict([(item[0], item[1]), (item[2], item[3])]) for item in all_phases
-    ]
-    # convert the [{step: phase:}] into [SimpleNamespace] objects
-    all_phases = [SimpleNamespace(**one_step) for one_step in all_phases_dict]
-    return all_phases
 
 
 def process_phase_step(es, project, step_name, one_phase, project_config):
@@ -97,10 +50,82 @@ def process_phase_steps(
             process_phase_step(
                 es,
                 project,
-                one_step.step,
+                one_step.name,
                 one_phase,
                 project_config,
             )
+
+
+def load_project_config(project):
+    config = file_utils.load_from_project_file(
+        project, None, None, PROJECT_CONFIGURATION_FILE_NAME
+    )
+    return config
+
+
+def parse_args():
+    logger = logging.getLogger(__name__)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--project",
+        required=True,
+        default=None,
+        help="The root configuration directory Ex: --target=DOT-Commercial",
+    )
+    parser.add_argument(
+        "--step", required=False, default=None, help="Run a single step"
+    )
+    parser.add_argument(
+        "--phase", required=False, default=None, help="Run a single phase"
+    )
+    args = parser.parse_args()
+    logger.info("Args: {} ".format(args))
+    return args
+
+
+def apply_args_to_config(config, args):
+    """
+    Change the configuration based on command line arguments
+    Has hard coded kowledge of mapping
+    """
+    logger = logging.getLogger(__name__)
+    new_config = copy.copy(config)
+    if not args.step and not args.phase:
+        logger.debug("No step or phase overrides applied")
+    if args.step:
+        logger.debug("Step override specified {}".format(args.step))
+        filtered_steps = []
+        for one_step in config.steps:
+            if one_step.name == args.step:
+                filtered_steps.append(one_step)
+            else:
+                logger.debug("Filtering out step {}".format(one_step))
+        new_config.steps = filtered_steps
+        logger.debug("Steps filtered to {}".format(new_config.steps))
+    if args.phase:
+        logger.debug("Phase override specified {}".format(args.phase))
+        for one_step in new_config.steps:
+            filtered_phases = []
+            for one_phase in one_step.phases:
+                if one_phase == args.phase:
+                    filtered_phases.append(one_phase)
+                else:
+                    logger.debug(
+                        "Filtering out phase {} in step {}".format(one_phase, one_step)
+                    )
+            one_step.phases = filtered_phases
+            logger.debug(
+                "Phases filtered to {} in step {} ".format(
+                    one_step.phases, one_step.name
+                )
+            )
+    logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
+    return new_config
+
+
+def update_logger_based_from_config(project_config, logger):
+    if project_config.logLevel:
+        logger.setLevel(project_config.logLevel)
 
 
 def main():
@@ -116,8 +141,8 @@ def main():
 
     args = parse_args()
     project_config = load_project_config(args.project)
-    if project_config.logLevel:
-        root_logger.setLevel(project_config.logLevel)
+    update_logger_based_from_config(project_config, root_logger)
+    project_config = apply_args_to_config(project_config, args)
 
     # connect to cluster
     es_config = file_utils.load_from_file("es_config.json")
