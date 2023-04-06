@@ -1,5 +1,5 @@
 {
-    "name": "carrier-with-inspections-pipeline-000001",
+    "name": "carrier-enrichment-pipeline-000001",
     "processors": [
         {
             "enrich": {
@@ -7,6 +7,15 @@
                 "policy_name": "inspections-enrichment-policy",
                 "field": "DOT_NUMBER",
                 "target_field": "inspections",
+                "max_matches": "100"
+            }
+        },
+        {
+            "enrich": {
+                "description": "slipstream 'crashes' data",
+                "policy_name": "crashes-enrichment-policy",
+                "field": "DOT_NUMBER",
+                "target_field": "crashes",
                 "max_matches": "100"
             }
         }

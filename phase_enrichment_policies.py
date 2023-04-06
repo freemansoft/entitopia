@@ -22,44 +22,53 @@ class PhaseEnrichmentPolicies:
             )
         )
         self.logger.debug(self.project_config)
-        phase_config = file_utils.load_from_project_file(
+        all_phase_config = file_utils.load_from_project_file(
             self.project,
             self.project_config.configurationDir,
             self.one_step,
             "enrichment-policies.json",
         )
-        self.logger.debug("loaded config {}".format(phase_config))
+        self.logger.debug("loaded config {}".format(all_phase_config))
 
-        if phase_config:
-            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
-            enrichClient = client.EnrichClient(self.es)
-
-            try:
-                # TODO check if pipeline is bound to existing policy
-                # can't be dleeted if pipeline bound to it
-                enrichClient.delete_policy(name=phase_config.name)
-            except ConflictError as e:
-                self.logger.warn(
-                    "Failed to delete enrichment policy due to conflict {}".format(e)
+        if all_phase_config:
+            for phase_config in all_phase_config:
+                elasticsearch_utils.replace_match_indicies_with_now_version(
+                    phase_config
                 )
-            except NotFoundError:
-                pass
+                enrichClient = client.EnrichClient(self.es)
 
-            self.logger.info(
-                "Processing policy name {} match {}".format(
-                    phase_config.name, phase_config.match
-                )
-            )
-            try:
-                match_json = json.dumps(phase_config.match, default=lambda s: vars(s))
-                match_dicts = json.loads(match_json)
-                r = enrichClient.put_policy(name=phase_config.name, match=match_dicts)
+                try:
+                    # TODO check if pipeline is bound to existing policy
+                    # can't be dleeted if pipeline bound to it
+                    enrichClient.delete_policy(name=phase_config.name)
+                except ConflictError as e:
+                    self.logger.warn(
+                        "Failed to delete enrichment policy due to conflict {}".format(
+                            e
+                        )
+                    )
+                except NotFoundError:
+                    pass
+
                 self.logger.info(
-                    "Updated policy {} returned {}".format(phase_config.name, r)
+                    "Processing policy name {} match {}".format(
+                        phase_config.name, phase_config.match
+                    )
                 )
-                r = enrichClient.execute_policy(
-                    name=phase_config.name, wait_for_completion=True
-                )
+                try:
+                    match_json = json.dumps(
+                        phase_config.match, default=lambda s: vars(s)
+                    )
+                    match_dicts = json.loads(match_json)
+                    r = enrichClient.put_policy(
+                        name=phase_config.name, match=match_dicts
+                    )
+                    self.logger.info(
+                        "Updated policy {} returned {}".format(phase_config.name, r)
+                    )
+                    r = enrichClient.execute_policy(
+                        name=phase_config.name, wait_for_completion=True
+                    )
 
-            except (BadRequestError) as e:
-                self.logger.info("Failed to update policy: {}".format(e))
+                except (BadRequestError) as e:
+                    self.logger.info("Failed to update policy: {}".format(e))
