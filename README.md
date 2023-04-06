@@ -6,11 +6,18 @@ Provide framework for loading data into elasticsearch with just configuration.  
 
 ## Open Work Items
 1. Cleaning up exiting
-1. Deleting enrichment policies when they are tied to pipelines
-1. Support multiple phases and steps for --step and --phase command line arguments
-1. Add support for multiple policies in a policy phase
+1. Deleting enrichment policies when they are tied to pipelines.  You have to delete the pipeline manually before policies can be deleted.
+1. Support multiple steps for --step command line argument
+1. Support multille phases for --phase command line argument
 1. Add support for multiple pipelines in the pipeline phase
+1. Add support for target specific processors
 1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
+
+### Closed work items
+1. Add support for multiple policies in a policy phase.
+1. Add support for --step command line argument to run a single step.
+1. Add support for --phase command line argument to run a single phase.
+1. Bind all phases to only one controller
 
 # Setup
 1. Have access to a docker cluster.

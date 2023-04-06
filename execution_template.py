@@ -3,11 +3,7 @@ import logging as logging
 from custom_logging_formatter import CustomFormatter
 import copy
 
-from phase_enrichment_policies import PhaseEnrichmentPolicies
-from phase_index_creation import PhaseindexCreate
-from phase_index_populate import PhaseIndexingPopulate
-from phase_index_mappings import PhaseIndexMappings
-from phase_pipelines import PhasePipelines
+from phase_dispatcher import PhaseDispatcher
 
 import file_utils
 import elasticsearch_utils
@@ -15,40 +11,17 @@ import elasticsearch_utils
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
 
-def process_phase_step(es, project, step_name, one_phase, project_config):
-    logger = logging.getLogger(__name__)
-    logger.info(" ============> Starting step:{} phase:{}".format(step_name, one_phase))
-    # This is an unfortunate set of string matching
-    if one_phase == "enrichment-policies":
-        handler = PhaseEnrichmentPolicies(es, project, step_name, project_config)
-        handler.handle()
-    elif one_phase == "pipelines":
-        handler = PhasePipelines(es, project, step_name, project_config)
-        handler.handle()
-    elif one_phase == "index-create":
-        handler = PhaseindexCreate(es, project, step_name, project_config)
-        handler.handle()
-    elif one_phase == "index-map":
-        handler = PhaseIndexMappings(es, project, step_name, project_config)
-        handler.handle()
-    elif one_phase == "index-populate":
-        handler = PhaseIndexingPopulate(es, project, step_name, project_config)
-        handler.handle()
-    else:
-        logger.error("Unrecognized phase: {}".format(step_name.phase))
-
-
 def process_phase_steps(
+    dispatcher,
     es,
     project,
     phase_steps,
     project_config,
 ):
-    logger = logger = logging.getLogger(__name__)
 
     for one_step in phase_steps:
         for one_phase in one_step.phases:
-            process_phase_step(
+            dispatcher.process_phase_step(
                 es,
                 project,
                 one_step.name,
@@ -150,7 +123,10 @@ def main():
     es = elasticsearch_utils.connect_to_es(es_config)
 
     # run it!
-    process_phase_steps(es, args.project, project_config.steps, project_config)
+    dispatcher = PhaseDispatcher()
+    process_phase_steps(
+        dispatcher, es, args.project, project_config.steps, project_config
+    )
 
 
 if __name__ == "__main__":
