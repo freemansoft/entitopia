@@ -4,12 +4,14 @@
             "step": "doctors-clinicians",
             "phases": [
                 "index-create",
+                "index-map",
                 "index-populate"
             ]
         }
     ],
     "all_phases": [
         "index-create",
+        "index-map",
         "enrichment-policies",
         "pipelines",
         "index-populate"

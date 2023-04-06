@@ -5,7 +5,7 @@ import copy
 
 from phase_enrichment_policies import PhaseEnrichmentPolicies
 from phase_index_creation import PhaseindexCreate
-from phase_indexing import PhaseIndexing
+from phase_index_populate import PhaseIndexingPopulate
 from phase_index_mappings import PhaseIndexMappings
 from phase_pipelines import PhasePipelines
 
@@ -28,10 +28,11 @@ def process_phase_step(es, project, step_name, one_phase, project_config):
     elif one_phase == "index-create":
         handler = PhaseindexCreate(es, project, step_name, project_config)
         handler.handle()
+    elif one_phase == "index-map":
         handler = PhaseIndexMappings(es, project, step_name, project_config)
         handler.handle()
     elif one_phase == "index-populate":
-        handler = PhaseIndexing(es, project, step_name, project_config)
+        handler = PhaseIndexingPopulate(es, project, step_name, project_config)
         handler.handle()
     else:
         logger.error("Unrecognized phase: {}".format(step_name.phase))

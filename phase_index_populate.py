@@ -12,7 +12,7 @@ import file_utils
 from csv_load_utils import CsvLoadUtils
 
 
-class PhaseIndexing:
+class PhaseIndexingPopulate:
     def __init__(self, es, project, one_step, project_config):
         self.es = es
         self.project = project

@@ -4,6 +4,7 @@
             "name": "crashes",
             "phases": [
                 "index-create",
+                "index-map",
                 "index-populate"
             ]
         },
@@ -11,6 +12,7 @@
             "name": "inspections",
             "phases": [
                 "index-create",
+                "index-map",
                 "index-populate"
             ]
         },
@@ -25,12 +27,14 @@
             "name": "carriers",
             "phases": [
                 "index-create",
+                "index-map",
                 "index-populate"
             ]
         }
     ],
     "all_phases": [
         "index-create",
+        "index-map",
         "enrichment-policies",
         "pipelines",
         "index-populate"
