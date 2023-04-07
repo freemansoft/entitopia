@@ -39,5 +39,10 @@ Provide framework for loading data into elasticsearch with just configuration.  
 * DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
 * Medicare Providers https://data.cms.gov/provider-data/
 
-# Referfences
+# References
+
+### Elasticsearch indexing
 * https://dev.to/makalaaneesh/updating-the-mapping-of-an-elasticsearch-index-3h9n
+
+### Analyzers
+* https://www.informit.com/articles/article.aspx?p=1848528

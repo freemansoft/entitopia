@@ -4,6 +4,6 @@
     "source": "FMCSA_CENSUS1_2023Feb.txt",
     "id_field": "DOT_NUMBER",
     "pipeline": "carrier-enrichment-pipeline-000001",
-    "num_rows": 10000,
+    "num_rows": 50000,
     "skip_rows": 0
 }

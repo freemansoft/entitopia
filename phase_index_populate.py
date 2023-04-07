@@ -36,6 +36,7 @@ class PhaseIndexingPopulate:
                     "_source": record,
                     "pipeline": ingestion_pipeline,
                 }
+            # self.logger.debug("Ingestion doc: {}".format(doc))
             yield doc
 
     def handle(self):

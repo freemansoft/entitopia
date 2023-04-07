@@ -3,6 +3,6 @@
     "alias": "crashes-000001",
     "source": "2023Feb_Crash.txt",
     "id_field": "REPORT_NUMBER",
-    "num_rows": 10000,
+    "num_rows": 50000,
     "skip_rows": 0
 }

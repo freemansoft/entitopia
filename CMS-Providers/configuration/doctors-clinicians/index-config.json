@@ -3,6 +3,6 @@
     "index": "doctors-clinicians-{now/d}-000001",
     "source": "DAC_NationalDownloadableFile.csv",
     "id_field": "NPI",
-    "num_rows": 10000,
+    "num_rows": 50000,
     "skip_rows": 0
 }
