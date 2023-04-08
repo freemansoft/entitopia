@@ -98,8 +98,10 @@ def apply_args_to_config(config, args):
 
 
 def update_logger_based_from_config(project_config, logger):
-    if project_config.logLevel:
+    try:
         logger.setLevel(project_config.logLevel)
+    except AttributeError as e:
+        logger.warning("No default logging level in config {}".format(project_config))
 
 
 def main():
@@ -115,18 +117,21 @@ def main():
 
     args = parse_args()
     project_config = load_project_config(args.project)
-    update_logger_based_from_config(project_config, root_logger)
-    project_config = apply_args_to_config(project_config, args)
+    if project_config:
+        update_logger_based_from_config(project_config, root_logger)
+        project_config = apply_args_to_config(project_config, args)
 
-    # connect to cluster
-    es_config = file_utils.load_from_file("es_config.json")
-    es = elasticsearch_utils.connect_to_es(es_config)
+        # connect to cluster
+        es_config = file_utils.load_from_file("es_config.json")
+        es = elasticsearch_utils.connect_to_es(es_config)
 
-    # run it!
-    dispatcher = PhaseDispatcher()
-    process_phase_steps(
-        dispatcher, es, args.project, project_config.steps, project_config
-    )
+        # run it!
+        dispatcher = PhaseDispatcher()
+        process_phase_steps(
+            dispatcher, es, args.project, project_config.steps, project_config
+        )
+    else:
+        root_logger.critical("Could not load configuration for ".format(args.project))
 
 
 if __name__ == "__main__":

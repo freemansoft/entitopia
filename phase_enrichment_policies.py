@@ -42,7 +42,7 @@ class PhaseEnrichmentPolicies:
                     # can't be dleeted if pipeline bound to it
                     enrichClient.delete_policy(name=phase_config.name)
                 except ConflictError as e:
-                    self.logger.warn(
+                    self.logger.warning(
                         "Failed to delete enrichment policy due to conflict {}".format(
                             e
                         )

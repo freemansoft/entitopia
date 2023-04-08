@@ -1,11 +1,11 @@
 {
-    "index": "carriers-{now/d}-000001",
+    "index": "doctors-clinicians-{now/d}-000001",
     "mappings": {
         "properties": {
-            "DOT_NUMBER": {
+            "NPI": {
                 "type": "keyword"
             },
-            "LEGAL_NAME": {
+            "org_nm": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -21,7 +21,7 @@
                     }
                 }
             },
-            "DBA_NAME": {
+            "frst_nm": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -37,7 +37,23 @@
                     }
                 }
             },
-            "PHY_STREET": {
+            "lst_nm": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    },
+                    "phonetic": {
+                        "type": "text",
+                        "analyzer": "name_phonetic"
+                    }
+                }
+            },
+            "adr_ln_1": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -49,27 +65,7 @@
                     }
                 }
             },
-            "PHY_CITY": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    }
-                }
-            },
-            "PHY_STATE": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    }
-                }
-            },
-            "MAILING_STREET": {
+            "adr_ln_2": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -81,7 +77,7 @@
                     }
                 }
             },
-            "MAILING_CITY": {
+            "cty": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -93,7 +89,7 @@
                     }
                 }
             },
-            "MAILING_STATE": {
+            "st": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -101,7 +97,7 @@
                     }
                 }
             },
-            "TELEPHONE": {
+            "phn_numbr": {
                 "type": "text",
                 "fields": {
                     "keyword": {

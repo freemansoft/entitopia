@@ -1,5 +1,5 @@
     {
-        "index": "carriers-{now/d}-000001",
+        "index": "doctors-clinicians-{now/d}-000001",
         "settings": {
             "index": {
                 "number_of_shards": 1,

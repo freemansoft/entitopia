@@ -66,7 +66,7 @@ class PhaseindexCreate:
                     "Created index {} returned {}".format(phase_config.index, r)
                 )
             except (BadRequestError) as e:
-                self.logger.warn("Failed to create or update index: {}".format(e))
+                self.logger.warning("Failed to create or update index: {}".format(e))
 
             try:
                 # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
@@ -80,4 +80,4 @@ class PhaseindexCreate:
                     )
                 )
             except (BadRequestError) as e:
-                self.logger.warn("Failed to create or update alias: {}".format(e))
+                self.logger.warning("Failed to create or update alias: {}".format(e))
