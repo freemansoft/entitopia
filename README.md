@@ -1,6 +1,56 @@
 # Purpose
 Provide framework for loading data into elasticsearch with just configuration.  Initial work is targeted at entity searching but it could be anything.
 
+# Supported
+1. Index creation
+1. Index mapping
+1. Index settings
+1. Index aliases
+1. Enrichment Policies
+1. Pipeline creation bound to 1 or more enrichment policies
+1. Index population direct to index or via pipeline
+1. Index data ingestion from CSV files
+
+# Target Directories, Steps and Phases
+_to be documented_
+```mermaid
+flowchart LR
+    Target["--target="]-->Steps["--step="]-->Phases["--phase="]
+```
+
+## Target Configuration : Steps and Phases
+_to be documented_
+```mermaid
+flowchart LR
+    Target["--target"]
+    Target-->Config
+    Target-->Data
+
+    Config-.->Step1
+    Config-.->Step2
+    Config-.->Step3
+
+    Step1-.->Phase11[Phase 1]
+    Step1-.->Phase12[Phase 2]
+    Step1-.->Phase13[Phase 3]
+
+    Step2-.->Phase21[Phase 1]
+    Step2-.->Phase22[Phase 3]
+
+    Step3-.->Phase31[Phase 3]
+```
+
+## Target Data : Steps
+_to be documented_
+```mermaid
+flowchart LR
+    Target[Target]-->Config
+    Target-->Data
+    Data-->Step1-.->CSV-1
+    Data-->Step2-.->CSV-2
+
+```
+
 # Status
 **Nothing works yet**
 
@@ -31,7 +81,7 @@ Provide framework for loading data into elasticsearch with just configuration.  
 1. Run `python3 execution_template.py --project<the-project-dir>`
     * `python3 execution_template.py --project=CMS-Providers`
 1. Verify the indexes have been created
-    * The url is usually soemthing like the following when running locally http://localhost:5601/
+    * The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
 
 
 # Government Datasets
