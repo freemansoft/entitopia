@@ -64,21 +64,25 @@ flowchart LR
         enriching-pipeline
     end
 
-    crashes-step -->|create / populate| crashes-index
-    inspections-step -->|create/ populate | inspections-index
-    carriers-step --> | create | carriers-index
-
-
-    crashes-enrichment-index -.->|enrich| enriching-pipeline
-    inspections-enrichment-index -.->|enrich| enriching-pipeline
-    carriers-ingestion-step --> | execute| enriching-pipeline -->|populate| carriers-index
+    crashes-step -->|index-map| crashes-index
+    crashes-step -->|index-populate| crashes-index
+    inspections-step -->|index-map| inspections-index
+    inspections-step -->|index-populate | inspections-index
+    carriers-step --> | index-map | enriching-pipeline
+    carriers-step --> | index-populate| enriching-pipeline
 
     crashes-csv-->|import| crashes-step
     inspections-csv -->|import| inspections-step
-    carriers-csv -->|import| carriers-ingestion-step
+    carriers-csv -->|import| carriers-step
 
-    carriers-ingestion-step -->|create policy, populate enrichment index| crashes-enrichment-index
-    carriers-ingestion-step -->|create policy, populate enrichment index| inspections-enrichment-index
+    crashes-enrichment-index -.->|enrich-policies| enriching-pipeline
+    inspections-enrichment-index -.->|enrich-policies| enriching-pipeline
+    enriching-pipeline -->|populate| carriers-index
+
+
+    carriers-ingestion-step -.->|enrichment-policies| crashes-enrichment-index
+    carriers-ingestion-step -.->|enrichment-policies| inspections-enrichment-index
+    carriers-ingestion-step -.->|pipelines| enriching-pipeline
 
 
 ```
