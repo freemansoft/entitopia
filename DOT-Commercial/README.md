@@ -46,10 +46,11 @@ flowchart LR
     subgraph indexes
         direction LR
         crashes-index[crashes]
-        crashes-enrichment-index[crashes enrichment]
         inspections-index[inspections]
-        inspections-enrichment-index[inspections enrichment]
         carriers-index[carriers]
+
+        crashes-enrichment-index[crashes enrichment]
+        inspections-enrichment-index[inspections enrichment]
     end
 
     subgraph datasets
