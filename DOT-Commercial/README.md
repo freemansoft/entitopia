@@ -5,14 +5,15 @@ DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
 ```mermaid
 flowchart LR
     subgraph crashes-graph[crashes]
-        crashes
-        crashes-enrichment -->|subset of| crashes
+        crashes[crashes index]
+        crashes --> | optimized index| crashes-enrichment[crashes enrichment index]
     end
     subgraph inspections-graph[inspections]
-        inspections
-        inspections-enrichment --> | subset of | inspections
+        inspections[inspections index]
+        inspections --> |optimized index| inspections-enrichment[inspections enrichment index]
     end
     subgraph carriers-graph[carriers]
+        carriers-core[carriers index]
         crashes-enrichment -.->|enriches| carriers-core
         inspections-enrichment -.->|enriches| carriers-core
     end
