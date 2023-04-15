@@ -22,36 +22,38 @@ _to be documented_
 * `--step=` The steps, config directories, to execute
 * `--phase=` Config file types should be used if avaialble in each step
 
-## Target Configuration : Steps and Phases
-_to be documented_
+## Target
+### Configuration : Steps and Phases
+A configuration file at the top of the `--target` directory describes the steps and phases that are possible. The configuration directories represent _steps_.  Configuration files in the directories contain the _phase configuration_ files.
 ```mermaid
 flowchart LR
     Target["--target"]
     Target-->Config
     Target-->Data
 
-    Config-.->Step1
-    Config-.->Step2
-    Config-.->Step3
+    Config-.->Step1[Step 1]
+    Config-.->Step2[Step 2]
+    Config-.->Step3[Step 3]
 
-    Step1-.->Phase11[Phase 1]
-    Step1-.->Phase12[Phase 2]
-    Step1-.->Phase13[Phase 3]
+    Step1-.->Phase11[Phase ...]
+    Step1-.->Phase12[Phase ...]
+    Step1-.->Phase13[Phase index-populate]
 
-    Step2-.->Phase21[Phase 1]
-    Step2-.->Phase22[Phase 3]
+    Step2-.->Phase21[Phase ...]
+    Step2-.->Phase22[Phase ...]
 
-    Step3-.->Phase31[Phase 3]
+    Step3-.->Phase31[Phase index-populate]
 ```
 
-## Target Data : Steps
-_to be documented_
+### Data : Steps
+Processing is made up of one or more steps. Data is loaded during the `index-populate` phase.  We stage the source data in `data` subdirectories that have the same name as their step in the top level configuration
 ```mermaid
 flowchart LR
     Target[Target]-->Config
     Target-->Data
-    Data-->Step1-.->CSV-1
-    Data-->Step2-.->CSV-2
+    Data-.->Step1[Step 1]-.->CSV-1
+    Data-.->Step2[Step 2]-.-Empty-2[<i>Empty</i>]
+    Data-.->Step3[Step 3]-.->CSV-3
 
 ```
 
