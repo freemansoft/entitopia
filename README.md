@@ -13,10 +13,12 @@ Provide framework for loading data into elasticsearch with just configuration.  
 
 # Target Directories, Steps and Phases
 _to be documented_
-```mermaid
-flowchart LR
-    Target["--target="]-->Steps["--step="]-->Phases["--phase="]
-```
+
+## Command line options
+
+* `--target=` Data target directory contain config and data
+* `--step=` The steps, config directories, to execute
+* `--phase=` Config file types should be used if avaialble in each step
 
 ## Target Configuration : Steps and Phases
 _to be documented_
