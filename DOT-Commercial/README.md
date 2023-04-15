@@ -17,6 +17,18 @@ flowchart LR
         inspections-enrichment -.->|enriches| carriers-core
     end
 ```
+## Phases
+Phases represent the type of work that can be done in one or more steps
+
+```mermaid
+flowchart LR
+    subgraph phases
+        index-map
+        enrichment-policies
+        pipelines
+        index-populate
+    end
+```
 
 ## Flow
 

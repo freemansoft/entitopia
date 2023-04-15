@@ -3,13 +3,15 @@ Provide framework for loading data into elasticsearch with just configuration.  
 
 # Supported
 1. Index creation
-1. Index mapping
-1. Index settings
-1. Index aliases
+    1. Index mapping
+    1. Index settings
+    1. Index aliases
 1. Enrichment Policies
 1. Pipeline creation bound to 1 or more enrichment policies
-1. Index population direct to index or via pipeline
-1. Index data ingestion from CSV files
+1. Index population
+    1. Direct to index or
+    1. Via pipeline
+1. Data importation from CSV files
 
 # Target Directories, Steps and Phases
 _to be documented_
