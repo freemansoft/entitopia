@@ -29,7 +29,7 @@ A configuration file at the top of the `--project` directory describes the steps
 ```mermaid
 flowchart LR
     Target["--project"]
-    Target-->Config
+    Target-->Config --> ConfigFile[configuration.json]
     Target-->Data
 
     Config-.->Step1[Step 1]
@@ -58,7 +58,7 @@ Each step can contain one or more phases as described by json configuration file
 Processing is made up of one or more steps. Data is loaded during the `index-populate` phase.  We stage the source data in `data` subdirectories that have the same name as their step in the top level configuration
 ```mermaid
 flowchart LR
-    Target[Target]-->Config
+    Target-->Config --> ConfigFile[configuration.json]
     Target-->Data
     Data-.->Step1[Step 1]-.->CSV-1
     Data-.->Step2[Step 2]-.-Empty-2[<i>Empty</i>]
