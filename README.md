@@ -13,7 +13,7 @@ Provide framework for loading data into elasticsearch with just configuration.  
     1. Via pipeline
 1. Data importation from CSV files
 
-## execute_template.py Command line options
+## execute_project.py Command line options
 
 * `--project=` Data target directory contain config and data
 * `--step=` The steps, config directories, to execute
@@ -93,8 +93,8 @@ This is a work in progress
 1. create an `es_config.json` from `es_config_template.json`
 1. Download data
     * Use the `download.....sh` script in one of the example directories
-1. Run `python3 execute_template.py --project<the-project-dir>`
-    * `python3 execute_template.py --project=CMS-Providers`
+1. Run `python3 execute_project.py --project<the-project-dir>`
+    * `python3 execute_project.py --project=CMS-Providers`
 1. Verify the indexes have been created
     * The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
 

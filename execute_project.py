@@ -106,7 +106,7 @@ def update_logger_based_from_config(project_config, logger):
 def main():
     """
     Example Usage:
-    `python3 execute_template.py --project=DOT-Commercial`
+    `python3 execute_project.py --project=DOT-Commercial`
     """
 
     # set the default to be overriden by command line
