@@ -2,16 +2,16 @@
 Provide framework for loading data into elasticsearch with just configuration.  Initial work is targeted at entity searching but it could be anything.
 
 # Supported
+1. Data importation from CSV files
 1. Index creation
     1. Index mapping
     1. Index settings
     1. Index aliases
 1. Enrichment Policies
-1. Pipeline creation bound to 1 or more enrichment policies
-1. Index population
-    1. Direct to index or
+1. Pipeline creation bound to one (1) or more enrichment policies
+1. Index population / load using parallel bulk API
+    1. Direct to index
     1. Via pipeline
-1. Data importation from CSV files
 
 ## execute_project.py Command line options
 
@@ -70,19 +70,20 @@ flowchart LR
 This is a work in progress
 
 ## Open Work Items
+1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
 1. Cleaning up exiting
 1. Deleting enrichment policies when they are tied to pipelines.  You have to delete the pipeline manually before policies can be deleted.
 1. Support multiple steps for --step command line argument
 1. Support multille phases for --phase command line argument
 1. Add support for multiple pipelines in the pipeline phase
 1. Add support for target specific processors
-1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
 
 ### Closed work items
 1. Add support for multiple policies in a policy phase.
 1. Add support for --step command line argument to run a single step.
 1. Add support for --phase command line argument to run a single phase.
 1. Bind all phases to only one controller
+1. Supports daily indexes and alias so you can do zero downtime index creation/reload
 
 # Setup
 1. Have access to a docker cluster.
