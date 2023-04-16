@@ -24,14 +24,6 @@ Provide framework for loading data into elasticsearch with just configuration.  
 ## Steps
 Steps are basically a bundle of related work. They are defined in a project's configuration.json.  Each step's configuration is defined in configuration files in a `project\configuration` directory one per phase.
 
-## Processing Phases
-Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps.  Each step can contain zero or more phases.  The currently supported phases as implemented in [`phase_providers`](phase_providers)
-
-1. `index-map` - create an index and alias
-1. `enrichment-policies` - create enrichment policies and the related enrichment indexes
-1. `pipelines` - create elasticsearch ingestion pipelines
-1. `index-populate` - load data into an index
-
 ## Configuration : Steps and Phases
 A configuration file at the top of the `--project` directory describes the steps and phases that are possible. The configuration directories represent _steps_.  Configuration files in the directories contain the _phase configuration_ files.
 ```mermaid
@@ -53,6 +45,14 @@ flowchart LR
 
     Step3-.->Phase31[Phase index-populate]
 ```
+## Processing Steps are made up of Phases
+Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps.  Each step can contain zero or more phases.  The currently supported phases as implemented in [`phase_providers`](phase_providers)
+
+1. `index-map` - create an index and alias
+1. `enrichment-policies` - create enrichment policies and the related enrichment indexes
+1. `pipelines` - create elasticsearch ingestion pipelines
+1. `index-populate` - load data into an index
+
 
 ## Data : Steps
 Processing is made up of one or more steps. Data is loaded during the `index-populate` phase.  We stage the source data in `data` subdirectories that have the same name as their step in the top level configuration
