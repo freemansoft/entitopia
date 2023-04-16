@@ -4,7 +4,6 @@ import logging
 
 
 class CustomFormatter(logging.Formatter):
-
     grey = "\x1b[38;20m"
     yellow = "\x1b[33;20m"
     red = "\x1b[31;20m"
@@ -34,6 +33,7 @@ class CustomFormatter(logging.Formatter):
         logger is the where we want the formatter to start, usually the root logger
         """
 
+        print(root_logger)
         # create console handler with a higher log level
         handler = logging.StreamHandler()
         handler.setFormatter(CustomFormatter())

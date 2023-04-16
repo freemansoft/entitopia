@@ -1,8 +1,8 @@
-import file_utils
-import elasticsearch_utils
+import utils.file_utils as file_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 import logging as logging
 import json
-from csv_load_utils import CsvLoadUtils
+from utils.csv_load_utils import CsvLoadUtils
 from elasticsearch import NotFoundError, ConflictError, BadRequestError
 from elasticsearch import client
 
@@ -25,7 +25,6 @@ class PhaseindexCreate:
         self.logger.debug("loaded config {}".format(index_setting_config))
 
         if index_setting_config:
-
             self.logger.debug("Processing {}".format(index_setting_config))
             settings_json = json.dumps(
                 index_setting_config.settings, default=lambda s: vars(s)
@@ -65,7 +64,7 @@ class PhaseindexCreate:
                 self.logger.info(
                     "Created index {} returned {}".format(phase_config.index, r)
                 )
-            except (BadRequestError) as e:
+            except BadRequestError as e:
                 self.logger.warning("Failed to create or update index: {}".format(e))
 
             try:
@@ -79,5 +78,5 @@ class PhaseindexCreate:
                         phase_config.alias, phase_config.index, r
                     )
                 )
-            except (BadRequestError) as e:
+            except BadRequestError as e:
                 self.logger.warning("Failed to create or update alias: {}".format(e))

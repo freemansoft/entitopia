@@ -1,12 +1,12 @@
 import argparse
 import logging as logging
-from custom_logging_formatter import CustomFormatter
+from utils.custom_logging_formatter import CustomFormatter
 import copy
 
 from phase_dispatcher import PhaseDispatcher
 
-import file_utils
-import elasticsearch_utils
+import utils.file_utils as file_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
@@ -18,7 +18,6 @@ def process_phase_steps(
     phase_steps,
     project_config,
 ):
-
     for one_step in phase_steps:
         for one_phase in one_step.phases:
             dispatcher.process_phase_step(
@@ -44,7 +43,7 @@ def parse_args():
         "--project",
         required=True,
         default=None,
-        help="The root configuration directory Ex: --target=DOT-Commercial",
+        help="The root configuration directory Ex: --project=DOT-Commercial",
     )
     parser.add_argument(
         "--step", required=False, default=None, help="Run a single step"
@@ -107,7 +106,7 @@ def update_logger_based_from_config(project_config, logger):
 def main():
     """
     Example Usage:
-    `python3 execution_template.py --project=DOT-Commercial`
+    `python3 execute_template.py --project=DOT-Commercial`
     """
 
     # set the default to be overriden by command line

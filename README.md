@@ -18,16 +18,16 @@ _to be documented_
 
 ## Command line options
 
-* `--target=` Data target directory contain config and data
+* `--project=` Data target directory contain config and data
 * `--step=` The steps, config directories, to execute
 * `--phase=` Config file types should be used if avaialble in each step
 
 ## Target
 ### Configuration : Steps and Phases
-A configuration file at the top of the `--target` directory describes the steps and phases that are possible. The configuration directories represent _steps_.  Configuration files in the directories contain the _phase configuration_ files.
+A configuration file at the top of the `--project` directory describes the steps and phases that are possible. The configuration directories represent _steps_.  Configuration files in the directories contain the _phase configuration_ files.
 ```mermaid
 flowchart LR
-    Target["--target"]
+    Target["--project"]
     Target-->Config
     Target-->Data
 
@@ -84,8 +84,8 @@ flowchart LR
 1. create an `es_config.json` from `es_config_template.json`
 1. Download data
     * Use the `download.....sh` script in one of the example directories
-1. Run `python3 execution_template.py --project<the-project-dir>`
-    * `python3 execution_template.py --project=CMS-Providers`
+1. Run `python3 execute_template.py --project<the-project-dir>`
+    * `python3 execute_template.py --project=CMS-Providers`
 1. Verify the indexes have been created
     * The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
 

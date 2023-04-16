@@ -1,10 +1,10 @@
 import logging
 
-from phase_enrichment_policies import PhaseEnrichmentPolicies
-from phase_index_creation import PhaseindexCreate
-from phase_index_populate import PhaseIndexingPopulate
-from phase_index_mappings import PhaseIndexMappings
-from phase_pipelines import PhasePipelines
+from phase_providers.phase_enrichment_policies import PhaseEnrichmentPolicies
+from phase_providers.phase_index_creation import PhaseindexCreate
+from phase_providers.phase_index_populate import PhaseIndexingPopulate
+from phase_providers.phase_index_mappings import PhaseIndexMappings
+from phase_providers.phase_pipelines import PhasePipelines
 
 
 class PhaseDispatcher:

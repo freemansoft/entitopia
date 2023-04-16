@@ -1,8 +1,8 @@
-import file_utils
-import elasticsearch_utils
+import utils.file_utils as file_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 import logging as logging
 import json
-from csv_load_utils import CsvLoadUtils
+from utils.csv_load_utils import CsvLoadUtils
 from elasticsearch import NotFoundError, ConflictError, BadRequestError
 from elasticsearch import client
 
@@ -51,5 +51,5 @@ class PhaseIndexMappings:
                     )
                 )
 
-            except (BadRequestError) as e:
+            except BadRequestError as e:
                 self.logger.info("Failed to create or update index: {}".format(e))

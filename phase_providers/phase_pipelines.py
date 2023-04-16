@@ -1,6 +1,6 @@
-import file_utils
+import utils.file_utils as file_utils
 import logging as logging
-import elasticsearch_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 import json
 from elasticsearch import NotFoundError, ConflictError, BadRequestError
 from elasticsearch import client
@@ -52,5 +52,5 @@ class PhasePipelines:
                     "Updated pipeline {} returned {}".format(pipeline_config.name, r)
                 )
 
-            except (BadRequestError) as e:
+            except BadRequestError as e:
                 self.logger.info("Failed to update pipeline: {} ".format(e))

@@ -1,6 +1,6 @@
 import logging as logging
 from itertools import islice
-import elasticsearch_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 
 import numpy as np
 import pandas as pd
@@ -8,8 +8,8 @@ import tqdm
 
 from elasticsearch.helpers import parallel_bulk
 
-import file_utils
-from csv_load_utils import CsvLoadUtils
+import utils.file_utils as file_utils
+from utils.csv_load_utils import CsvLoadUtils
 
 
 class PhaseIndexingPopulate:

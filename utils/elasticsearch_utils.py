@@ -2,11 +2,11 @@ from elasticsearch import Elasticsearch
 import logging
 import requests
 from datetime import datetime
-from custom_logging_formatter import CustomFormatter
+from utils.custom_logging_formatter import CustomFormatter
 
 
-import file_utils
-import elasticsearch_utils
+import utils.file_utils as file_utils
+import utils.elasticsearch_utils as elasticsearch_utils
 
 
 def connect_to_es(es_connection_info):
