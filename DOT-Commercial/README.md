@@ -10,11 +10,7 @@ This data set is loaded and configured in 4 steps
 
 ## Processing Phases
 Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps.  Each step can contain zero or more phases.
-
-1. `index-map` - create an index and alias
-1. `enrichment-policies` - create enrichment policies and the related enrichment indexes
-1. `pipelines` - create elasticsearch ingestion pipelines
-1. `index-populate` - load data into an index
+See [README.md](../README.md)
 
 ## Index Data
 The data is organized and related as follows.

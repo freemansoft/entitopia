@@ -3,7 +3,7 @@ import logging as logging
 from utils.custom_logging_formatter import CustomFormatter
 import copy
 
-from phase_dispatcher import PhaseDispatcher
+from phase_providers.phase_dispatcher import PhaseDispatcher
 
 import utils.file_utils as file_utils
 import utils.elasticsearch_utils as elasticsearch_utils
