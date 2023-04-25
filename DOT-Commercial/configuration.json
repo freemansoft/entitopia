@@ -1,6 +1,12 @@
 {
     "steps": [
         {
+            "name": "crashes-ingestion-setup",
+            "phases": [
+                "pipelines"
+            ]
+        },
+        {
             "name": "crashes",
             "phases": [
                 "index-create",
@@ -17,7 +23,7 @@
             ]
         },
         {
-            "name": "carriers-ingestion",
+            "name": "carriers-ingestion-setup",
             "phases": [
                 "enrichment-policies",
                 "pipelines"

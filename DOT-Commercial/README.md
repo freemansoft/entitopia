@@ -1,10 +1,12 @@
 DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
 
 ## Processing Steps
+
 This data set is loaded and configured in 4 steps
+1. `crashes-ingestion-setup` - create a pipeline that creates a fingerprint from two fields to be sued as the `id` field
 1. `crashes` - create an index and load the crash data
 1. `inspections` - create an index and load the vehicle inpsections data
-1. `carriers-ingestion` - create the enrichment indexes on `crashes` and `inspections` and an ingestion pipeline that uses them
+1. `carriers-ingestion-setup` - create the enrichment indexes on `crashes` and `inspections` and an ingestion pipeline that uses them
 1. `carriers` - create an index and load the carriers data using the pipeline to enrich `carriers` with data from `crashes` and `inspections`
 
 
@@ -39,10 +41,11 @@ An integrated view of the steps and phases.
 flowchart LR
     subgraph steps
         direction LR
+        crashes-ingestion-setup-step[crashes ingestion setup]
         crashes-step[crashes]
         inspections-step[inpsections]
         carriers-step[carriers]
-        carriers-ingestion-step[carriers ingestion]
+        carriers-ingestion-setup-step[carriers ingestion setup]
     end
 
     subgraph indexes
@@ -62,30 +65,38 @@ flowchart LR
         carriers-csv[carriers csv]
     end
 
-    subgraph pipelines
+    subgraph crashes-pipelines[ crashes pipelines]
+        direction LR
+        crashes-pipeline
+    end
+
+    subgraph carriers-pipelines[ carriers pipelines]
         direction LR
         enriching-pipeline
     end
 
+    crashes-step -->|index-populate| crashes-pipeline
     crashes-step -->|index-map| crashes-index
-    crashes-step -->|index-populate| crashes-index
     inspections-step -->|index-map| inspections-index
     inspections-step -->|index-populate | inspections-index
-    carriers-step --> | index-map | enriching-pipeline
+    carriers-step --> | index-map | carriers-index
     carriers-step --> | index-populate| enriching-pipeline
 
     crashes-csv-->|import| crashes-step
     inspections-csv -->|import| inspections-step
     carriers-csv -->|import| carriers-step
 
+    crashes-pipeline -->|populate| crashes-index
+
     crashes-enrichment-index -.->|enrich-policies| enriching-pipeline
     inspections-enrichment-index -.->|enrich-policies| enriching-pipeline
     enriching-pipeline -->|populate| carriers-index
 
+    crashes-ingestion-setup-step -.->|"pipelines (create)"| crashes-pipeline
 
-    carriers-ingestion-step -.->|enrichment-policies| crashes-enrichment-index
-    carriers-ingestion-step -.->|enrichment-policies| inspections-enrichment-index
-    carriers-ingestion-step -.->|pipelines| enriching-pipeline
+    carriers-ingestion-setup-step -.->|enrichment-policies| crashes-enrichment-index
+    carriers-ingestion-setup-step -.->|enrichment-policies| inspections-enrichment-index
+    carriers-ingestion-setup-step -.->|"pipelines (create)"| enriching-pipeline
 
 
 ```
