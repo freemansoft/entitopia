@@ -20,6 +20,7 @@
             "enrich_fields": [
                 "DOT_NUMBER",
                 "REPORT_NUMBER",
+                "REPORT_SEQ_NO",
                 "VEHICLE_ID_NUMBER"
             ]
         }

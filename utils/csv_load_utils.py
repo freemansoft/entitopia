@@ -21,11 +21,16 @@ class CsvLoadUtils:
             self.one_step,
             self.filename,
         )
+        skip_rows = self.skip_rows
+        # TODO: handle None
+        if skip_rows != 0:
+            skip_rows = range(1, skip_rows)
         results = pd.read_csv(
             file_path,
             encoding="windows-1252",
             nrows=self.num_rows,
-            skiprows=self.skip_rows,
+            header=0,
+            skiprows=skip_rows,
         )
         number_of_docs = len(results)
 
