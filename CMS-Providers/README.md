@@ -8,7 +8,7 @@ Broke out the clinician pipeline and indexing into their own steps so playing wi
 # Data
 
 ## doctors-clinicians
-1. Auto-generated clinician index `_id` because the same NPI and other ids appear more than once due to multiple hospitals or other registrations
+1. Auto-generated clinician index `_id` because the same ids (NPI, Ind_PAC_ID, Ind_enrl_ID) appear more than one row due to multiple hospitals or other registrations
 
 
 # References
