@@ -2,10 +2,13 @@
 # Purpose
 Provide a large data set using medicare providers.  `doctor-clinicians`  have more than one entry depending on how many registrations are captured.
 
+# Notes
+Broke out the clinician pipeline and indexing into their own steps so playing with the index would just be a --step with no --phase
+
 # Data
 
 ## doctors-clinicians
-1. Auto-generated `_id` because the same NPI and other ids appear more than once due to multiple hospitals or other registrations
+1. Auto-generated clinician index `_id` because the same NPI and other ids appear more than once due to multiple hospitals or other registrations
 
 
 # References
