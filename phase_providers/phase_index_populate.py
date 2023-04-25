@@ -29,15 +29,27 @@ class PhaseIndexingPopulate:
     ):
         records = data.to_dict(orient="records")
         for record in islice(records, num_rows):
-            doc = {"_id": record[id_field], "_source": record}
-            if ingestion_pipeline:
-                doc = {
-                    "_id": record[id_field],
-                    "_source": record,
-                    "pipeline": ingestion_pipeline,
-                }
-            # self.logger.debug("Ingestion doc: {}".format(doc))
-            yield doc
+            # support _id being specified and not, pipeline used and not
+            # seems cumbersome but is clear
+            try:
+                doc = {"_id": record[id_field], "_source": record}
+                if ingestion_pipeline:
+                    doc = {
+                        "_id": record[id_field],
+                        "_source": record,
+                        "pipeline": ingestion_pipeline,
+                    }
+                # self.logger.debug("Ingestion doc: {}".format(doc))
+                yield doc
+            except KeyError:
+                doc = {"_source": record}
+                if ingestion_pipeline:
+                    doc = {
+                        "_source": record,
+                        "pipeline": ingestion_pipeline,
+                    }
+                # self.logger.debug("Ingestion doc: {}".format(doc))
+                yield doc
 
     def handle(self):
         self.logger.info(
@@ -83,6 +95,20 @@ class PhaseIndexingPopulate:
                 # leave pipeline as None
                 pass
 
+            id_field = None
+            try:
+                id_field = index_config.id_field
+            except AttributeError:
+                # auto generate the id_field
+                pass
+
+            num_rows = None
+            try:
+                num_rows = index_config.num_rows
+            except AttributeError:
+                # all rows
+                pass
+
             for success, response in parallel_bulk(
                 client=self.es,
                 thread_count=8,
@@ -90,8 +116,8 @@ class PhaseIndexingPopulate:
                 actions=self.record_action(
                     data,
                     pipeline,
-                    index_config.id_field,
-                    index_config.num_rows,
+                    id_field,
+                    num_rows,
                 ),
                 raise_on_error=False,
                 raise_on_exception=False,
