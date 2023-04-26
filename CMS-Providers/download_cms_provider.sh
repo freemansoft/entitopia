@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# assumes in top level
+# assumes running in CMS-Providers dir
 
 mkdir -p configuration
 mkdir -p data

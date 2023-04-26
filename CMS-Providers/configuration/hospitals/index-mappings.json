@@ -1,0 +1,70 @@
+{
+    "index": "hospitals-{now/d}-000001",
+    "mappings": {
+        "properties": {
+            "Facility ID": {
+                "type": "keyword"
+            },
+            "Facility Name": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    },
+                    "phonetic": {
+                        "type": "text",
+                        "analyzer": "name_phonetic"
+                    }
+                }
+            },
+            "Addresss": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "street_clean"
+                    }
+                }
+            },
+            "City": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    }
+                }
+            },
+            "State": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "Phone Number": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "phone_clean"
+                    }
+                }
+            }
+        }
+    }
+}
