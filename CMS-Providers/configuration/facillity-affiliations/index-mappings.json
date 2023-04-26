@@ -1,0 +1,58 @@
+{
+    "index": "facillity-affiliations-{now/d}-000001",
+    "mappings": {
+        "properties": {
+            "NPI": {
+                "type": "keyword"
+            },
+            "frst_nm": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    },
+                    "phonetic": {
+                        "type": "text",
+                        "analyzer": "name_phonetic"
+                    }
+                }
+            },
+            "lst_nm": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    },
+                    "phonetic": {
+                        "type": "text",
+                        "analyzer": "name_phonetic"
+                    }
+                }
+            },
+            "mid_nm": {
+                "type": "text",
+                "fields": {
+                    "keyword": {
+                        "type": "keyword"
+                    },
+                    "clean": {
+                        "type": "text",
+                        "analyzer": "name_clean"
+                    },
+                    "phonetic": {
+                        "type": "text",
+                        "analyzer": "name_phonetic"
+                    }
+                }
+            }
+        }
+    }
+}

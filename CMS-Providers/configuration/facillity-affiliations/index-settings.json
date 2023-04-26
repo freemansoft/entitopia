@@ -1,0 +1,66 @@
+    {
+        "index": "facillity-affiliations-{now/d}-000001",
+        "settings": {
+            "index": {
+                "number_of_shards": 1,
+                "number_of_replicas": 1,
+                "analysis": {
+                    "filter": {
+                        "street_suffix_map": {
+                            "pattern": "(st)",
+                            "type": "pattern_replace",
+                            "replacement": "street"
+                        },
+                        "phonetic": {
+                            "type": "phonetic",
+                            "encoder": "metaphone"
+                        },
+                        "punct_white": {
+                            "pattern": "\\p{Punct}",
+                            "type": "pattern_replace",
+                            "replacement": " "
+                        },
+                        "remove_non_digits": {
+                            "pattern": "[^\\d]",
+                            "type": "pattern_replace",
+                            "replacement": ""
+                        }
+                    },
+                    "analyzer": {
+                        "name_clean": {
+                            "filter": [
+                                "icu_normalizer",
+                                "icu_folding",
+                                "punct_white"
+                            ],
+                            "tokenizer": "standard"
+                        },
+                        "name_phonetic": {
+                            "filter": [
+                                "icu_normalizer",
+                                "icu_folding",
+                                "punct_white",
+                                "phonetic"
+                            ],
+                            "tokenizer": "standard"
+                        },
+                        "street_clean": {
+                            "filter": [
+                                "icu_normalizer",
+                                "icu_folding",
+                                "punct_white",
+                                "trim"
+                            ],
+                            "tokenizer": "keyword"
+                        },
+                        "phone_clean": {
+                            "filter": [
+                                "remove_non_digits"
+                            ],
+                            "tokenizer": "keyword"
+                        }
+                    }
+                }
+            }
+        }
+    }

@@ -9,6 +9,14 @@
             ]
         },
         {
+            "name": "facillity-affiliations",
+            "phases": [
+                "index-create",
+                "index-map",
+                "index-populate"
+            ]
+        },
+        {
             "name": "hospitals",
             "phases": [
                 "index-create",

@@ -18,6 +18,8 @@ def process_phase_steps(
     phase_steps,
     project_config,
 ):
+    logger = logging.getLogger(__name__)
+
     for one_step in phase_steps:
         for one_phase in one_step.phases:
             dispatcher.process_phase_step(
@@ -27,6 +29,8 @@ def process_phase_steps(
                 one_phase,
                 project_config,
             )
+    if not phase_steps:
+        logger.warn("No steps specified - no work done")
 
 
 def load_project_config(project):
