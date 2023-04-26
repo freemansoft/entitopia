@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
-# assumes in top level
+# assumes running in DOT-Commercial dir
 
 mkdir -p configuration
 mkdir -p data
-mkdir -p data/carriers
-mkdir -p data/inspections
-mkdir -p data/crashes
 
-curl https://ai.fmcsa.dot.gov/SMS/files/FMCSA_CENSUS1_2023Feb.zip --output data/carriers/FMCSA_CENSUS1_2023Feb.zip
-curl ftp://ftp.senture.com/Inspection_2023Feb.zip --output data/inspections/Inspection_2023Feb.zip
-curl ftp://ftp.senture.com/Crash_2023Feb.zip --output data/crashes/Crash_2023Feb.zip
+FILE="data/carriers/FMCSA_CENSUS1_2023Feb.zip"
+if [ ! -f "$FILE" ]; then
+    mkdir -p data/carriers
+    curl https://ai.fmcsa.dot.gov/SMS/files/FMCSA_CENSUS1_2023Feb.zip --output "$FILE"
+    unzip "$FILE" -d data/carriers
+fi
 
-unzip data/carriers/FMCSA_CENSUS1_2023Feb.zip -d data/carriers
-unzip data/inspections/Inspection_2023Feb.zip -d data/inspections
-unzip data/crashes/Crash_2023Feb.zip -d data/crashes
+FILE=data/inspections/Inspection_2023Feb.zip
+if [ ! -f "$FILE" ]; then
+    mkdir -p data/inspections
+    curl ftp://ftp.senture.com/Inspection_2023Feb.zip --output "$FILE"
+    unzip "$FILE" -d data/inspections
+fi
+
+FILE=data/crashes/Crash_2023Feb.zip
+if [ ! -f "$FILE" ]; then
+    mkdir -p data/crashes
+    curl ftp://ftp.senture.com/Crash_2023Feb.zip --output "$FILE"
+    unzip "$FILE" -d data/crashes
+fi
