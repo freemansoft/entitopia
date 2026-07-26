@@ -93,6 +93,7 @@ This is a work in progress
     * I use ElasticSearch on Docker using https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch
     * Elasticsearch analysis plugins must be loaded
 1. Clone this repo
+1. Requires Python 3.11 or higher (see `.python-version`)
 1. Configure Python with `bash dependencies.sh`
 1. create an `es_config.json` from `es_config_template.json`
 1. Download data

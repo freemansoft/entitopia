@@ -2,3 +2,5 @@ __pycache__/
 .vscode/
 */data/
 es_config.json
+.venv/
+.claude/settings.local.json

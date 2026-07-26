@@ -9,4 +9,11 @@
 # pipreqs will generate the EXACT current version which is probably too fine
 # Edit to the major or major.minor numbers
 #
+set -e
+
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
+    echo "entitopia requires Python 3.11 or higher (found $(python3 --version))" >&2
+    exit 1
+}
+
 pip3 install -r requirements.txt

@@ -1,3 +1,14 @@
+import sys
+
+MINIMUM_PYTHON_VERSION = (3, 11)
+
+if sys.version_info < MINIMUM_PYTHON_VERSION:
+    sys.exit(
+        "entitopia requires Python {}.{} or higher (found {}.{}.{})".format(
+            *MINIMUM_PYTHON_VERSION, *sys.version_info[:3]
+        )
+    )
+
 import argparse
 import logging as logging
 from utils.custom_logging_formatter import CustomFormatter
