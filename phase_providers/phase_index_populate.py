@@ -11,6 +11,19 @@ from elasticsearch.helpers import parallel_bulk
 import utils.file_utils as file_utils
 from utils.csv_load_utils import CsvLoadUtils
 
+DOWNLOAD_ENV_RELATIVE_PATH = "configuration/download.env"
+
+
+def resolve_source_filename(project, source):
+    download_env = file_utils.load_key_value_file(
+        "{}/{}".format(project, DOWNLOAD_ENV_RELATIVE_PATH)
+    )
+    if download_env is None:
+        return source
+    return source.format(
+        year=download_env.get("YEAR"), month=download_env.get("MONTH")
+    )
+
 
 class PhaseIndexingPopulate:
     def __init__(self, es, project, one_step, project_config):
@@ -69,11 +82,12 @@ class PhaseIndexingPopulate:
         if index_config:
             elasticsearch_utils.replace_index_with_now_version(index_config)
             self.logger.debug("loaded config {}".format(index_config))
+            source_filename = resolve_source_filename(self.project, index_config.source)
             csv_loader = CsvLoadUtils(
                 self.project,
                 self.project_config.dataDir,
                 self.one_step,
-                index_config.source,
+                source_filename,
                 index_config.num_rows,
                 index_config.skip_rows,
             )
