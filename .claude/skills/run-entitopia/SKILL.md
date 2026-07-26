@@ -22,7 +22,7 @@ All paths below are relative to the repo root.
 
 ## Prerequisites
 
-- Docker (used to run Elasticsearch 8.6.2 with the `analysis-icu` and
+- Docker (used to run Elasticsearch 9.4.4 with the `analysis-icu` and
   `analysis-phonetic` plugins — the index-settings.json analyzers in
   both example projects require them; without the plugins, index
   creation/mapping still "succeeds" but the custom analyzers silently
@@ -55,7 +55,7 @@ runs — the driver writes it for you (`http`, no auth, matching the
 ```
 
 This is the harness that was actually run to verify this skill. It:
-1. Builds `entitopia-es-dev:8.6.2` (base ES image + the two analysis
+1. Builds `entitopia-es-dev:9.4.4` (base ES image + the two analysis
    plugins) if not already built, and starts it on `localhost:9200`
    with `xpack.security.enabled=false` — no TLS/auth to configure.
 2. Creates `.venv` with `python3.12` and runs `dependencies.sh`.
@@ -169,7 +169,7 @@ actually running the pipeline against a live cluster, which is what
   continues — the index still gets created, just without the intended
   analyzers, and nothing else in the pipeline errors. Always build from
   `driver.sh`'s Dockerfile (or otherwise confirm both plugins are
-  installed) rather than a stock `elasticsearch:8.6.2` image.
+  installed) rather than a stock `elasticsearch:9.4.4` image.
 - **New documents aren't visible immediately after indexing — and this
   silently breaks enrichment, not just `_count`.** ES's default 1s
   refresh interval means a `_count`/`_search` run right after
@@ -214,6 +214,16 @@ actually running the pipeline against a live cluster, which is what
 - **`es_config.json` and `*/data/` are gitignored**, and now so is
   `.venv/`. The driver recreates all three from scratch every run —
   never assume they're present, and never commit them.
+- **The `elasticsearch` Python client's `Elasticsearch(timeout=...)`
+  constructor kwarg was removed in 9.0** (deprecated since 8.0,
+  replaced by `request_timeout`). `utils/elasticsearch_utils.py`
+  already uses `request_timeout` — if you see
+  `TypeError: __init__() got an unexpected keyword argument 'timeout'`,
+  something reintroduced the old name. `from elasticsearch import client`
+  (`IndicesClient`/`IngestClient`/`EnrichClient`) still works against
+  the 9.x client too, just with a `DeprecationWarning` pointing at
+  importing those directly from `elasticsearch` instead — harmless,
+  left as-is.
 
 ## Troubleshooting
 

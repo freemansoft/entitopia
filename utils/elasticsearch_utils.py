@@ -11,7 +11,7 @@ import utils.elasticsearch_utils as elasticsearch_utils
 
 def connect_to_es(es_connection_info):
     logger = logging.getLogger(__name__)
-    # Version 8.x is really chatty
+    # Elasticsearch's client transport logging is really chatty
     logging.getLogger("elastic_transport.transport").setLevel(logging.WARN)
     # For locally generated certs
     requests.packages.urllib3.disable_warnings()
@@ -26,7 +26,8 @@ def connect_to_es(es_connection_info):
         ],
         basic_auth=[es_connection_info.username, es_connection_info.password],
         verify_certs=False,
-        timeout=es_connection_info.timeout,
+        # `timeout` was removed in elasticsearch-py 9.0; `request_timeout` is the replacement
+        request_timeout=es_connection_info.timeout,
     )
 
     # test the connection

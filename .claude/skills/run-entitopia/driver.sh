@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
 ES_CONTAINER=entitopia-es-dev
-ES_IMAGE=entitopia-es-dev:8.6.2
+ES_IMAGE=entitopia-es-dev:9.4.4
 ES_URL=http://localhost:9200
 PY=python3.12
 [ -x "$(command -v python3.12)" ] || PY=python3
@@ -24,7 +24,7 @@ es_up() {
             echo "Building $ES_IMAGE (base ES image + analysis-icu + analysis-phonetic plugins)"
             tmpdir=$(mktemp -d)
             cat > "$tmpdir/Dockerfile" <<'EOF'
-FROM docker.elastic.co/elasticsearch/elasticsearch:8.6.2
+FROM docker.elastic.co/elasticsearch/elasticsearch:9.4.4
 RUN bin/elasticsearch-plugin install --batch analysis-icu analysis-phonetic
 EOF
             docker build -t "$ES_IMAGE" "$tmpdir"
