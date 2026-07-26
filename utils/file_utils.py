@@ -48,3 +48,25 @@ def load_from_project_file(target_project, config_or_data, target_step, file):
     except Exception as e:
         logger.warning("Returing: None {}".format(e))
         return None
+
+
+def load_key_value_file(file_name):
+    """
+    Parses simple KEY='VALUE' or KEY=VALUE lines (bash-sourceable) into a dict.
+    Returns None if the file cannot be opened.
+    """
+    logger = logging.getLogger(__name__)
+    result = {}
+    try:
+        with open(file_name) as key_value_file:
+            for line in key_value_file:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                key, _, value = line.partition("=")
+                result[key.strip()] = value.strip().strip("'\"")
+        logger.debug("Loaded {} info : {}".format(file_name, result))
+        return result
+    except Exception as e:
+        logger.warning("Failed opening:{} error:{}".format(file_name, e))
+        return None
