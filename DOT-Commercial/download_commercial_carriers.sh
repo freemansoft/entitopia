@@ -50,7 +50,7 @@ download_dataset() {
 
     mkdir -p "data/${data_subdir}"
     echo "Downloading $name from $url"
-    if curl --fail "$url" --output "$file"; then
+    if curl --fail "$url" --output "$file" && unzip -t "$file" > /dev/null 2>&1; then
         unzip "$file" -d "data/${data_subdir}"
     else
         echo "No data found for $name (year=$YEAR, month=$MONTH)" >&2
