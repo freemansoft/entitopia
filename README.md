@@ -97,7 +97,7 @@ This is a work in progress
 1. Configure Python with `bash dependencies.sh`
 1. create an `es_config.json` from `es_config_template.json`
 1. Download data
-    * Use the `download.....sh` script in one of the example directories
+    * Use the download or fetch script in one of the example directories (e.g. `download_cms_provider.sh`, `fetch_commercial_carriers.py`)
 1. Run `python3 execute_project.py --project<the-project-dir>`
     * `python3 execute_project.py --project=CMS-Providers`
 1. Verify the indexes have been created

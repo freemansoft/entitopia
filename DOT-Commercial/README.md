@@ -1,4 +1,7 @@
-DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
+DOT Commercial https://data.transportation.gov/Trucking-and-Motorcoaches/
+
+## Fetching Data
+Run `python3 fetch_commercial_carriers.py` from this directory to pull the latest carrier census, crash, and inspection data from the data.transportation.gov Socrata API. Optionally pass `--dataset=<carriers|crashes|inspections>` to fetch just one. See `configuration/fetch-config.json` for dataset IDs and the crash/inspection lookback window.
 
 ## Processing Steps
 
