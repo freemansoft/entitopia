@@ -1,6 +1,13 @@
+import argparse
 import logging
 import os
+import sys
 from datetime import datetime, timedelta
+
+import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import utils.file_utils as file_utils
 
 
 def compute_where_clause(date_field, window_months, now):
@@ -92,3 +99,58 @@ def fetch_dataset(
     os.replace(tmp_path, output_path)
     logger.info("Wrote {} total rows to {}".format(total_rows, output_path))
     return total_rows
+
+
+FETCH_CONFIG_FILE_NAME = "configuration/fetch-config.json"
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dataset",
+        required=False,
+        default=None,
+        help="Fetch a single dataset by name (e.g. carriers, crashes, inspections). Fetches all configured datasets if omitted.",
+    )
+    args = parser.parse_args()
+
+    config = file_utils.load_from_file(FETCH_CONFIG_FILE_NAME)
+    if not config:
+        logger.critical("Could not load {}".format(FETCH_CONFIG_FILE_NAME))
+        sys.exit(1)
+
+    app_token = os.environ.get(config.app_token_env_var)
+
+    dataset_names = list(vars(config.datasets).keys())
+    if args.dataset:
+        if args.dataset not in dataset_names:
+            logger.critical(
+                "Unknown dataset: {}. Known datasets: {}".format(
+                    args.dataset, dataset_names
+                )
+            )
+            sys.exit(1)
+        dataset_names = [args.dataset]
+
+    session = requests.Session()
+    for name in dataset_names:
+        dataset_config = getattr(config.datasets, name)
+        logger.info("Fetching dataset: {}".format(name))
+        total = fetch_dataset(
+            session=session,
+            base_url=config.base_url,
+            dataset_id=dataset_config.dataset_id,
+            output_path=dataset_config.output,
+            date_field=dataset_config.date_field,
+            window_months=dataset_config.window_months,
+            page_size=config.page_size,
+            app_token=app_token,
+        )
+        logger.info("Fetched {} rows for {}".format(total, name))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,25 @@
+{
+    "base_url": "https://data.transportation.gov",
+    "app_token_env_var": "SOCRATA_APP_TOKEN",
+    "page_size": 50000,
+    "datasets": {
+        "carriers": {
+            "dataset_id": "kjg3-diqy",
+            "output": "data/carriers/carriers.csv",
+            "date_field": null,
+            "window_months": null
+        },
+        "crashes": {
+            "dataset_id": "aayw-vxb3",
+            "output": "data/crashes/crashes.csv",
+            "date_field": "report_date",
+            "window_months": 24
+        },
+        "inspections": {
+            "dataset_id": "fx4q-ay7w",
+            "output": "data/inspections/inspections.csv",
+            "date_field": "insp_date",
+            "window_months": 24
+        }
+    }
+}
