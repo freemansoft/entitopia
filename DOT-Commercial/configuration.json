@@ -23,6 +23,13 @@
             ]
         },
         {
+            "name": "inspections-ingestion-setup",
+            "phases": [
+                "enrichment-policies",
+                "pipelines"
+            ]
+        },
+        {
             "name": "inspections",
             "phases": [
                 "index-create",
