@@ -1,0 +1,13 @@
+{
+    "index": "inspections-{now/d}-000001",
+    "mappings": {
+        "properties": {
+            "dot_number": {
+                "type": "long"
+            },
+            "inspection_id": {
+                "type": "long"
+            }
+        }
+    }
+}
