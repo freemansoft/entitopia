@@ -77,8 +77,8 @@ This is a work in progress
 1. Support multille phases for --phase command line argument
 1. Add support for multiple pipelines in the pipeline phase
 1. Add support for target specific processors
+1. **(priority)** DOT-Commercial: crashes-enrichment-into-carriers currently returns zero matches, silently disabling one of the two enrichment features. `crashes` index's `dot_number` field is dynamically mapped as `float` (pandas infers `float64` due to ~19.5% null `dot_number` values in the crash dataset), while `carriers`/`inspections` map it `long` — the type mismatch prevents the enrich policy from matching. Needs an explicit fix (dtype coercion on CSV load, or an explicit ES mapping template, mirroring how `carriers/index-mappings.json` already pins its own field types) rather than relying on dynamic mapping.
 1. DOT-Commercial: carriers ingestion loses ~0.04-0.44% of documents under load to Elasticsearch enrich-coordinator queue-capacity limits (1024 slots) when `parallel_bulk`'s 8-thread concurrency runs enrich lookups against the full ~2M-carrier / 5.6M-inspection / 333K-crash dataset. Not a data-correctness bug (failures are now logged and idempotent reruns fill the gap), but a real throughput ceiling worth addressing (e.g. tune thread_count, add retry/backoff, or raise the ES enrich queue capacity setting).
-1. DOT-Commercial: crashes-enrichment-into-carriers currently returns zero matches. `crashes` index's `dot_number` field is dynamically mapped as `float` (pandas infers `float64` due to ~19.5% null `dot_number` values in the crash dataset), while `carriers`/`inspections` map it `long` — the type mismatch prevents the enrich policy from matching. Needs an explicit fix (dtype coercion on CSV load, or an explicit ES mapping template) rather than relying on dynamic mapping.
 
 ### Closed work items
 1. Add support for multiple policies in a policy phase.
