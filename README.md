@@ -78,6 +78,7 @@ This is a work in progress
 1. Add support for multiple pipelines in the pipeline phase
 1. Add support for target specific processors
 1. DOT-Commercial: carriers ingestion loses ~0.04-0.44% of documents under load to Elasticsearch enrich-coordinator queue-capacity limits (1024 slots) when `parallel_bulk`'s 8-thread concurrency runs enrich lookups against the full ~2M-carrier / 5.6M-inspection / 333K-crash dataset. Not a data-correctness bug (failures are now logged and idempotent reruns fill the gap), but a real throughput ceiling worth addressing (e.g. tune thread_count, add retry/backoff, or raise the ES enrich queue capacity setting).
+1. DOT-Commercial: inspections ingestion silently drops ~0.65% of documents (36,788 of 5,647,567 on a full run) because `insp_carrier_state_id` is not pinned in `inspections/index-mappings.json` — Elasticsearch dynamically infers its type (`float`) from whichever value it sees first under `parallel_bulk`'s 8-thread concurrency, and the source column actually mixes numeric and non-numeric strings (e.g. `'NONE'`, `'S00000030887'`), so every non-conforming row fails with `document_parsing_exception`. Deterministic and lossy on every full run; which specific rows drop varies with thread ordering. Fix by pinning `insp_carrier_state_id` to `keyword` in `index-mappings.json`, mirroring how `dot_number`/`inspection_id` are already pinned.
 
 ### Closed work items
 1. Add support for multiple policies in a policy phase.
