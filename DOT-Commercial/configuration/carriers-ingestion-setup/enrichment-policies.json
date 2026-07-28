@@ -3,12 +3,10 @@
         "name": "inspections-enrichment-policy",
         "match": {
             "indices": "inspections-{now/d}-000001",
-            "match_field": "DOT_NUMBER",
+            "match_field": "dot_number",
             "enrich_fields": [
-                "DOT_NUMBER",
-                "UNIQUE_ID",
-                "VIN",
-                "VIN2"
+                "dot_number",
+                "inspection_id"
             ]
         }
     },
@@ -16,12 +14,12 @@
         "name": "crashes-enrichment-policy",
         "match": {
             "indices": "crashes-{now/d}-000001",
-            "match_field": "DOT_NUMBER",
+            "match_field": "dot_number",
             "enrich_fields": [
-                "DOT_NUMBER",
-                "REPORT_NUMBER",
-                "REPORT_SEQ_NO",
-                "VEHICLE_ID_NUMBER"
+                "dot_number",
+                "report_number",
+                "report_seq_no",
+                "vehicle_identification_number"
             ]
         }
     }

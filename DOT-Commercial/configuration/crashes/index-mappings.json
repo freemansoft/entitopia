@@ -1,0 +1,10 @@
+{
+    "index": "crashes-{now/d}-000001",
+    "mappings": {
+        "properties": {
+            "dot_number": {
+                "type": "long"
+            }
+        }
+    }
+}

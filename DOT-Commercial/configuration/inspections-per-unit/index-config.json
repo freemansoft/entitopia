@@ -1,0 +1,8 @@
+{
+    "index": "inspections-per-unit-{now/d}-000001",
+    "alias": "inspections-per-unit-000001",
+    "source": "inspections_per_unit.csv",
+    "id_field": "insp_unit_id",
+    "num_rows": null,
+    "skip_rows": 0
+}

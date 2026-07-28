@@ -2,10 +2,10 @@
     "index": "carriers-{now/d}-000001",
     "mappings": {
         "properties": {
-            "DOT_NUMBER": {
+            "dot_number": {
                 "type": "keyword"
             },
-            "LEGAL_NAME": {
+            "legal_name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -21,7 +21,7 @@
                     }
                 }
             },
-            "DBA_NAME": {
+            "dba_name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -37,7 +37,7 @@
                     }
                 }
             },
-            "PHY_STREET": {
+            "phy_street": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -49,7 +49,7 @@
                     }
                 }
             },
-            "PHY_CITY": {
+            "phy_city": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -61,7 +61,7 @@
                     }
                 }
             },
-            "PHY_STATE": {
+            "phy_state": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -69,7 +69,7 @@
                     }
                 }
             },
-            "MAILING_STREET": {
+            "mailing_street": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -81,7 +81,7 @@
                     }
                 }
             },
-            "MAILING_CITY": {
+            "mailing_city": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -93,7 +93,7 @@
                     }
                 }
             },
-            "MAILING_STATE": {
+            "mailing_state": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -101,7 +101,7 @@
                     }
                 }
             },
-            "TELEPHONE": {
+            "telephone": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -113,7 +113,7 @@
                     }
                 }
             },
-            "EMAIL_ADDRESS": {
+            "email_address": {
                 "type": "text",
                 "fields": {
                     "keyword": {

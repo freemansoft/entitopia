@@ -2,11 +2,18 @@
     "name": "crashes-pipeline-000001",
     "processors": [
         {
+            "script": {
+                "description": "Coerce dot_number to a real JSON integer in _source so the crashes-enrichment-policy's internal enrich index stores a clean '2975796' instead of a float-suffixed '2975796.0' that would never term-match carriers' integer dot_number. A 'convert' processor (type: long) was rejected because Elasticsearch's convert-to-long calls Long.parseLong() on the value's string form, which throws on decimal-point strings like '3240797.0'; a Painless '(long)' cast does not have this limitation.",
+                "source": "if (ctx.dot_number != null) { ctx.dot_number = (long) ctx.dot_number }",
+                "ignore_failure": true
+            }
+        },
+        {
             "fingerprint": {
                 "description": "Each vehicle in a crash gets the same report number with its own sequence number",
                 "fields": [
-                    "REPORT_NUMBER",
-                    "REPORT_SEQ_NO"
+                    "report_number",
+                    "report_seq_no"
                 ]
             }
         }

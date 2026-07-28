@@ -15,6 +15,21 @@
             ]
         },
         {
+            "name": "inspections-per-unit",
+            "phases": [
+                "index-create",
+                "index-map",
+                "index-populate"
+            ]
+        },
+        {
+            "name": "inspections-ingestion-setup",
+            "phases": [
+                "enrichment-policies",
+                "pipelines"
+            ]
+        },
+        {
             "name": "inspections",
             "phases": [
                 "index-create",

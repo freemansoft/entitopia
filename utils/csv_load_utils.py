@@ -27,7 +27,7 @@ class CsvLoadUtils:
             skip_rows = range(1, skip_rows)
         results = pd.read_csv(
             file_path,
-            encoding="windows-1252",
+            encoding="utf-8",
             nrows=self.num_rows,
             header=0,
             skiprows=skip_rows,

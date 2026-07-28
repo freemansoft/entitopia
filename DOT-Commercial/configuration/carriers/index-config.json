@@ -1,9 +1,9 @@
 {
     "index": "carriers-{now/d}-000001",
     "alias": "carriers-000001",
-    "source": "FMCSA_CENSUS1_2023Feb.txt",
-    "id_field": "DOT_NUMBER",
+    "source": "carriers.csv",
+    "id_field": "dot_number",
     "pipeline": "carrier-enrichment-pipeline-000001",
-    "num_rows": 50000,
+    "num_rows": null,
     "skip_rows": 0
 }

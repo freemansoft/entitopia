@@ -5,7 +5,7 @@
             "enrich": {
                 "description": "slipstream 'inspection' data",
                 "policy_name": "inspections-enrichment-policy",
-                "field": "DOT_NUMBER",
+                "field": "dot_number",
                 "target_field": "inspections",
                 "max_matches": "100"
             }
@@ -14,7 +14,7 @@
             "enrich": {
                 "description": "slipstream 'crashes' data",
                 "policy_name": "crashes-enrichment-policy",
-                "field": "DOT_NUMBER",
+                "field": "dot_number",
                 "target_field": "crashes",
                 "max_matches": "100"
             }
