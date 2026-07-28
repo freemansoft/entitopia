@@ -12,6 +12,9 @@ import utils.file_utils as file_utils
 from utils.csv_load_utils import CsvLoadUtils
 
 
+MAX_LOGGED_FAILURES = 20
+
+
 class PhaseIndexingPopulate:
     def __init__(self, es, project, one_step, project_config):
         self.es = es
@@ -125,12 +128,18 @@ class PhaseIndexingPopulate:
             ):
                 if not success:
                     failure_count += 1
-                    self.logger.error("Failed to index document: {}".format(response))
+                    if failure_count <= MAX_LOGGED_FAILURES:
+                        self.logger.error("Failed to index document: {}".format(response))
                 prog_meter.update(1)
 
             if failure_count:
                 self.logger.error(
-                    "{} of {} documents failed to index into {}".format(
-                        failure_count, len(data), index_config.index
+                    "{} of {} documents failed to index into {}{}".format(
+                        failure_count,
+                        len(data),
+                        index_config.index,
+                        " (showing first {} failures above)".format(MAX_LOGGED_FAILURES)
+                        if failure_count > MAX_LOGGED_FAILURES
+                        else "",
                     )
                 )

@@ -19,6 +19,9 @@ def compute_where_clause(date_field, window_months, now):
     """
     if not date_field or not window_months:
         return None
+    # Approximates a month as 30 days (24 months ~= 720 days ~= 23.7 real
+    # months) — deliberately simple for an SMS-lookback-style window filter,
+    # not meant to be calendar-exact.
     cutoff = now - timedelta(days=30 * window_months)
     cutoff_str = cutoff.strftime("%Y%m%d")
     return "{} > '{}'".format(date_field, cutoff_str)
@@ -84,6 +87,11 @@ def fetch_dataset(
                 header_written = True
             out_file.writelines(data_lines)
 
+            # NOTE: this counts physical CSV lines, not logical records — a quoted
+            # field containing an embedded newline collapses two lines into one
+            # real record, so total_rows can slightly over-count vs. the actual
+            # number of rows a CSV parser (e.g. pandas) would read from this file.
+            # The written file content itself is unaffected and correct.
             page_row_count = len(data_lines)
             total_rows += page_row_count
             logger.info(
