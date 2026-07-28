@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; case \"$f\" in *.md) npx --no-install prettier --write \"$f\" >&2 ;; esac; } 2>/dev/null || true",
+            "statusMessage": "Formatting markdown with prettier..."
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
