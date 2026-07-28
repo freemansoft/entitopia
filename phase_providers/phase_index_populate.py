@@ -109,6 +109,7 @@ class PhaseIndexingPopulate:
                 # all rows
                 pass
 
+            failure_count = 0
             for success, response in parallel_bulk(
                 client=self.es,
                 thread_count=8,
@@ -122,5 +123,14 @@ class PhaseIndexingPopulate:
                 raise_on_error=False,
                 raise_on_exception=False,
             ):
-                # every one of these will yield
+                if not success:
+                    failure_count += 1
+                    self.logger.error("Failed to index document: {}".format(response))
                 prog_meter.update(1)
+
+            if failure_count:
+                self.logger.error(
+                    "{} of {} documents failed to index into {}".format(
+                        failure_count, len(data), index_config.index
+                    )
+                )

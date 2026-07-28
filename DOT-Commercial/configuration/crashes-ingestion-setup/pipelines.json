@@ -5,8 +5,8 @@
             "fingerprint": {
                 "description": "Each vehicle in a crash gets the same report number with its own sequence number",
                 "fields": [
-                    "REPORT_NUMBER",
-                    "REPORT_SEQ_NO"
+                    "report_number",
+                    "report_seq_no"
                 ]
             }
         }

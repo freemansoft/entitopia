@@ -2,7 +2,7 @@
     "alias": "inspections-000001",
     "index": "inspections-{now/d}-000001",
     "source": "inspections.csv",
-    "id_field": "UNIQUE_ID",
+    "id_field": "inspection_id",
     "num_rows": null,
     "skip_rows": 0
 }
