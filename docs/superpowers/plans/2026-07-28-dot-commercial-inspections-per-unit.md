@@ -572,11 +572,14 @@ git commit -m "Fix crashes.dot_number type mismatch blocking crashes-enrichment-
 - Consumes: the complete step chain built in Tasks 1-5.
 - Produces: a full-scale, production-parity run confirming no regression, plus docs that match the shipped 7-step pipeline.
 
-- [ ] **Step 1: Run the full pipeline end-to-end, no filters**
+- [ ] **Step 1: Delete today's `crashes` index, then run the full pipeline end-to-end with no filters**
 
 This is the only full-scale (non-sampled) run in this plan — all `num_rows` are already back to `null` from Tasks 4 and 5's reverts, and `inspections-per-unit`/`inspections-ingestion-setup` need no reduction (already small from Task 1's windowed fetch). This is the authoritative regression check.
 
+**Known pre-existing quirk, discovered during Task 5 (out of scope to fix here, just work around it):** `DOT-Commercial/configuration/crashes/index-config.json` has no `id_field`, so Elasticsearch auto-generates a random `_id` for every document on each `index-populate` run. `inspections`/`carriers`/`inspections-per-unit` all have an `id_field` (idempotent overwrite on rerun), but `crashes` does not — running the `crashes` step twice against the same day's index silently doubles its document count instead of overwriting. Task 5's validation already populated today's `crashes-2026.07.28-000001` index once (currently a clean 333,186 docs) — running the full pipeline again without clearing it first would append a second copy and break the expected count below. Delete it first so this run creates it fresh:
+
 ```bash
+curl -s -X DELETE "http://localhost:9200/crashes-2026.07.28-000001"
 .venv/bin/python3 execute_project.py --project=DOT-Commercial
 ```
 
