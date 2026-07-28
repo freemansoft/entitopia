@@ -20,6 +20,12 @@
             "output": "data/inspections/inspections.csv",
             "date_field": "insp_date",
             "window_months": 24
+        },
+        "inspections_per_unit": {
+            "dataset_id": "wt8s-2hbx",
+            "output": "data/inspections-per-unit/inspections_per_unit.csv",
+            "date_field": "change_date",
+            "window_months": 24
         }
     }
 }
