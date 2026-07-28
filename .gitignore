@@ -4,3 +4,4 @@ __pycache__/
 es_config.json
 .venv/
 .claude/settings.local.json
+.DS_Store
