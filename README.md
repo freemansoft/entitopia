@@ -72,7 +72,7 @@ This is a work in progress
 ## Open Work Items
 1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
 1. Cleaning up exiting
-1. Deleting enrichment policies when they are tied to pipelines.  You have to delete the pipeline manually before policies can be deleted.
+1. Deleting enrichment policies when they are tied to pipelines.  You have to delete the pipeline manually before policies can be deleted. This is worse than a bureaucratic annoyance: if a rerun's policy rebuild silently hits this conflict (because a pipeline referencing the policy is still live from a prior run), the enrich policy is left as a STALE, UNDERSIZED snapshot with no error — later steps keep enriching against outdated/incomplete data with no signal anything is wrong. Confirmed in practice during the DOT-Commercial VIN/units work: `inspections-enrichment-policy` silently stayed pinned to a 5,000-row validation-sample snapshot of `inspections` across a full 5.6M-row production run because `carrier-enrichment-pipeline-000001` still existed and blocked the policy delete-and-rebuild, dropping `carriers.inspections` enrichment coverage from ~572K to ~4K matches with no failure anywhere in the run.
 1. Support multiple steps for --step command line argument
 1. Support multille phases for --phase command line argument
 1. Add support for multiple pipelines in the pipeline phase
