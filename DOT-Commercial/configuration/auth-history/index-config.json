@@ -1,0 +1,7 @@
+{
+    "index": "auth-history-{now/d}-000001",
+    "alias": "auth-history-000001",
+    "source": "auth_history.csv",
+    "num_rows": null,
+    "skip_rows": 0
+}
