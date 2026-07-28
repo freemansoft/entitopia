@@ -1,14 +1,16 @@
 DOT Commercial https://data.transportation.gov/Trucking-and-Motorcoaches/
 
 ## Fetching Data
-Run `python3 fetch_commercial_carriers.py` from this directory to pull the latest carrier census, crash, and inspection data from the data.transportation.gov Socrata API. Optionally pass `--dataset=<carriers|crashes|inspections>` to fetch just one. See `configuration/fetch-config.json` for dataset IDs and the crash/inspection lookback window.
+Run `python3 fetch_commercial_carriers.py` from this directory to pull the latest carrier census, crash, inspection, and inspection-unit (VIN) data from the data.transportation.gov Socrata API. Optionally pass `--dataset=<carriers|crashes|inspections|inspections_per_unit>` to fetch just one. See `configuration/fetch-config.json` for dataset IDs and the crash/inspection lookback window.
 
 ## Processing Steps
 
-This data set is loaded and configured in 5 steps.
+This data set is loaded and configured in 7 steps.
 1. `crashes-ingestion-setup` - create a pipeline that creates a fingerprint from two fields to be sued as the `id` field
 1. `crashes` - create an index and load the crash data
-1. `inspections` - create an index and load the vehicle inpsections data
+1. `inspections-per-unit` - create an index and load the per-unit VIN/vehicle data (FMCSA `wt8s-2hbx`)
+1. `inspections-ingestion-setup` - create the enrichment index on `inspections-per-unit` and an ingestion pipeline that uses it
+1. `inspections` - create an index and load the vehicle inpsections data, enriched with per-unit VIN data via the pipeline from `inspections-ingestion-setup`
 1. `carriers-ingestion-setup` - create the enrichment indexes on `crashes` and `inspections` and an ingestion pipeline that uses them
 1. `carriers` - create an index and load the carriers data using the pipeline to enrich `carriers` with data from `crashes` and `inspections`
 
