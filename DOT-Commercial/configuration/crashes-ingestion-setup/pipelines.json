@@ -2,6 +2,13 @@
     "name": "crashes-pipeline-000001",
     "processors": [
         {
+            "script": {
+                "description": "Coerce dot_number to a real JSON integer in _source (not just the live index's search-time type) so the crashes-enrichment-policy's internal enrich index — which copies _source verbatim and always indexes its match field as keyword — stores a clean '2975796' instead of a float-suffixed '2975796.0' that would never term-match carriers' integer dot_number. NOTE: a 'convert' processor (type: long) was tried first per the original plan but fails silently here: Elasticsearch's convert-to-long implementation calls Long.parseLong() on the value's string form, which throws NumberFormatException on decimal-point strings like '3240797.0' -- confirmed via _simulate both with and without ignore_failure. A script processor casting via Painless '(long)' does not have this limitation.",
+                "source": "if (ctx.dot_number != null) { ctx.dot_number = (long) ctx.dot_number }",
+                "ignore_failure": true
+            }
+        },
+        {
             "fingerprint": {
                 "description": "Each vehicle in a crash gets the same report number with its own sequence number",
                 "fields": [
