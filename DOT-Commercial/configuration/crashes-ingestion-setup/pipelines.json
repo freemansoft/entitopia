@@ -7,15 +7,6 @@
                 "source": "if (ctx.dot_number != null) { ctx.dot_number = (long) ctx.dot_number }",
                 "ignore_failure": true
             }
-        },
-        {
-            "fingerprint": {
-                "description": "Each vehicle in a crash gets the same report number with its own sequence number",
-                "fields": [
-                    "report_number",
-                    "report_seq_no"
-                ]
-            }
         }
     ]
 }

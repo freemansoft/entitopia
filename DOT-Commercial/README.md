@@ -22,7 +22,7 @@ Run `python3 fetch_commercial_carriers.py` from this directory to pull the lates
 
 This data set is loaded and configured in 10 steps.
 
-1. `crashes-ingestion-setup` - create a pipeline that creates a fingerprint from two fields to be sued as the `id` field
+1. `crashes-ingestion-setup` - create a pipeline that coerces `dot_number` to a real integer in `_source` (fixes the enrich-match bug described in the design spec)
 1. `crashes` - create an index and load the crash data
 1. `inspections-per-unit` - create an index and load the per-unit VIN/vehicle data (FMCSA `wt8s-2hbx`)
 1. `inspections-ingestion-setup` - create the enrichment index on `inspections-per-unit` and an ingestion pipeline that uses it
