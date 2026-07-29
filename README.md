@@ -1,31 +1,36 @@
 # Purpose
-Provide framework for loading data into elasticsearch with just configuration.  Initial work is targeted at entity searching but it could be anything.
+
+Provide framework for loading data into elasticsearch with just configuration. Initial work is targeted at entity searching but it could be anything.
 
 # Supported
+
 1. Data importation from CSV files
 1. Index creation
-    1. Index mapping
-    1. Index settings
-    1. Index aliases
+   1. Index mapping
+   1. Index settings
+   1. Index aliases
 1. Enrichment Policies
 1. Pipeline creation bound to one (1) or more enrichment policies
 1. Index population / load using parallel bulk API
-    1. Direct to index
-    1. Via pipeline
+   1. Direct to index
+   1. Via pipeline
 
 ## execute_project.py Command line options
 
-* `--project=` Data target directory contain config and data
-* `--step=` The steps, config directories, to execute
-* `--phase=` Config file types should be used if avaialble in each step
+- `--project=` Data target directory contain config and data
+- `--step=` The steps, config directories, to execute
+- `--phase=` Config file types should be used if avaialble in each step
 
 # Target Directories, Steps and Phases
 
 ## Steps
-Steps are basically a bundle of related work. They are defined in a project's configuration.json.  Each step's configuration is defined in configuration files in a `project\configuration` directory one per phase.
+
+Steps are basically a bundle of related work. They are defined in a project's configuration.json. Each step's configuration is defined in configuration files in a `project\configuration` directory one per phase.
 
 ## Configuration : Steps and Phases
-A configuration file at the top of the `--project` directory describes the steps and phases that are possible. The configuration directories represent _steps_.  Configuration files in the directories contain the _phase configuration_ files.
+
+A configuration file at the top of the `--project` directory describes the steps and phases that are possible. The configuration directories represent _steps_. Configuration files in the directories contain the _phase configuration_ files.
+
 ```mermaid
 flowchart LR
     Target["--project"]
@@ -45,17 +50,20 @@ flowchart LR
 
     Step3-.->Phase31[Phase index-populate]
 ```
+
 ## Processing Steps are made up of Phases
-Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps.  Each step can contain zero or more phases.  The currently supported phases as implemented in [`phase_providers`](phase_providers)
+
+Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps. Each step can contain zero or more phases. The currently supported phases as implemented in [`phase_providers`](phase_providers)
 
 1. `index-map` - create an index and alias
 1. `enrichment-policies` - create enrichment policies and the related enrichment indexes
 1. `pipelines` - create elasticsearch ingestion pipelines
 1. `index-populate` - load data into an index
 
-
 ## Data : Steps
-Processing is made up of one or more steps. Data is loaded during the `index-populate` phase.  We stage the source data in `data` subdirectories that have the same name as their step in the top level configuration
+
+Processing is made up of one or more steps. Data is loaded during the `index-populate` phase. We stage the source data in `data` subdirectories that have the same name as their step in the top level configuration
+
 ```mermaid
 flowchart LR
     Target-->Config --> ConfigFile[configuration.json]
@@ -67,12 +75,13 @@ flowchart LR
 ```
 
 # Status
+
 This is a work in progress
 
 ## Open Work Items
-1. Implement compund indexes or indexes from combinations of fields.  Required for several of the data sets
+
 1. Cleaning up exiting
-1. Deleting enrichment policies when they are tied to pipelines.  You have to delete the pipeline manually before policies can be deleted. This is worse than a bureaucratic annoyance: if a rerun's policy rebuild silently hits this conflict (because a pipeline referencing the policy is still live from a prior run), the enrich policy is left as a STALE, UNDERSIZED snapshot with no error — later steps keep enriching against outdated/incomplete data with no signal anything is wrong. Confirmed in practice during the DOT-Commercial VIN/units work: `inspections-enrichment-policy` silently stayed pinned to a 5,000-row validation-sample snapshot of `inspections` across a full 5.6M-row production run because `carrier-enrichment-pipeline-000001` still existed and blocked the policy delete-and-rebuild, dropping `carriers.inspections` enrichment coverage from ~572K to ~4K matches with no failure anywhere in the run.
+1. Deleting enrichment policies when they are tied to pipelines. You have to delete the pipeline manually before policies can be deleted. This is worse than a bureaucratic annoyance: if a rerun's policy rebuild silently hits this conflict (because a pipeline referencing the policy is still live from a prior run), the enrich policy is left as a STALE, UNDERSIZED snapshot with no error — later steps keep enriching against outdated/incomplete data with no signal anything is wrong. Confirmed in practice during the DOT-Commercial VIN/units work: `inspections-enrichment-policy` silently stayed pinned to a 5,000-row validation-sample snapshot of `inspections` across a full 5.6M-row production run because `carrier-enrichment-pipeline-000001` still existed and blocked the policy delete-and-rebuild, dropping `carriers.inspections` enrichment coverage from ~572K to ~4K matches with no failure anywhere in the run.
 1. Support multiple steps for --step command line argument
 1. Support multille phases for --phase command line argument
 1. Add support for multiple pipelines in the pipeline phase
@@ -81,6 +90,7 @@ This is a work in progress
 1. DOT-Commercial: inspections ingestion silently drops ~0.65% of documents (36,788 of 5,647,567 on a full run) because `insp_carrier_state_id` is not pinned in `inspections/index-mappings.json` — Elasticsearch dynamically infers its type (`float`) from whichever value it sees first under `parallel_bulk`'s 8-thread concurrency, and the source column actually mixes numeric and non-numeric strings (e.g. `'NONE'`, `'S00000030887'`), so every non-conforming row fails with `document_parsing_exception`. Deterministic and lossy on every full run; which specific rows drop varies with thread ordering. Fix by pinning `insp_carrier_state_id` to `keyword` in `index-mappings.json`, mirroring how `dot_number`/`inspection_id` are already pinned.
 
 ### Closed work items
+
 1. Add support for multiple policies in a policy phase.
 1. Add support for --step command line argument to run a single step.
 1. Add support for --phase command line argument to run a single phase.
@@ -90,32 +100,35 @@ This is a work in progress
 1. Add example fingerprint `_id` field hashed from multiple fields - deterministic `_id`
 1. Warn if no step executed
 1. DOT-Commercial: fixed `crashes-enrichment-into-carriers` returning zero matches by adding an explicit `long` mapping for `crashes.dot_number` (was dynamically inferred as `float`, mirroring `carriers/index-mappings.json`'s existing pattern of pinning field types explicitly), plus a Painless `script` ingest processor on `crashes-pipeline-000001` that casts `dot_number` to a real JSON integer in `_source` before indexing. A `convert` processor (type: `long`) was tried first but fails silently: Elasticsearch's convert-to-long calls `Long.parseLong()` on the string form, which throws on decimal-point strings like `'3240797.0'`; a Painless `(long)` cast does not have this limitation.
+1. Implemented compound/composite `id_field` support: `phase_index_populate.py`'s `id_field` config value can now be a JSON list, not just a single column name — `compute_id()` joins the listed fields' values with `|` to build a deterministic `_id`, falling back to the existing single-column behavior when `id_field` is a string, and to ES auto-generated IDs when unset. Wired to DOT-Commercial's four datasets that previously had no `id_field` at all: `crashes` (`crash_id`, a natural single-column key that was simply never configured), `boc3-agents` (`docket_number`, likewise natural), `out-of-service-orders` (composite of `dot_number`+`oos_date`+`oos_reason`+`status`+`rescind_date`, empirically confirmed 100% unique against the full 394,963-row dataset), and `auth-history` (composite of all 9 columns — empirically the source data itself has 10,510 exact full-row duplicates that no key can separate, so the composite correctly collapses them into one document, which is the desired outcome since they're byte-identical). This closes the "no `id_field` → duplicate on same-day rerun" limitation for all four; see `docs/superpowers/specs/2026-07-28-dot-commercial-shadow-carrier-datasets-design.md`'s "id_field fix" section for the full uniqueness analysis.
 
 # Setup
+
 1. Have access to a docker cluster.
-    * I use ElasticSearch on Docker using https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch
-    * Elasticsearch analysis plugins must be loaded
+   - I use ElasticSearch on Docker using https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch
+   - Elasticsearch analysis plugins must be loaded
 1. Clone this repo
 1. Requires Python 3.11 or higher (see `.python-version`)
 1. Configure Python with `bash dependencies.sh`
 1. create an `es_config.json` from `es_config_template.json`
 1. Download data
-    * Use the download or fetch script in one of the example directories (e.g. `download_cms_provider.sh`, `fetch_commercial_carriers.py`)
+   - Use the download or fetch script in one of the example directories (e.g. `download_cms_provider.sh`, `fetch_commercial_carriers.py`)
 1. Run `python3 execute_project.py --project<the-project-dir>`
-    * `python3 execute_project.py --project=CMS-Providers`
+   - `python3 execute_project.py --project=CMS-Providers`
 1. Verify the indexes have been created
-    * The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
-
+   - The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
 
 # Government Datasets
 
-* DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
-* Medicare Providers https://data.cms.gov/provider-data/
+- DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
+- Medicare Providers https://data.cms.gov/provider-data/
 
 # References
 
 ### Elasticsearch indexing
-* https://dev.to/makalaaneesh/updating-the-mapping-of-an-elasticsearch-index-3h9n
+
+- https://dev.to/makalaaneesh/updating-the-mapping-of-an-elasticsearch-index-3h9n
 
 ### Analyzers
-* https://www.informit.com/articles/article.aspx?p=1848528
+
+- https://www.informit.com/articles/article.aspx?p=1848528
