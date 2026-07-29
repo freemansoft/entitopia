@@ -2,6 +2,7 @@
     "index": "crashes-{now/d}-000001",
     "alias": "crashes-000001",
     "source": "crashes.csv",
+    "id_field": "crash_id",
     "pipeline": "crashes-pipeline-000001",
     "num_rows": null,
     "skip_rows": 0

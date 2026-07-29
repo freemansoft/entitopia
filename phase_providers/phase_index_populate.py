@@ -23,6 +23,14 @@ class PhaseIndexingPopulate:
         self.project_config = project_config
         self.logger = logging.getLogger(__name__)
 
+    def compute_id(self, record, id_field):
+        # id_field as a list builds a composite key by joining the named
+        # fields' values; a KeyError here is handled the same as the
+        # single-field case, falling back to an ES auto-generated _id
+        if isinstance(id_field, list):
+            return "|".join(str(record[field]) for field in id_field)
+        return record[id_field]
+
     def record_action(
         self,
         data,
@@ -35,10 +43,10 @@ class PhaseIndexingPopulate:
             # support _id being specified and not, pipeline used and not
             # seems cumbersome but is clear
             try:
-                doc = {"_id": record[id_field], "_source": record}
+                doc = {"_id": self.compute_id(record, id_field), "_source": record}
                 if ingestion_pipeline:
                     doc = {
-                        "_id": record[id_field],
+                        "_id": self.compute_id(record, id_field),
                         "_source": record,
                         "pipeline": ingestion_pipeline,
                     }
