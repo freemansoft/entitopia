@@ -26,6 +26,24 @@
             "output": "data/inspections-per-unit/inspections_per_unit.csv",
             "date_field": "change_date",
             "window_months": 24
+        },
+        "auth_history": {
+            "dataset_id": "9mw4-x3tu",
+            "output": "data/auth-history/auth_history.csv",
+            "date_field": null,
+            "window_months": null
+        },
+        "out_of_service_orders": {
+            "dataset_id": "p2mt-9ige",
+            "output": "data/out-of-service-orders/out_of_service_orders.csv",
+            "date_field": null,
+            "window_months": null
+        },
+        "boc3_agents": {
+            "dataset_id": "2emp-mxtb",
+            "output": "data/boc3-agents/boc3_agents.csv",
+            "date_field": null,
+            "window_months": null
         }
     }
 }

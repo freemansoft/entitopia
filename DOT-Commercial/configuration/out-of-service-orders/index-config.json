@@ -1,0 +1,7 @@
+{
+    "index": "out-of-service-orders-{now/d}-000001",
+    "alias": "out-of-service-orders-000001",
+    "source": "out_of_service_orders.csv",
+    "num_rows": null,
+    "skip_rows": 0
+}

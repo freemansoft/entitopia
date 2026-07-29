@@ -22,5 +22,55 @@
                 "vehicle_identification_number"
             ]
         }
+    },
+    {
+        "name": "auth-history-enrichment-policy",
+        "match": {
+            "indices": "auth-history-{now/d}-000001",
+            "match_field": "dot_number",
+            "enrich_fields": [
+                "dot_number",
+                "docket_number",
+                "sub_number",
+                "mod_col_1",
+                "original_action_desc",
+                "orig_served_date",
+                "disp_action_desc",
+                "disp_decided_date",
+                "disp_served_date"
+            ]
+        }
+    },
+    {
+        "name": "out-of-service-orders-enrichment-policy",
+        "match": {
+            "indices": "out-of-service-orders-{now/d}-000001",
+            "match_field": "dot_number",
+            "enrich_fields": [
+                "dot_number",
+                "oos_date",
+                "oos_reason",
+                "status",
+                "rescind_date"
+            ]
+        }
+    },
+    {
+        "name": "boc3-agents-enrichment-policy",
+        "match": {
+            "indices": "boc3-agents-{now/d}-000001",
+            "match_field": "dot_number",
+            "enrich_fields": [
+                "dot_number",
+                "docket_number",
+                "co_name",
+                "attn_to_or_title",
+                "street_po",
+                "city",
+                "state_code",
+                "zip_code",
+                "ctry_code"
+            ]
+        }
     }
 ]
