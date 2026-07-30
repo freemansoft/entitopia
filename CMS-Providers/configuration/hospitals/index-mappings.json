@@ -5,6 +5,9 @@
             "Facility ID": {
                 "type": "keyword"
             },
+            "ZIP Code": {
+                "type": "keyword"
+            },
             "Facility Name": {
                 "type": "text",
                 "fields": {
@@ -21,7 +24,7 @@
                     }
                 }
             },
-            "Addresss": {
+            "Address": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -33,7 +36,7 @@
                     }
                 }
             },
-            "City": {
+            "City/Town": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -53,7 +56,7 @@
                     }
                 }
             },
-            "Phone Number": {
+            "Telephone Number": {
                 "type": "text",
                 "fields": {
                     "keyword": {
