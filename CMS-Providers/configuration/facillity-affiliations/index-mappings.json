@@ -5,7 +5,7 @@
             "NPI": {
                 "type": "keyword"
             },
-            "frst_nm": {
+            "Provider First Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -21,7 +21,7 @@
                     }
                 }
             },
-            "lst_nm": {
+            "Provider Last Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -37,7 +37,7 @@
                     }
                 }
             },
-            "mid_nm": {
+            "Provider Middle Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {

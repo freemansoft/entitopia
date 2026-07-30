@@ -5,7 +5,10 @@
             "NPI": {
                 "type": "keyword"
             },
-            "org_nm": {
+            "ZIP Code": {
+                "type": "keyword"
+            },
+            "Facility Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -21,7 +24,7 @@
                     }
                 }
             },
-            "frst_nm": {
+            "Provider First Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -37,7 +40,7 @@
                     }
                 }
             },
-            "lst_nm": {
+            "Provider Last Name": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -77,7 +80,7 @@
                     }
                 }
             },
-            "cty": {
+            "City/Town": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -89,7 +92,7 @@
                     }
                 }
             },
-            "st": {
+            "State": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -97,7 +100,7 @@
                     }
                 }
             },
-            "phn_numbr": {
+            "Telephone Number": {
                 "type": "text",
                 "fields": {
                     "keyword": {
@@ -106,14 +109,6 @@
                     "clean": {
                         "type": "text",
                         "analyzer": "phone_clean"
-                    }
-                }
-            },
-            "EMAIL_ADDRESS": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
                     }
                 }
             }
