@@ -1,4 +1,6 @@
-DOT Commercial https://data.transportation.gov/Trucking-and-Motorcoaches/
+# DOT Commercial
+
+On the DOT Site <https://data.transportation.gov/Trucking-and-Motorcoaches/>
 
 ## Fetching Data
 
@@ -30,7 +32,7 @@ This data set is loaded and configured in 10 steps.
 1. `crashes` - create an index and load the crash data
 1. `inspections-per-unit` - create an index and load the per-unit VIN/vehicle data (FMCSA `wt8s-2hbx`)
 1. `inspections-ingestion-setup` - create the enrichment index on `inspections-per-unit` and an ingestion pipeline that uses it
-1. `inspections` - create an index and load the vehicle inpsections data, enriched with per-unit VIN data via the pipeline from `inspections-ingestion-setup`
+1. `inspections` - create an index and load the vehicle inspections data, enriched with per-unit VIN data via the pipeline from `inspections-ingestion-setup`
 1. `auth-history` - create an index and load authority grant/revocation history (FMCSA `9mw4-x3tu`)
 1. `out-of-service-orders` - create an index and load out-of-service order history (FMCSA `p2mt-9ige`)
 1. `boc3-agents` - create an index and load BOC-3 legal process agent history (FMCSA `2emp-mxtb`)
@@ -55,7 +57,7 @@ flowchart LR
         crashes --> | optimized index| crashes-enrichment[crashes enrichment index]
     end
     subgraph inspections-graph[inspections]
-        inpsections-alias[alias] -..-|points at| inspections[inspections index]
+        inspections-alias[alias] -..-|points at| inspections[inspections index]
         inspections --> |optimized index| inspections-enrichment[inspections enrichment index]
     end
     subgraph auth-history-graph[auth-history]
@@ -90,7 +92,7 @@ flowchart LR
         direction LR
         crashes-ingestion-setup-step[crashes ingestion setup]
         crashes-step[crashes]
-        inspections-step[inpsections]
+        inspections-step[inspections]
         auth-history-step[auth-history]
         oos-step[out-of-service-orders]
         boc3-step[boc3-agents]
