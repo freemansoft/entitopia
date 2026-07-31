@@ -1,9 +1,10 @@
+import datetime
 from types import SimpleNamespace
 
 import pytest
 
 from matching.documents import CarrierDoc, ScoringContext
-from matching.signals import SIGNAL_TYPES, build_signal
+from matching.signals import SIGNAL_TYPES, build_signal, parse_flexible_date
 
 
 def make_doc(dot_number="1", source=None, tokens=None):
@@ -267,4 +268,175 @@ def test_exact_identifier_placeholder_phones_never_match():
 
 def test_exact_identifier_returns_none_when_both_sides_blank():
     signal = build_signal(identifier_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+def test_parse_flexible_date_reads_iso():
+    assert parse_flexible_date("2022-07-09") == datetime.date(2022, 7, 9)
+
+
+def test_parse_flexible_date_reads_oracle_format_with_century_pivot():
+    # 01-JUN-74 is a 1974 registration, not 2074.
+    assert parse_flexible_date("01-JUN-74") == datetime.date(1974, 6, 1)
+
+
+def test_parse_flexible_date_pivots_low_years_to_2000s():
+    assert parse_flexible_date("23-JAN-02") == datetime.date(2002, 1, 23)
+
+
+def test_parse_flexible_date_returns_none_for_junk():
+    assert parse_flexible_date("") is None
+    assert parse_flexible_date(None) is None
+    assert parse_flexible_date("not a date") is None
+
+
+def agent_cfg():
+    return cfg(
+        type="agent",
+        weight=0.04,
+        name_field="boc3_agents.co_name",
+        idf_weighted=True,
+    )
+
+
+def test_agent_shared_rare_agent_scores_high():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
+    # True normalized IDF for count=2 is ~0.951. An earlier draft asserted
+    # > 0.99, which passed only because a case mismatch made the lookup miss
+    # and fall back to the 1.0 "unseen agent" value — a test passing for the
+    # wrong reason, and masking the bug the next test now pins.
+    assert signal.score(pred, cand, ctx) > 0.94
+
+
+def test_agent_lookup_is_case_insensitive():
+    # AgentSignal lowercases names before intersecting them, while the sweep
+    # builds agent_counts from a terms aggregation. If those two disagree on
+    # case the lookup misses, every agent scores the 1.0 "unseen" fallback,
+    # and the rarity weighting silently turns itself off. ScoringContext
+    # normalizes both sides so casing cannot cause that.
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "big filer"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "BiG FiLeR"}]})
+    assert signal.score(pred, cand, ctx) < 0.20
+
+
+def test_agent_shared_common_agent_scores_low():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
+    # The real top BOC-3 filer: 134,283 of 1,426,508 filings. Normalized IDF
+    # puts it at 0.1668, so this bound must sit above that, not below it.
+    assert signal.score(pred, cand, ctx) < 0.20
+
+
+def test_agent_no_shared_agent_scores_zero():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={}, total_agent_carriers=100)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "A FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "B FILER"}]})
+    assert signal.score(pred, cand, ctx) == 0.0
+
+
+def test_agent_blank_names_never_match():
+    # co_name is blank on 23.3% of BOC-3 rows.
+    signal = build_signal(agent_cfg())
+    pred = make_doc(source={"boc3_agents": [{"co_name": ""}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "  "}]})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def temporal_cfg(**overrides):
+    base = dict(
+        type="temporal",
+        weight=0.05,
+        predecessor_date="out_of_service_orders.oos_date",
+        successor_date="add_date",
+        max_gap_days=365,
+    )
+    base.update(overrides)
+    return cfg(**base)
+
+
+def test_temporal_same_day_reopen_scores_one():
+    signal = build_signal(temporal_cfg())
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2022-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_temporal_decays_linearly_over_the_window():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2022-02-20"})  # 50 days
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.5)
+
+
+def test_temporal_beyond_the_window_scores_zero():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2024-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_temporal_uses_the_latest_shutdown_date():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(
+        source={"out_of_service_orders": [{"oos_date": "2010-01-01"}, {"oos_date": "2022-01-01"}]}
+    )
+    cand = make_doc(source={"add_date": "2022-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_temporal_pre_registered_shell_scores_at_half_weight():
+    # Registering the successor before the shutdown is a real tactic, but
+    # weaker evidence than registering right after. 90 days before is halfway
+    # through the 180-day backward window, scaled by 0.5 => 0.25.
+    signal = build_signal(temporal_cfg(max_gap_days=365))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
+    earlier = make_doc(source={"add_date": "2022-04-02"})  # 90 days before
+    assert signal.score(pred, earlier, ScoringContext()) == pytest.approx(0.25)
+
+
+def test_temporal_beyond_the_backward_window_scores_zero():
+    signal = build_signal(temporal_cfg(max_gap_days=365))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
+    earlier = make_doc(source={"add_date": "2021-01-01"})  # far before the window
+    assert signal.score(pred, earlier, ScoringContext()) == 0.0
+
+
+def test_temporal_returns_none_when_a_date_is_missing():
+    signal = build_signal(temporal_cfg())
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    assert signal.score(pred, make_doc(), ScoringContext()) is None
+
+
+def vin_cfg():
+    return cfg(
+        type="vin-overlap",
+        weight=0.08,
+        fields=["crashes.vehicle_identification_number"],
+    )
+
+
+def test_vin_overlap_shared_vin_scores_one():
+    signal = build_signal(vin_cfg())
+    pred = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    cand = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_vin_overlap_no_shared_vin_scores_zero():
+    signal = build_signal(vin_cfg())
+    pred = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    cand = make_doc(source={"crashes": [{"vehicle_identification_number": "2XYZ"}]})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_vin_overlap_returns_none_without_vins():
+    signal = build_signal(vin_cfg())
     assert signal.score(make_doc(), make_doc(), ScoringContext()) is None

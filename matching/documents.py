@@ -61,12 +61,29 @@ def _flatten(values):
     return flattened
 
 
+def _normalize_agent_key(name) -> str:
+    """Casefold an agent name for keying and lookup.
+
+    Must match how AgentSignal normalizes names before intersecting them,
+    otherwise a lookup silently misses and every agent degrades to the 1.0
+    "unseen" fallback — turning the rarity weighting off without any error.
+    """
+    return str(name).strip().lower()
+
+
 @dataclass
 class ScoringContext:
     """Corpus-level statistics gathered once per sweep."""
 
     agent_counts: dict[str, int] = field(default_factory=dict)
     total_agent_carriers: int = 0
+
+    def __post_init__(self):
+        # Normalize keys on the way in so callers cannot introduce a silent
+        # case mismatch, regardless of how they built the dict.
+        self.agent_counts = {
+            _normalize_agent_key(k): v for k, v in self.agent_counts.items()
+        }
 
     def agent_rarity(self, agent_name: str) -> float:
         """1.0 for an agent nobody uses, near 0.0 for a dominant filer.
@@ -83,7 +100,7 @@ class ScoringContext:
         """
         if self.total_agent_carriers <= 0:
             return 0.0
-        count = self.agent_counts.get(agent_name, 0)
+        count = self.agent_counts.get(_normalize_agent_key(agent_name), 0)
         if count <= 0:
             return 1.0
         return math.log(self.total_agent_carriers / count) / math.log(
