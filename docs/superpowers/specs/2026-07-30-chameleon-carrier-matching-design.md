@@ -349,10 +349,20 @@ full overlap still outranks a subset match.
 - **`100 MAIN ST` exists in every state.** When `phy_state` differs *and* the
   street matched only fuzzily, scale the address score by 0.5. An exact street
   match across different states stays strong — that is genuinely suspicious.
-- **BOC-3 fires constantly without IDF.** Score becomes
-  `1.0 − (agent_carrier_count / total_carriers_with_agents)`, computed once at
-  sweep start with a `terms` aggregation. Sharing one of the big filers scores
-  ~0.07; sharing a rare agent scores near 1.0.
+- **BOC-3 fires constantly without IDF.** Score is normalized inverse document
+  frequency — `log(N / agent_carrier_count) / log(N)`, where N is the total
+  carriers with an agent — computed once at sweep start with a `terms`
+  aggregation. Sharing the largest filer scores ~0.17; sharing a rare agent
+  scores ~0.95; an unseen agent scores 1.0.
+
+  **Corrected 2026-07-30 during implementation.** This section originally
+  specified `1.0 − (count / N)` while simultaneously claiming a big filer would
+  score ~0.07. Those contradict, and the formula was the wrong one: with only
+  89 agents the largest share is 9.4%, so `1 − share` compresses every agent
+  into `[0.906, 1.0]` and the signal carries no discriminating power at all —
+  the exact opposite of this bullet's purpose. Normalized IDF spreads the same
+  population across `[0.167, 1.0]`. Caught when an implementer found the
+  plan's formula and its test expectations could not both hold.
 
 ### Temporal is asymmetric
 

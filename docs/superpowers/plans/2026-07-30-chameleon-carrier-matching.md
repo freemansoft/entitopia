@@ -350,13 +350,26 @@ def test_value_missing_path_is_none():
 
 
 def test_agent_rarity_common_agent_scores_low():
+    # The real top BOC-3 filer: 134,283 of 1,426,508 filings (9.4%).
+    # Normalized IDF puts it at ~0.167.
     ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("BIG FILER") < 0.15
+    assert ctx.agent_rarity("BIG FILER") < 0.20
 
 
 def test_agent_rarity_rare_agent_scores_high():
     ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("TINY FILER") > 0.99
+    assert ctx.agent_rarity("TINY FILER") > 0.94
+
+
+def test_agent_rarity_ranks_common_below_rare():
+    # The property that actually matters: a dominant filer must score well
+    # below a rare one. 1 - count/N would put both above 0.9 and rank them
+    # nearly equal, which is why that formula was rejected.
+    ctx = ScoringContext(
+        agent_counts={"BIG FILER": 134283, "TINY FILER": 2},
+        total_agent_carriers=1426508,
+    )
+    assert ctx.agent_rarity("BIG FILER") < ctx.agent_rarity("TINY FILER") - 0.5
 
 
 def test_agent_rarity_unknown_agent_is_maximally_rare():
@@ -384,6 +397,7 @@ produced for it. Tokens come from _mtermvectors rather than being recomputed in
 Python, so scoring always sees exactly what the index sees.
 """
 
+import math
 from dataclasses import dataclass, field
 
 
@@ -452,11 +466,21 @@ class ScoringContext:
         BOC-3 process agents are a commercial filing industry: only 89 distinct
         agents cover 1.43M filings, and the largest covers 9.4%. Without this
         weighting a shared agent fires on roughly 7% of random pairs.
+
+        Uses normalized inverse document frequency, log(N/count)/log(N), NOT
+        1 - count/N. With only 89 agents the largest share is 9.4%, so
+        1 - share would compress every agent into [0.906, 1.0] and the signal
+        would carry no discriminating power at all. Normalized IDF spreads the
+        same population across [0.167, 1.0].
         """
         if self.total_agent_carriers <= 0:
             return 0.0
         count = self.agent_counts.get(agent_name, 0)
-        return 1.0 - (count / self.total_agent_carriers)
+        if count <= 0:
+            return 1.0
+        return math.log(self.total_agent_carriers / count) / math.log(
+            self.total_agent_carriers
+        )
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
