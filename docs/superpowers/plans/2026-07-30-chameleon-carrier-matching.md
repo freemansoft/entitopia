@@ -326,6 +326,22 @@ def test_value_collects_a_dotted_path_across_a_list():
     assert doc.value("crashes.vin") == ["A", "B"]
 
 
+def test_value_flattens_doubly_nested_lists():
+    # Inspection VINs sit two enrichment levels deep on a carrier:
+    # inspections[] (max_matches 100) -> units[] (max_matches 10) -> vin.
+    # Without flattening, the units step yields a list of lists and the final
+    # step finds no dicts, silently returning None.
+    doc = make_doc(
+        source={
+            "inspections": [
+                {"units": [{"vin": "A"}, {"vin": "B"}]},
+                {"units": [{"vin": "C"}]},
+            ]
+        }
+    )
+    assert doc.value("inspections.units.vin") == ["A", "B", "C"]
+
+
 def test_value_missing_path_is_none():
     assert make_doc().value("nope.not_here") is None
 
@@ -382,19 +398,24 @@ class CarrierDoc:
         """Read a dotted path out of _source.
 
         Enriched fields arrive as lists (max_matches > 1), so walking a path
-        through a list collects the value from every element. Returns None when
-        any part of the path is missing.
+        through a list collects the value from every element. Collected values
+        are flattened at each step because enrichment nests two levels deep:
+        a carrier's inspections[] each carry their own units[], so
+        "inspections.units.insp_unit_vehicle_id_number" would otherwise produce
+        a list of lists and find no dicts at the final step.
+
+        Returns None when any part of the path is missing.
         """
         current = self.source
         for part in path.split("."):
             if isinstance(current, list):
                 collected = []
-                for item in current:
+                for item in _flatten(current):
                     if isinstance(item, dict) and part in item:
                         collected.append(item[part])
                 if not collected:
                     return None
-                current = collected
+                current = _flatten(collected)
             elif isinstance(current, dict):
                 if part not in current:
                     return None
@@ -402,6 +423,17 @@ class CarrierDoc:
             else:
                 return None
         return current
+
+
+def _flatten(values):
+    """One level of list flattening, leaving non-list elements alone."""
+    flattened = []
+    for value in values:
+        if isinstance(value, list):
+            flattened.extend(value)
+        else:
+            flattened.append(value)
+    return flattened
 
 
 @dataclass
@@ -2165,7 +2197,10 @@ No `source`, `id_field`, or `pipeline` keys — this index is not populated from
     {
       "type": "vin-overlap",
       "weight": 0.08,
-      "fields": ["crashes.vehicle_identification_number"]
+      "fields": [
+        "crashes.vehicle_identification_number",
+        "inspections.units.insp_unit_vehicle_id_number"
+      ]
     }
   ],
   "scoring": {
@@ -3114,6 +3149,161 @@ Corrects the DOT-Commercial README's BOC-3 claim: 89 distinct agents cover
 
 ---
 
+### Task 14: Carry inspection VINs through to carriers
+
+**Files:**
+
+- Modify: `DOT-Commercial/configuration/carriers-ingestion-setup/enrichment-policies.json`
+
+**Interfaces:**
+
+- Consumes: Task 10's `vin-overlap` config, which already lists
+  `inspections.units.insp_unit_vehicle_id_number`
+- Produces: `inspections.units.insp_unit_vehicle_id_number` present on carrier documents
+
+**Why this task exists.** The two-level enrichment chain already assembles VIN
+data — `inspections-per-unit` is enriched onto `inspections` under a `units`
+target field by `inspections-pipeline-000001` — and then the last hop throws it
+away. `inspections-enrichment-policy` carries only `dot_number` and
+`inspection_id` into carriers. Today `vin-overlap` can only see the 333K crash
+records; this makes the 5.6M-row inspection VIN signal reachable.
+
+**Scale, measured.** Joining the two local extracts gives 4,976,529 distinct
+carrier→VIN links across 569,118 carriers. VINs per carrier run p50=2, p90=12,
+p95=23, p99=95, and **99.06% of carriers have 100 or fewer**. The 5,341
+carriers above the cap are megafleets that do not reincarnate under new DOT
+numbers, so `max_matches` truncation lands on the population this analysis does
+not care about.
+
+**Do not raise `max_matches` to compensate.** Elasticsearch caps it at 128
+("In order to avoid documents getting too large, the maximum allowed value is
+128"), which would still discard 25.2% of links. The cap is not the lever.
+
+- [ ] **Step 1: Add the VIN path to the enrichment policy**
+
+In `DOT-Commercial/configuration/carriers-ingestion-setup/enrichment-policies.json`,
+change the `inspections-enrichment-policy` entry's `enrich_fields` from:
+
+```json
+   "enrich_fields": [
+    "dot_number",
+    "inspection_id"
+   ]
+```
+
+to:
+
+```json
+   "enrich_fields": [
+    "dot_number",
+    "inspection_id",
+    "units.insp_unit_vehicle_id_number"
+   ]
+```
+
+Only the VIN subfield is carried, not the whole `units` object. Each carrier
+holds up to `max_matches: 100` inspections, each with up to 10 units, so
+pulling `insp_unit_make` / `insp_unit_license` / the rest would multiply carrier
+document size for data no signal reads.
+
+- [ ] **Step 2: Verify the config parses and the path is correct**
+
+Run:
+
+```bash
+python3 -c "
+import json
+p = json.load(open('DOT-Commercial/configuration/carriers-ingestion-setup/enrichment-policies.json'))
+pol = next(x for x in p if x['name'] == 'inspections-enrichment-policy')
+print('enrich_fields:', pol['enrich_fields'])
+assert 'units.insp_unit_vehicle_id_number' in pol['enrich_fields']
+i = json.load(open('DOT-Commercial/configuration/inspections-ingestion-setup/pipelines.json'))
+print('inspections target_field:', i['processors'][0]['enrich']['target_field'])
+assert i['processors'][0]['enrich']['target_field'] == 'units'
+print('OK: carrier path is inspections.units.insp_unit_vehicle_id_number')
+"
+```
+
+Expected: the three lines print and both asserts pass. The `target_field` check
+matters — if `inspections-pipeline-000001` ever renames it, the enrich path and
+the `vin-overlap` config in `entity-match.json` must change together.
+
+- [ ] **Step 3: Rebuild the policy, working around the documented delete conflict**
+
+`README.md` documents this trap at length: an enrich policy bound to a live
+pipeline **cannot be deleted**, and `phase_enrichment_policies.py:44-49` catches
+that `ConflictError` and only logs a warning. The rebuild silently no-ops and
+the policy stays pinned to its old snapshot — which is exactly how
+`inspections-enrichment-policy` once stayed stuck on a 5,000-row sample across a
+full production run. Delete the pipeline first:
+
+```bash
+curl -sk -u "$ES_USER:$ES_PASS" -XDELETE \
+  "$ES_URL/_ingest/pipeline/carrier-enrichment-pipeline-000001"
+```
+
+Then rebuild the policy and pipeline together:
+
+```bash
+python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
+```
+
+Watch the log for `Failed to delete enrichment policy due to conflict`. If it
+appears, the pipeline delete did not take and the policy is stale — stop and
+retry rather than continuing.
+
+- [ ] **Step 4: Confirm the enrich index actually contains VINs**
+
+```bash
+curl -sk -u "$ES_USER:$ES_PASS" \
+  "$ES_URL/.enrich-inspections-enrichment-policy*/_search?size=1&pretty"
+```
+
+Expected: a hit whose `_source` contains a `units` array with
+`insp_unit_vehicle_id_number` populated. If `units` is absent, the `inspections`
+index itself lacks the data and `--step=inspections` must be rerun first.
+
+- [ ] **Step 5: Reload carriers and verify VINs landed**
+
+```bash
+python3 execute_project.py --project=DOT-Commercial --step=carriers
+```
+
+Then confirm on a real document:
+
+```bash
+curl -sk -u "$ES_USER:$ES_PASS" "$ES_URL/carriers-000001/_search" \
+  -H 'Content-Type: application/json' \
+  -d '{"size":1,"query":{"exists":{"field":"inspections.units.insp_unit_vehicle_id_number"}},"_source":["dot_number","inspections.units.insp_unit_vehicle_id_number"]}'
+```
+
+Expected: a carrier with a populated nested VIN array. A zero-hit result means
+the enrich field did not propagate — recheck Step 3's conflict warning.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add DOT-Commercial/configuration/carriers-ingestion-setup/enrichment-policies.json
+git commit -m "feat: carry inspection VINs through to carrier documents
+
+The two-level chain already assembles this data — inspections-per-unit is
+enriched onto inspections under a 'units' target field — and then the last
+hop discarded it, carrying only dot_number and inspection_id into carriers.
+vin-overlap could therefore only see the 333K crash records rather than the
+5.6M-row inspection signal.
+
+Only the VIN subfield is carried, not the whole units object: each carrier
+holds up to 100 inspections of up to 10 units each, so pulling make/license
+would multiply document size for data no signal reads.
+
+max_matches is deliberately left at 100. Elasticsearch caps it at 128, and
+measurement shows the cap is not the lever: 99.06% of the 569,118 carriers
+with VINs have 100 or fewer (p50=2, p90=12, p99=95). The 5,341 carriers above
+it are megafleets that do not reincarnate under new DOT numbers."
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
@@ -3145,8 +3335,11 @@ Corrects the DOT-Commercial README's BOC-3 claim: 89 distinct agents cover
 | §5 error handling (5 items) | 13 |
 | §5 unit tests | 1-6 |
 | Follow-on: correct README BOC-3 claim | 13 |
+| Follow-on: inspection VINs reachable from carriers | 14 |
 
-**Deliberately not implemented** (spec's "follow-on work"): adding `insp_unit_vehicle_id_number` to `inspections-enrichment-policy`, filtering `dot_number = 00000000` from BOC-3 ingestion, and re-typing the shadow datasets' date fields. All are listed in the spec as out of scope.
+**Deliberately not implemented** (spec's "follow-on work"): filtering `dot_number = 00000000` from BOC-3 ingestion, and re-typing the shadow datasets' date fields. Both are listed in the spec as out of scope.
+
+**Promoted from follow-on into Task 14:** carrying `insp_unit_vehicle_id_number` through to carriers. Without it `vin-overlap` only ever sees the 333K crash records, so the signal is nearly dead on arrival. Task 14 also forced a correctness fix in Task 2 — `CarrierDoc.value()` originally could not walk `inspections[].units[].insp_unit_vehicle_id_number`, because collecting across a list produced a list of lists and the final step then found no dicts and returned `None`. `_flatten` fixes it, with a test.
 
 **Placeholder scan:** none found. Every code step contains complete, runnable content.
 
@@ -3165,10 +3358,17 @@ Corrects the DOT-Commercial README's BOC-3 claim: 89 distinct agents cover
 
 ## Run Order
 
-Tasks 1-7 are pure Python and need no cluster. Tasks 8-9 change the `carriers` index definition, which forces a full rebuild:
+Tasks 1-7 are pure Python and need no cluster. Tasks 8, 9, and 14 all change
+what a carrier document contains, so they share one rebuild.
+
+**Do the config edits for Tasks 8, 9, and 14 first, then run the reload once:**
 
 ```bash
-# after Tasks 8-9
+# delete the pipeline BEFORE rebuilding policies, or the policy delete hits a
+# ConflictError, is swallowed as a warning, and silently keeps its old snapshot
+curl -sk -u "$ES_USER:$ES_PASS" -XDELETE \
+  "$ES_URL/_ingest/pipeline/carrier-enrichment-pipeline-000001"
+
 python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
 python3 execute_project.py --project=DOT-Commercial --step=carriers   # ~2M docs, slow
 
@@ -3176,4 +3376,8 @@ python3 execute_project.py --project=DOT-Commercial --step=carriers   # ~2M docs
 python3 execute_project.py --project=DOT-Commercial --step=chameleon-detection
 ```
 
-The carriers reload is the expensive step. Run it once, after both Task 8 and Task 9 are committed — not between them.
+The carriers reload is the expensive step. Run it once, after Tasks 8, 9, and
+14 are all committed — not between them.
+
+If `inspections` itself turns out to lack the `units` data (Task 14 Step 4
+checks this), rerun `--step=inspections` before the carriers reload.
