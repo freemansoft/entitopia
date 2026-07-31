@@ -1908,15 +1908,26 @@ curl -sk -u "$ES_USER:$ES_PASS" "$ES_URL/carriers-$(date +%Y.%m.%d)-000001/_anal
 
 Expected: tokens for `SMITH` only — `TRUCKING` and `LLC` are stopped. If you see three tokens, `carrier_suffix_stop` is not wired in.
 
-Then confirm Beider-Morse emits multiple tokens:
+Then confirm Beider-Morse is working. Note it does NOT emit multiple tokens
+for every input — only for names whose pronunciation is ambiguous across the
+configured languages. `SMITH` yields one token (`zmit`); `GONZALEZ` yields four.
+Verify with both:
 
 ```bash
-curl -sk -u "$ES_USER:$ES_PASS" "$ES_URL/carriers-$(date +%Y.%m.%d)-000001/_analyze" \
-  -H 'Content-Type: application/json' \
-  -d '{"analyzer":"name_phonetic_bm","text":"SMITH"}'
+for w in SMITH GONZALEZ; do
+  curl -s "http://localhost:9200/carriers-$(date +%Y.%m.%d)-000001/_analyze" \
+    -H 'Content-Type: application/json' \
+    -d "{\"analyzer\":\"name_phonetic_bm\",\"text\":\"$w\"}"
+done
 ```
 
-Expected: several tokens at the same position.
+Expected: `SMITH` -> one token, `GONZALEZ` -> four.
+
+The real test of whether the Beider-Morse arm earns its weight is that it
+collides names double-metaphone only partially matches. `SMITH` and `SCHMIDT`
+must produce the SAME Beider-Morse token (`zmit`), where double-metaphone gives
+`SM0 XMT` and `XMT SMT` — overlapping but not identical. That complementarity
+is the whole reason both arms exist.
 
 - [ ] **Step 4: Commit**
 
