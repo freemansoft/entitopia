@@ -1089,7 +1089,9 @@ def test_agent_shared_common_agent_scores_low():
     ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
     pred = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
-    assert signal.score(pred, cand, ctx) < 0.15
+    # The real top BOC-3 filer: 134,283 of 1,426,508 filings. Normalized IDF
+    # puts it at 0.1668, so this bound must sit above that, not below it.
+    assert signal.score(pred, cand, ctx) < 0.20
 
 
 def test_agent_no_shared_agent_scores_zero():
