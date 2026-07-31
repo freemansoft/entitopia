@@ -163,3 +163,108 @@ def test_signal_exposes_weight_as_float():
         cfg(type="name-token", weight="0.10", fields=["legal_name"], subfield="clean")
     )
     assert signal.weight == 0.10
+
+
+def address_cfg(**overrides):
+    base = dict(
+        type="address",
+        weight=0.20,
+        fields=["phy_street", "mailing_street"],
+        exact_subfield="clean",
+        fuzzy_subfield="tokens",
+        fuzzy_scale=0.7,
+    )
+    base.update(overrides)
+    return cfg(**base)
+
+
+def test_address_exact_match_scores_one():
+    signal = build_signal(address_cfg())
+    tokens = {"phy_street.clean": {"123 main street"}, "mailing_street.clean": set()}
+    pred = make_doc(source={"phy_state": "OR"}, tokens=tokens)
+    cand = make_doc(source={"phy_state": "OR"}, tokens=dict(tokens))
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_address_fuzzy_match_is_scaled_down():
+    signal = build_signal(address_cfg())
+    pred = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street"}, "phy_street.tokens": {"123", "main", "street"}},
+    )
+    cand = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street suite 4"}, "phy_street.tokens": {"123", "main", "street", "suite", "4"}},
+    )
+    # containment is 1.0 (pred tokens fully inside cand), scaled by fuzzy_scale
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.7)
+
+
+def test_address_fuzzy_match_across_states_is_halved():
+    # "100 MAIN ST" exists in every state; a fuzzy hit across states is weak.
+    signal = build_signal(address_cfg())
+    pred = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street"}, "phy_street.tokens": {"123", "main", "street"}},
+    )
+    cand = make_doc(
+        source={"phy_state": "TX"},
+        tokens={"phy_street.clean": {"123 main street suite 4"}, "phy_street.tokens": {"123", "main", "street", "suite", "4"}},
+    )
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.35)
+
+
+def test_address_exact_match_across_states_is_not_halved():
+    # Identical street in a different state is genuinely suspicious.
+    signal = build_signal(address_cfg())
+    tokens = {"phy_street.clean": {"123 main street"}}
+    pred = make_doc(source={"phy_state": "OR"}, tokens=dict(tokens))
+    cand = make_doc(source={"phy_state": "TX"}, tokens=dict(tokens))
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_address_returns_none_when_no_address_data():
+    signal = build_signal(address_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+def identifier_cfg():
+    return cfg(
+        type="exact-identifier",
+        weight=0.12,
+        phone_fields=["telephone", "fax"],
+        text_fields=["email_address"],
+    )
+
+
+def test_exact_identifier_matching_phone_scores_one():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "(503) 289-5558"})
+    cand = make_doc(source={"telephone": "503-289-5558"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_exact_identifier_matching_email_scores_one():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"email_address": "Joe@Example.com"})
+    cand = make_doc(source={"email_address": "joe@example.com "})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_exact_identifier_different_values_score_zero():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "5032895558"})
+    cand = make_doc(source={"telephone": "2025555555"})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_exact_identifier_placeholder_phones_never_match():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "0000000000"})
+    cand = make_doc(source={"telephone": "0000000000"})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_exact_identifier_returns_none_when_both_sides_blank():
+    signal = build_signal(identifier_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
