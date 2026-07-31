@@ -6,7 +6,8 @@ build composite keys the same way.
 
 
 def compute_id(record, id_field):
-    """Join a list id_field with '|', or read a single field.
+    """Build a deterministic document _id so re-running an ingest overwrites
+    the existing document instead of creating a duplicate.
 
     Raises KeyError when a named field is absent; callers fall back to
     Elasticsearch auto-generated ids.

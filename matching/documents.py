@@ -11,12 +11,25 @@ from dataclasses import dataclass, field
 
 @dataclass
 class CarrierDoc:
+    """Pairs one carrier's raw _source with its Elasticsearch-analyzed tokens.
+
+    Tokens are read from _mtermvectors rather than recomputed in Python so
+    that scoring always sees the same phonetic encodings and synonym
+    expansions the index actually produced, not a local approximation of them.
+    """
+
     dot_number: str
     source: dict
     # Keyed "field.subfield", e.g. "legal_name.phonetic_bm"
     tokens: dict[str, set[str]] = field(default_factory=dict)
 
     def token_set(self, field_name: str, subfield: str) -> set[str]:
+        """Tokens for one analyzed field, or an empty set if never indexed.
+
+        Signals intersect sets freely; returning empty rather than raising on
+        a missing field lets "not indexed for this carrier" be treated the
+        same as "no overlap" without every caller needing a try/except.
+        """
         return self.tokens.get("{}.{}".format(field_name, subfield), set())
 
     def value(self, path: str):
@@ -51,7 +64,12 @@ class CarrierDoc:
 
 
 def _flatten(values):
-    """One level of list flattening, leaving non-list elements alone."""
+    """One level of list flattening, leaving non-list elements alone.
+
+    Enrichment nests two levels deep — a carrier's inspections[] each carry
+    their own units[] — so walking a dotted path without this produces lists
+    of lists at the inner level and silently finds nothing.
+    """
     flattened = []
     for value in values:
         if isinstance(value, list):

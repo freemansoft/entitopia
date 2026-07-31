@@ -24,14 +24,28 @@ logger = logging.getLogger(__name__)
 
 
 class Signal:
+    """Base contract every scoring signal implements.
+
+    Subclasses turn one kind of evidence (name overlap, shared phone, timing
+    between shutdown and re-registration, ...) into a score in [0.0, 1.0], or
+    None when that evidence can't be evaluated for this pair. scorer.py relies
+    on None being distinct from 0.0 to drop the signal and renormalize the
+    remaining weights, rather than treating missing data as "evaluated and
+    dissimilar" and penalizing a carrier for a gap in its records.
+    """
+
     type_names: tuple[str, ...] = ()
 
     def __init__(self, config):
+        """Bind the signal to its config entry, including its blend weight."""
         self.config = config
         self.signal_type = config.type
         self.weight = float(config.weight)
 
     def score(self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext) -> float | None:
+        """Score one carrier pair. Subclasses implement; see the class
+        docstring for the None-vs-0.0 contract every implementation must honor.
+        """
         raise NotImplementedError
 
 
@@ -146,7 +160,14 @@ class ExactIdentifierSignal(Signal):
 
 
 def _collect(target: set, raw, normalize) -> None:
-    """Normalize raw (scalar or list) into target, dropping None results."""
+    """Accumulate normalized values from a scalar-or-list field into a set.
+
+    A carrier can carry more than one value for a field (multiple phones,
+    agent names across amendments); a set lets a signal check for any shared
+    value without caring how many there are. Values that fail normalization
+    (blanks, placeholders) are dropped silently rather than raising, so one
+    bad value on a record doesn't block comparison of the rest.
+    """
     if raw is None:
         return
     items = raw if isinstance(raw, list) else [raw]
@@ -172,7 +193,13 @@ BACKWARD_SCALE = 0.5
 
 
 def parse_flexible_date(value) -> datetime.date | None:
-    """Parse ISO (2022-07-09) or Oracle (01-JUN-74) dates. None on failure."""
+    """Parse ISO (2022-07-09) or Oracle (01-JUN-74) dates. None on failure.
+
+    FMCSA data mixes both: newer records come through as ISO, but older
+    out-of-service and registration dates are exports from a legacy Oracle
+    system using the two-digit-year dd-MMM-yy format. See CENTURY_PIVOT below
+    for why that two-digit year can't be resolved naively.
+    """
     if value is None:
         return None
     text = str(value).strip().upper()
@@ -225,7 +252,13 @@ class AgentSignal(Signal):
 
 
 class TemporalSignal(Signal):
-    """Closeness between the predecessor's shutdown and the successor's registration."""
+    """Closeness between the predecessor's shutdown and the successor's registration.
+
+    A chameleon carrier typically re-registers under a new DOT number soon
+    after being ordered out of service, to resume operating with minimal
+    downtime. A short gap is therefore corroborating evidence of
+    reincarnation; a gap of years is more likely coincidence.
+    """
 
     type_names = ("temporal",)
 
@@ -265,7 +298,13 @@ class VinOverlapSignal(Signal):
 
 
 def _latest_date(raw) -> datetime.date | None:
-    """Most recent parseable date from a scalar or list."""
+    """Most recent parseable date from a scalar or list.
+
+    A carrier can accumulate many out-of-service orders over its history; only
+    the most recent shutdown is relevant to whether a successor registered
+    shortly after, so earlier ones are discarded rather than averaged or
+    taken first.
+    """
     if raw is None:
         return None
     items = raw if isinstance(raw, list) else [raw]
@@ -277,6 +316,12 @@ SIGNAL_TYPES: dict[str, type[Signal]] = {}
 
 
 def _register(signal_class: type[Signal]) -> None:
+    """Map a signal class's declared type_names to the class itself.
+
+    Config selects signals by type string (see build_signal), so signal
+    classes need to be discoverable by name rather than requiring the
+    config-loading code to import and know about every signal class directly.
+    """
     for name in signal_class.type_names:
         SIGNAL_TYPES[name] = signal_class
 
@@ -290,6 +335,12 @@ _register(VinOverlapSignal)
 
 
 def build_signal(config) -> Signal:
+    """Construct the Signal a config entry names, by its `type` string.
+
+    Keeps config decoupled from Python import paths: adding a signal means
+    registering it via _register, not changing how scorer.py builds its
+    signal list from config.
+    """
     signal_class = SIGNAL_TYPES.get(config.type)
     if signal_class is None:
         raise ValueError(
