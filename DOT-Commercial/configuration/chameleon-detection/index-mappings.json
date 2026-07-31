@@ -1,0 +1,45 @@
+{
+  "index": "chameleon-candidates-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "total_score": { "type": "float" },
+      "gap_days": { "type": "integer" },
+      "signals_present": { "type": "integer" },
+      "matched_on": { "type": "keyword" },
+      "generated_at": { "type": "date" },
+      "run_id": { "type": "keyword" },
+      "predecessor": {
+        "properties": {
+          "dot_number": { "type": "keyword" },
+          "legal_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "dba_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "phy_street": { "type": "keyword" },
+          "phy_city": { "type": "keyword" },
+          "phy_state": { "type": "keyword" },
+          "shutdown_date": { "type": "date", "format": "strict_date_optional_time||yyyy-MM-dd" },
+          "shutdown_reason": { "type": "keyword" }
+        }
+      },
+      "successor": {
+        "properties": {
+          "dot_number": { "type": "keyword" },
+          "legal_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "dba_name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+          "phy_street": { "type": "keyword" },
+          "phy_city": { "type": "keyword" },
+          "phy_state": { "type": "keyword" },
+          "add_date": { "type": "date", "format": "strict_date_optional_time||yyyy-MM-dd" }
+        }
+      },
+      "signals": {
+        "properties": {
+          "signal_type": { "type": "keyword" },
+          "subfield": { "type": "keyword" },
+          "weight": { "type": "float" },
+          "score": { "type": "float" },
+          "contribution": { "type": "float" }
+        }
+      }
+    }
+  }
+}

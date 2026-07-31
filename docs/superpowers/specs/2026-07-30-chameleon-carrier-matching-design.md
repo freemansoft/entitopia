@@ -23,8 +23,8 @@ researched before any design work, and the findings shaped everything below.
 
 ### 1. Vectors are the wrong tool for this problem
 
-Dense embeddings model *meaning*. Chameleon detection is an *orthographic and
-phonetic* problem. `SMYTH TRUCKNG INC` vs `SMITH TRUCKING LLC` is a
+Dense embeddings model _meaning_. Chameleon detection is an _orthographic and
+phonetic_ problem. `SMYTH TRUCKNG INC` vs `SMITH TRUCKING LLC` is a
 spelling-and-sound match that phonetic encoding is built for and that semantic
 embeddings handle incidentally at best.
 
@@ -35,12 +35,12 @@ outperforms neural retrieval on named-entity precision.
 
 ### 2. What OpenSearch actually adds is scoring, not analysis
 
-| Feature                                             | Relevance here                                                                                             |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `normalization-processor` / `score-ranker-processor` | Real, but it is score fusion (Apache 2.0; Elastic's RRF is paid-tier) — not a replacement for an analyzer   |
-| Anomaly detection (RCF)                             | Relevant to the *temporal* reincarnation signal, not to name matching                                      |
-| Learning to Rank                                    | Only useful once labeled chameleon pairs exist                                                              |
-| k-NN / neural / neural-sparse / semantic field       | Wrong tool, per above                                                                                       |
+| Feature                                              | Relevance here                                                                                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `normalization-processor` / `score-ranker-processor` | Real, but it is score fusion (Apache 2.0; Elastic's RRF is paid-tier) — not a replacement for an analyzer |
+| Anomaly detection (RCF)                              | Relevant to the _temporal_ reincarnation signal, not to name matching                                     |
+| Learning to Rank                                     | Only useful once labeled chameleon pairs exist                                                            |
+| k-NN / neural / neural-sparse / semantic field       | Wrong tool, per above                                                                                     |
 
 None of these replace `analysis-phonetic`. All of them presuppose a scoring
 layer that entitopia does not yet have.
@@ -75,7 +75,7 @@ encoder, because that is where the real accuracy gain is.
    successors, score, and write ranked suspect pairs.
 3. **Config-driven signals over a fixed menu of signal types.** A generic
    `entity-match` phase. Config names which signals to use with weights and
-   thresholds; each signal type is implemented in Python. Explicitly *not* a
+   thresholds; each signal type is implemented in Python. Explicitly _not_ a
    raw-query-DSL-in-config mini-language.
 4. **All four signal families:** name similarity, address/phone/email, BOC-3
    process agent, and temporal proximity + VIN overlap. Address matching and
@@ -110,7 +110,7 @@ These were discovered while grounding the design and are fixed by it:
   `inspections-enrichment-policy` carries only `dot_number` and `inspection_id`.
   The VINs live in `inspections-per-unit.insp_unit_vehicle_id_number`, are
   enriched onto `inspections`, and stop there. Crash VINs
-  (`crashes.vehicle_identification_number`) *are* available, but crashes are
+  (`crashes.vehicle_identification_number`) _are_ available, but crashes are
   rare (333K) next to inspections (5.6M). Reaching the volume VIN signal is one
   `enrich_fields` edit.
 - **`street_suffix_map` is dead config, and broken.** Defined in
@@ -159,7 +159,7 @@ All changes are in `DOT-Commercial/configuration/carriers/`.
 }
 ```
 
-`double_metaphone` replaces `metaphone` because it emits a primary *and* an
+`double_metaphone` replaces `metaphone` because it emits a primary _and_ an
 alternate encoding, so `Schmidt` / `Schmitt` / `Smith` variants collide
 correctly. `max_code_len` is raised from its default of 4 to 6; four characters
 over-collide on company-name tokens.
@@ -197,14 +197,14 @@ Keep `street_clean` (keyword tokenizer) for exact-after-normalization, and add
 
 ### Mapping additions
 
-| Field                    | Change                                                              |
-| ------------------------ | ------------------------------------------------------------------- |
-| `legal_name`, `dba_name` | add `.phonetic` (double_metaphone) and `.phonetic_bm` (beider_morse) |
-| `phy_street`, `mailing_street` | add `.tokens` (street_tokens) alongside existing `.clean`     |
-| `boc3_agents.co_name`    | explicitly map with `.keyword`, `.clean`, `.phonetic`               |
-| `boc3_agents.street_po`  | explicitly map with `.clean`, `.tokens`                             |
-| `add_date`               | pin as `date` + pipeline century fix (below)                        |
-| `phy_zip`, `fax`         | pin as `keyword` / `text` + `phone_clean`                           |
+| Field                          | Change                                                               |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `legal_name`, `dba_name`       | add `.phonetic` (double_metaphone) and `.phonetic_bm` (beider_morse) |
+| `phy_street`, `mailing_street` | add `.tokens` (street_tokens) alongside existing `.clean`            |
+| `boc3_agents.co_name`          | explicitly map with `.keyword`, `.clean`, `.phonetic`                |
+| `boc3_agents.street_po`        | explicitly map with `.clean`, `.tokens`                              |
+| `add_date`                     | pin as `date` + pipeline century fix (below)                         |
+| `phy_zip`, `fax`               | pin as `keyword` / `text` + `phone_clean`                            |
 
 ### The `add_date` century fix
 
@@ -227,8 +227,7 @@ Approved 2026-07-30.
 A new step in `DOT-Commercial/configuration.json`:
 
 ```json
-{ "name": "chameleon-detection",
-  "phases": ["index-create", "index-map", "entity-match"] }
+{ "name": "chameleon-detection", "phases": ["index-create", "index-map", "entity-match"] }
 ```
 
 The output index is built by the **existing** `index-create` and `index-map`
@@ -239,7 +238,7 @@ five. New file `phase_providers/phase_entity_match.py` reads
 
 ### Schema
 
-Config *selects and weights*. It never expresses query logic.
+Config _selects and weights_. It never expresses query logic.
 
 ```json
 {
@@ -255,14 +254,55 @@ Config *selects and weights*. It never expresses query logic.
     "seed_signals": ["name-phonetic", "address", "exact-identifier"]
   },
   "signals": [
-    { "type": "name-phonetic",    "weight": 0.22, "fields": ["legal_name", "dba_name"], "subfield": "phonetic",    "cross_field": true },
-    { "type": "name-phonetic",    "weight": 0.13, "fields": ["legal_name", "dba_name"], "subfield": "phonetic_bm", "cross_field": true },
-    { "type": "name-token",       "weight": 0.10, "fields": ["legal_name", "dba_name"], "subfield": "clean" },
-    { "type": "address",          "weight": 0.20, "fields": ["phy_street", "mailing_street"], "exact_subfield": "clean", "fuzzy_subfield": "tokens", "fuzzy_scale": 0.7 },
-    { "type": "exact-identifier", "weight": 0.12, "fields": ["telephone.clean", "email_address", "fax.clean"] },
-    { "type": "agent",            "weight": 0.04, "name_field": "boc3_agents.co_name", "address_field": "boc3_agents.street_po", "idf_weighted": true },
-    { "type": "temporal",         "weight": 0.05, "predecessor_date": "out_of_service_orders.oos_date", "successor_date": "add_date", "max_gap_days": 365 },
-    { "type": "vin-overlap",      "weight": 0.08, "fields": ["crashes.vehicle_identification_number"] }
+    {
+      "type": "name-phonetic",
+      "weight": 0.22,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "phonetic",
+      "cross_field": true
+    },
+    {
+      "type": "name-phonetic",
+      "weight": 0.13,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "phonetic_bm",
+      "cross_field": true
+    },
+    {
+      "type": "name-token",
+      "weight": 0.1,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "clean"
+    },
+    {
+      "type": "address",
+      "weight": 0.2,
+      "fields": ["phy_street", "mailing_street"],
+      "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.7
+    },
+    {
+      "type": "exact-identifier",
+      "weight": 0.12,
+      "phone_fields": ["telephone", "fax"],
+      "text_fields": ["email_address"]
+    },
+    {
+      "type": "agent",
+      "weight": 0.04,
+      "name_field": "boc3_agents.co_name",
+      "address_field": "boc3_agents.street_po",
+      "idf_weighted": true
+    },
+    {
+      "type": "temporal",
+      "weight": 0.05,
+      "predecessor_date": "out_of_service_orders.oos_date",
+      "successor_date": "add_date",
+      "max_gap_days": 365
+    },
+    { "type": "vin-overlap", "weight": 0.08, "fields": ["crashes.vehicle_identification_number"] }
   ],
   "scoring": {
     "min_total_score": 0.35,
@@ -273,9 +313,15 @@ Config *selects and weights*. It never expresses query logic.
 }
 ```
 
+**Refined during planning:** `exact-identifier` takes `phone_fields` and
+`text_fields` rather than one `fields` list. The signal reads raw `_source`
+values rather than analyzed tokens, so it needs no `.clean` subfield paths, and
+splitting the keys makes normalization explicit instead of inferred from field
+names.
+
 **Weights need not sum to 1.0** (as written they sum to 0.94). Because
 unevaluable signals return `None` and drop out, the total is always renormalized
-over the signals actually present — so only the *ratios* between weights matter.
+over the signals actually present — so only the _ratios_ between weights matter.
 This is not an error to be "fixed."
 
 `selector` is a **closed enum** — `out-of-service`, `revoked-authority`,
@@ -292,7 +338,7 @@ the double-metaphone and Beider-Morse arms are weighted independently, and how
 
 - **`min_signals`** — unevaluable signals return `None`, drop out, and weights
   renormalize over what remains. Otherwise a carrier with no BOC-3 record is
-  punished for *missing data* rather than judged neutrally. But renormalizing
+  punished for _missing data_ rather than judged neutrally. But renormalizing
   means one lucky signal could score 1.0, so a floor is required.
 - **`require_identity_signal`** — at least one of name / address / identifier
   must fire. Prevents pairs matching on temporal proximity alone, which is
@@ -309,7 +355,7 @@ Approved 2026-07-30.
 
 ### Getting analyzed tokens back out
 
-Python-side scoring needs *analyzed tokens*, but Elasticsearch keeps them in
+Python-side scoring needs _analyzed tokens_, but Elasticsearch keeps them in
 the inverted index and does not return them in `_source`. Calling `_analyze`
 per string is far too many round trips.
 
@@ -324,15 +370,15 @@ bloat (which would be severe on the Beider-Morse subfield).
 
 Every signal returns `0.0–1.0` or `None`. `None` means "not evaluable".
 
-| Signal             | Math                                                                                                                                                                        |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signal             | Math                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `name-phonetic`    | `0.5·jaccard + 0.5·containment` over token sets, where containment is `\|A∩B\| / min(\|A\|,\|B\|)`. With `cross_field`, computed over all four legal×dba pairings, max taken. `None` if either set is empty. |
-| `name-token`       | Same math on the `.clean` subfield.                                                                                                                                          |
-| `address`          | Exact `.clean` equality → 1.0; otherwise token containment on `.tokens` × `fuzzy_scale`. Max over phy/mailing pairings.                                                       |
-| `exact-identifier` | 1.0 if any of phone / email / fax matches and is non-blank. Binary.                                                                                                          |
-| `agent`            | IDF-weighted; see below.                                                                                                                                                     |
-| `temporal`         | Linear decay from 1.0 at `gap = 0` to 0.0 at `max_gap_days`.                                                                                                                 |
-| `vin-overlap`      | 1.0 if at least one VIN is shared.                                                                                                                                           |
+| `name-token`       | Same math on the `.clean` subfield.                                                                                                                                                                          |
+| `address`          | Exact `.clean` equality → 1.0; otherwise token containment on `.tokens` × `fuzzy_scale`. Max over phy/mailing pairings.                                                                                      |
+| `exact-identifier` | 1.0 if any of phone / email / fax matches and is non-blank. Binary.                                                                                                                                          |
+| `agent`            | IDF-weighted; see below.                                                                                                                                                                                     |
+| `temporal`         | Linear decay from 1.0 at `gap = 0` to 0.0 at `max_gap_days`.                                                                                                                                                 |
+| `vin-overlap`      | 1.0 if at least one VIN is shared.                                                                                                                                                                           |
 
 ### Why containment, not pure Jaccard
 
@@ -346,7 +392,7 @@ full overlap still outranks a subset match.
 - **Placeholder identifiers.** `telephone` values like `0000000000` would
   cluster thousands of unrelated carriers. Reject repeated-digit and all-zero
   values before comparing; treat them as absent.
-- **`100 MAIN ST` exists in every state.** When `phy_state` differs *and* the
+- **`100 MAIN ST` exists in every state.** When `phy_state` differs _and_ the
   street matched only fuzzily, scale the address score by 0.5. An exact street
   match across different states stays strong — that is genuinely suspicious.
 - **BOC-3 fires constantly without IDF.** Score is normalized inverse document
@@ -425,7 +471,7 @@ Approved 2026-07-30.
 | `either` (union)      | 1,166,197                     |
 
 `revoked-authority` covers roughly half of every carrier ever registered.
-Involuntary revocation for lapsed insurance is routine and is *not* by itself
+Involuntary revocation for lapsed insurance is routine and is _not_ by itself
 evidence of a chameleon.
 
 ### Selectors, and the trap in the vocabulary
@@ -435,7 +481,7 @@ evidence of a chameleon.
 
 `original_action_desc = 'INVOLUNTARY REVOCATION'` occurs **2,215,957** times,
 but **2,208,586** dispositions are `'DISCONTINUED REVOCATION'`, meaning the
-revocation was *reversed*. Selecting on the filing would gather millions of
+revocation was _reversed_. Selecting on the filing would gather millions of
 carriers that were never shut down. Selectors must key on the **disposition**:
 
 - `out-of-service` — has an `out_of_service_orders` entry, optionally filtered
