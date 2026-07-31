@@ -8,45 +8,27 @@
             "legal_name": {
                 "type": "text",
                 "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
+                    "keyword": { "type": "keyword" },
+                    "clean": { "type": "text", "analyzer": "name_clean" },
+                    "phonetic": { "type": "text", "analyzer": "name_phonetic" },
+                    "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
                 }
             },
             "dba_name": {
                 "type": "text",
                 "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
+                    "keyword": { "type": "keyword" },
+                    "clean": { "type": "text", "analyzer": "name_clean" },
+                    "phonetic": { "type": "text", "analyzer": "name_phonetic" },
+                    "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
                 }
             },
             "phy_street": {
                 "type": "text",
                 "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "street_clean"
-                    }
+                    "keyword": { "type": "keyword" },
+                    "clean": { "type": "text", "analyzer": "street_clean" },
+                    "tokens": { "type": "text", "analyzer": "street_tokens" }
                 }
             },
             "phy_city": {
@@ -72,13 +54,9 @@
             "mailing_street": {
                 "type": "text",
                 "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "street_clean"
-                    }
+                    "keyword": { "type": "keyword" },
+                    "clean": { "type": "text", "analyzer": "street_clean" },
+                    "tokens": { "type": "text", "analyzer": "street_tokens" }
                 }
             },
             "mailing_city": {
@@ -119,6 +97,43 @@
                     "keyword": {
                         "type": "keyword"
                     }
+                }
+            },
+            "add_date": {
+                "type": "date",
+                "format": "strict_date_optional_time||yyyy-MM-dd"
+            },
+            "phy_zip": { "type": "keyword" },
+            "mailing_zip": { "type": "keyword" },
+            "fax": {
+                "type": "text",
+                "fields": {
+                    "keyword": { "type": "keyword" },
+                    "clean": { "type": "text", "analyzer": "phone_clean" }
+                }
+            },
+            "boc3_agents": {
+                "properties": {
+                    "dot_number": { "type": "long" },
+                    "co_name": {
+                        "type": "text",
+                        "fields": {
+                            "keyword": { "type": "keyword" },
+                            "clean": { "type": "text", "analyzer": "name_clean" },
+                            "phonetic": { "type": "text", "analyzer": "name_phonetic" }
+                        }
+                    },
+                    "street_po": {
+                        "type": "text",
+                        "fields": {
+                            "keyword": { "type": "keyword" },
+                            "clean": { "type": "text", "analyzer": "street_clean" },
+                            "tokens": { "type": "text", "analyzer": "street_tokens" }
+                        }
+                    },
+                    "city": { "type": "keyword" },
+                    "state_code": { "type": "keyword" },
+                    "zip_code": { "type": "keyword" }
                 }
             }
         }

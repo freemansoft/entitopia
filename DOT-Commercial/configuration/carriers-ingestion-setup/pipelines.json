@@ -2,6 +2,14 @@
     "name": "carrier-enrichment-pipeline-000001",
     "processors": [
         {
+            "script": {
+                "description": "rewrite add_date from dd-MMM-yy to ISO with a 1900/2000 century pivot",
+                "lang": "painless",
+                "source": "if (ctx.add_date == null) { return; } String raw = ctx.add_date.toString().trim().toUpperCase(); if (raw.length() == 0) { ctx.remove('add_date'); return; } def parts = /-/.split(raw); if (parts.length != 3) { ctx.remove('add_date'); return; } def months = ['JAN':1,'FEB':2,'MAR':3,'APR':4,'MAY':5,'JUN':6,'JUL':7,'AUG':8,'SEP':9,'OCT':10,'NOV':11,'DEC':12]; if (!months.containsKey(parts[1])) { ctx.remove('add_date'); return; } int day = Integer.parseInt(parts[0]); int year = Integer.parseInt(parts[2]); if (parts[2].length() == 2) { year = year > 30 ? 1900 + year : 2000 + year; } ctx.add_date = String.format('%04d-%02d-%02d', new def[]{year, months[parts[1]], day});",
+                "ignore_failure": true
+            }
+        },
+        {
             "enrich": {
                 "description": "slipstream 'inspection' data",
                 "policy_name": "inspections-enrichment-policy",
