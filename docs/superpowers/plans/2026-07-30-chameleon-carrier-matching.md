@@ -14,6 +14,8 @@
 
 - **Python 3.11+.** Enforced at `execute_project.py:3-10`. Use `X | None` union syntax, not `Optional[X]`.
 - **`elasticsearch==9.4.1`.** Use `request_timeout=`, not `timeout=`. `BadRequestError`/`NotFoundError`/`ConflictError` from the `elasticsearch` package.
+- **Never pass `body=` to a client call. Use explicit keyword arguments.** `body` is deprecated in 8.x and removed for these APIs in the pinned 9.4.1. Explicit kwargs work on both. The forms this plan uses: `es.search(index=, size=, query=, sort=, pit=, search_after=, track_total_hits=, aggs=, source=)`, `es.mtermvectors(index=, ids=, fields=, term_statistics=, field_statistics=, positions=, offsets=, payloads=)` — note `mtermvectors` takes these flat, with no `parameters` wrapper — `es.open_point_in_time(index=, keep_alive=)`, and `es.close_point_in_time(id=)`.
+- **Verify the installed client before starting cluster work.** `python3 -c "import elasticsearch; print(elasticsearch.__version__)"`. The venv observed during planning held 8.6.2 while `requirements.txt` pinned 9.4.1; the kwargs forms above are correct on both, but a mismatch is worth knowing about before debugging a cluster failure.
 - **All JSON config loads as `types.SimpleNamespace`**, via `file_utils.load_from_file`'s `object_hook`. Access with attributes (`config.signals[0].weight`), never `config["signals"]`. Optional keys are read with `getattr(obj, "key", default)`, matching how `phase_index_populate.py:102-121` handles them.
 - **`{now/d}` expands client-side** to `%Y.%m.%d` (e.g. `carriers-2026.07.30-000001`) via `elasticsearch_utils.replace_index_with_now_version`. It operates on `config.index` in place.
 - **Signal weights need not sum to 1.0.** Unevaluable signals return `None`, drop out, and the total is renormalized over what remains. Only ratios matter.
@@ -494,16 +496,22 @@ fires on ~7% of random pairs."
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_signals.py`:
+First replace the import block at the **top** of `tests/test_signals.py` so all
+imports stay at the top of the file (Task 2 could not import `matching.signals`
+because it did not exist yet):
 
 ```python
 from types import SimpleNamespace
 
 import pytest
 
+from matching.documents import CarrierDoc, ScoringContext
 from matching.signals import SIGNAL_TYPES, build_signal
+```
 
+Then append the new tests to the end of the file:
 
+```python
 def cfg(**kwargs):
     return SimpleNamespace(**kwargs)
 
@@ -965,14 +973,22 @@ normalization is explicit rather than inferred from field names."
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/test_signals.py`:
+First extend the import block at the **top** of `tests/test_signals.py` so all
+imports stay at the top of the file:
 
 ```python
 import datetime
+from types import SimpleNamespace
 
-from matching.signals import parse_flexible_date
+import pytest
 
+from matching.documents import CarrierDoc, ScoringContext
+from matching.signals import SIGNAL_TYPES, build_signal, parse_flexible_date
+```
 
+Then append the new tests to the end of the file:
+
+```python
 def test_parse_flexible_date_reads_iso():
     assert parse_flexible_date("2022-07-09") == datetime.date(2022, 7, 9)
 
@@ -2395,7 +2411,7 @@ class PredecessorSelector:
                 else:
                     page_size = PAGE_SIZE
 
-                body = {
+                params = {
                     "size": page_size,
                     "query": self.build_query(),
                     "pit": {"id": pit_id, "keep_alive": "10m"},
@@ -2403,9 +2419,10 @@ class PredecessorSelector:
                     "track_total_hits": False,
                 }
                 if search_after is not None:
-                    body["search_after"] = search_after
+                    params["search_after"] = search_after
 
-                response = self.es.search(body=body)
+                # No index= when a pit is supplied; the pit carries the target.
+                response = self.es.search(**params)
                 hits = response["hits"]["hits"]
                 if not hits:
                     return
@@ -2420,7 +2437,7 @@ class PredecessorSelector:
                 pit_id = response.get("pit_id", pit_id)
         finally:
             try:
-                self.es.close_point_in_time(body={"id": pit_id})
+                self.es.close_point_in_time(id=pit_id)
             except Exception as e:
                 logger.warning("Failed to close point in time: {}".format(e))
 ```
@@ -2579,17 +2596,15 @@ class CandidateFinder:
 
         response = self.es.search(
             index=self.source_index,
-            body={
-                "size": self.max_candidates,
-                "query": {
-                    "bool": {
-                        "should": clauses,
-                        "minimum_should_match": 1,
-                        "must_not": [{"ids": {"values": [pred_id]}}],
-                    }
-                },
-                "track_total_hits": False,
+            size=self.max_candidates,
+            query={
+                "bool": {
+                    "should": clauses,
+                    "minimum_should_match": 1,
+                    "must_not": [{"ids": {"values": [pred_id]}}],
+                }
             },
+            track_total_hits=False,
         )
         hits = response["hits"]["hits"]
         truncated = len(hits) >= self.max_candidates
@@ -2608,17 +2623,13 @@ class CandidateFinder:
 
         response = self.es.mtermvectors(
             index=self.source_index,
-            body={
-                "ids": doc_ids,
-                "parameters": {
-                    "fields": fields,
-                    "term_statistics": False,
-                    "field_statistics": False,
-                    "positions": False,
-                    "offsets": False,
-                    "payloads": False,
-                },
-            },
+            ids=doc_ids,
+            fields=fields,
+            term_statistics=False,
+            field_statistics=False,
+            positions=False,
+            offsets=False,
+            payloads=False,
         )
 
         tokens_by_id = {}
@@ -2718,6 +2729,7 @@ from matching.candidates import CandidateFinder
 from matching.documents import ScoringContext
 from matching.predecessors import PredecessorSelector
 from matching.scorer import PairScorer
+from matching.signals import parse_flexible_date
 
 AGENT_TERMS_SIZE = 500
 BULK_THREAD_COUNT = 2
@@ -2872,11 +2884,9 @@ class PhaseEntityMatch:
         try:
             response = self.es.search(
                 index=source_index,
-                body={
-                    "size": 0,
-                    "aggs": {
-                        "agents": {"terms": {"field": keyword_field, "size": AGENT_TERMS_SIZE}}
-                    },
+                size=0,
+                aggs={
+                    "agents": {"terms": {"field": keyword_field, "size": AGENT_TERMS_SIZE}}
                 },
             )
         except Exception as e:
@@ -2944,8 +2954,6 @@ class PhaseEntityMatch:
                 yield self._to_action(pair, target_index, run_id, generated_at)
 
     def _to_action(self, pair, target_index, run_id, generated_at):
-        from matching.signals import parse_flexible_date
-
         pred = pair.predecessor
         succ = pair.successor
 
@@ -3005,8 +3013,6 @@ def _carrier_summary(doc, shutdown_date=None, add_date=None):
 
 
 def _latest_iso(raw):
-    from matching.signals import parse_flexible_date
-
     if raw is None:
         return None
     items = raw if isinstance(raw, list) else [raw]
