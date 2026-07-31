@@ -1,6 +1,7 @@
 import logging as logging
 from itertools import islice
 import utils.elasticsearch_utils as elasticsearch_utils
+import utils.id_utils as id_utils
 
 import numpy as np
 import pandas as pd
@@ -27,9 +28,7 @@ class PhaseIndexingPopulate:
         # id_field as a list builds a composite key by joining the named
         # fields' values; a KeyError here is handled the same as the
         # single-field case, falling back to an ES auto-generated _id
-        if isinstance(id_field, list):
-            return "|".join(str(record[field]) for field in id_field)
-        return record[id_field]
+        return id_utils.compute_id(record, id_field)
 
     def record_action(
         self,
