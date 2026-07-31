@@ -52,6 +52,20 @@ class ScoredPair:
 
 
 class PairScorer:
+    """Aggregation point: run every configured signal over one pair and decide.
+
+    A sweep generates millions of candidate pairs; most are noise. This is
+    the single place that turns one pair's signal scores into a yes/no on
+    whether it is worth a human's attention, so that decision logic exists
+    in exactly one spot rather than being reimplemented at each call site.
+
+    It owns the guards, so a pair can fire several signals and still be
+    rejected — score alone is not sufficient, only score plus a real identity
+    link plus enough corroborating evidence. score_pair returning None means
+    "not worth reporting," which is how the sweep filters down to a
+    reviewable list rather than surfacing every pair that scored above zero.
+    """
+
     def __init__(self, signal_configs, scoring_config):
         """Build the scorer's signals and guard thresholds once, up front.
 
