@@ -11,6 +11,7 @@ elasticsearch==9.4.1
 numpy==2.4.6
 pandas==3.0.5
 pytest==9.1.1
+ruff==0.16.1
 requests==2.34.2
 tqdm==4.70.0
 

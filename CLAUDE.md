@@ -52,6 +52,32 @@ Things worth capturing, when they apply:
 Inline comments follow the same rule: reserve them for the non-obvious. A
 comment restating the line below it is noise.
 
+## Python must be free of linter warnings
+
+`ruff` is the linter, configured in `pyproject.toml`. Code is not done until
+this prints `All checks passed!`:
+
+```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m ruff check . --fix     # apply the mechanical fixes
+```
+
+The rule set is pinned explicitly rather than inherited from ruff's defaults,
+which shift between releases — otherwise a clean checkout stops being clean
+after an upgrade.
+
+When a rule fires on something deliberate, do not silence it silently. Either
+fix the code, or add an exemption **with a comment saying why**, at the
+narrowest scope that works: a targeted `# noqa: RULE` on the line for a
+one-off, `per-file-ignores` for a file-wide reason, and a global `ignore` only
+when the rule genuinely conflicts with a project-wide decision. Every exemption
+currently in `pyproject.toml` carries its reasoning.
+
+This is not cosmetic. The first run against this codebase found a real bug that
+had been sitting in `phase_providers/phase_dispatcher.py` — an `else` branch
+referencing an undefined `logger` and a nonexistent attribute, so an
+unrecognized phase name crashed instead of logging a clear error.
+
 ## Everything runs from `.venv`
 
 Never invoke bare `python3` or `pip3`. Use `.venv/bin/python` for every command
