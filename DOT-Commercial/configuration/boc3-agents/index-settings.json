@@ -1,9 +1,9 @@
 {
-    "index": "boc3-agents-{now/d}-000001",
-    "settings": {
-        "index": {
-            "number_of_shards": 1,
-            "number_of_replicas": 1
-        }
+  "index": "boc3-agents-{now/d}-000001",
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
     }
+  }
 }

@@ -1,14 +1,8 @@
 {
-    "index": "out-of-service-orders-{now/d}-000001",
-    "alias": "out-of-service-orders-000001",
-    "source": "out_of_service_orders.csv",
-    "id_field": [
-        "dot_number",
-        "oos_date",
-        "oos_reason",
-        "status",
-        "rescind_date"
-    ],
-    "num_rows": null,
-    "skip_rows": 0
+  "index": "out-of-service-orders-{now/d}-000001",
+  "alias": "out-of-service-orders-000001",
+  "source": "out_of_service_orders.csv",
+  "id_field": ["dot_number", "oos_date", "oos_reason", "status", "rescind_date"],
+  "num_rows": null,
+  "skip_rows": 0
 }

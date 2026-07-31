@@ -1,8 +1,8 @@
 {
-    "index": "boc3-agents-{now/d}-000001",
-    "alias": "boc3-agents-000001",
-    "source": "boc3_agents.csv",
-    "id_field": "docket_number",
-    "num_rows": null,
-    "skip_rows": 0
+  "index": "boc3-agents-{now/d}-000001",
+  "alias": "boc3-agents-000001",
+  "source": "boc3_agents.csv",
+  "id_field": "docket_number",
+  "num_rows": null,
+  "skip_rows": 0
 }

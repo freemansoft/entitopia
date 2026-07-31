@@ -1,14 +1,14 @@
 {
-    "name": "inspections-pipeline-000001",
-    "processors": [
-        {
-            "enrich": {
-                "description": "slipstream unit-level VIN/vehicle data",
-                "policy_name": "inspections-per-unit-enrichment-policy",
-                "field": "inspection_id",
-                "target_field": "units",
-                "max_matches": "10"
-            }
-        }
-    ]
+  "name": "inspections-pipeline-000001",
+  "processors": [
+    {
+      "enrich": {
+        "description": "slipstream unit-level VIN/vehicle data",
+        "policy_name": "inspections-per-unit-enrichment-policy",
+        "field": "inspection_id",
+        "target_field": "units",
+        "max_matches": "10"
+      }
+    }
+  ]
 }

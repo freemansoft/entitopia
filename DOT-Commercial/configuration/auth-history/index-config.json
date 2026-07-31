@@ -1,18 +1,18 @@
 {
-    "index": "auth-history-{now/d}-000001",
-    "alias": "auth-history-000001",
-    "source": "auth_history.csv",
-    "id_field": [
-        "docket_number",
-        "dot_number",
-        "sub_number",
-        "mod_col_1",
-        "original_action_desc",
-        "orig_served_date",
-        "disp_action_desc",
-        "disp_decided_date",
-        "disp_served_date"
-    ],
-    "num_rows": null,
-    "skip_rows": 0
+  "index": "auth-history-{now/d}-000001",
+  "alias": "auth-history-000001",
+  "source": "auth_history.csv",
+  "id_field": [
+    "docket_number",
+    "dot_number",
+    "sub_number",
+    "mod_col_1",
+    "original_action_desc",
+    "orig_served_date",
+    "disp_action_desc",
+    "disp_decided_date",
+    "disp_served_date"
+  ],
+  "num_rows": null,
+  "skip_rows": 0
 }

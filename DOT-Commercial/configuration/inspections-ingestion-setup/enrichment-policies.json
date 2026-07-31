@@ -1,18 +1,18 @@
 [
-    {
-        "name": "inspections-per-unit-enrichment-policy",
-        "match": {
-            "indices": "inspections-per-unit-{now/d}-000001",
-            "match_field": "inspection_id",
-            "enrich_fields": [
-                "inspection_id",
-                "insp_unit_vehicle_id_number",
-                "insp_unit_make",
-                "insp_unit_company",
-                "insp_unit_license",
-                "insp_unit_license_state",
-                "insp_unit_type_id"
-            ]
-        }
+  {
+    "name": "inspections-per-unit-enrichment-policy",
+    "match": {
+      "indices": "inspections-per-unit-{now/d}-000001",
+      "match_field": "inspection_id",
+      "enrich_fields": [
+        "inspection_id",
+        "insp_unit_vehicle_id_number",
+        "insp_unit_make",
+        "insp_unit_company",
+        "insp_unit_license",
+        "insp_unit_license_state",
+        "insp_unit_type_id"
+      ]
     }
+  }
 ]

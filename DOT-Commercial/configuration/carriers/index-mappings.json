@@ -1,141 +1,141 @@
 {
-    "index": "carriers-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "dot_number": {
-                "type": "keyword"
-            },
-            "legal_name": {
-                "type": "text",
-                "fields": {
-                    "keyword": { "type": "keyword" },
-                    "clean": { "type": "text", "analyzer": "name_clean" },
-                    "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-                    "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
-                }
-            },
-            "dba_name": {
-                "type": "text",
-                "fields": {
-                    "keyword": { "type": "keyword" },
-                    "clean": { "type": "text", "analyzer": "name_clean" },
-                    "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-                    "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
-                }
-            },
-            "phy_street": {
-                "type": "text",
-                "fields": {
-                    "keyword": { "type": "keyword" },
-                    "clean": { "type": "text", "analyzer": "street_clean" },
-                    "tokens": { "type": "text", "analyzer": "street_tokens" }
-                }
-            },
-            "phy_city": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    }
-                }
-            },
-            "phy_state": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    }
-                }
-            },
-            "mailing_street": {
-                "type": "text",
-                "fields": {
-                    "keyword": { "type": "keyword" },
-                    "clean": { "type": "text", "analyzer": "street_clean" },
-                    "tokens": { "type": "text", "analyzer": "street_tokens" }
-                }
-            },
-            "mailing_city": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    }
-                }
-            },
-            "mailing_state": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    }
-                }
-            },
-            "telephone": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "phone_clean"
-                    }
-                }
-            },
-            "email_address": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    }
-                }
-            },
-            "add_date": {
-                "type": "date",
-                "format": "strict_date_optional_time||yyyy-MM-dd"
-            },
-            "phy_zip": { "type": "keyword" },
-            "mailing_zip": { "type": "keyword" },
-            "fax": {
-                "type": "text",
-                "fields": {
-                    "keyword": { "type": "keyword" },
-                    "clean": { "type": "text", "analyzer": "phone_clean" }
-                }
-            },
-            "boc3_agents": {
-                "properties": {
-                    "dot_number": { "type": "long" },
-                    "co_name": {
-                        "type": "text",
-                        "fields": {
-                            "keyword": { "type": "keyword" },
-                            "clean": { "type": "text", "analyzer": "name_clean" },
-                            "phonetic": { "type": "text", "analyzer": "name_phonetic" }
-                        }
-                    },
-                    "street_po": {
-                        "type": "text",
-                        "fields": {
-                            "keyword": { "type": "keyword" },
-                            "clean": { "type": "text", "analyzer": "street_clean" },
-                            "tokens": { "type": "text", "analyzer": "street_tokens" }
-                        }
-                    },
-                    "city": { "type": "keyword" },
-                    "state_code": { "type": "keyword" },
-                    "zip_code": { "type": "keyword" }
-                }
-            }
+  "index": "carriers-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "dot_number": {
+        "type": "keyword"
+      },
+      "legal_name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "clean": { "type": "text", "analyzer": "name_clean" },
+          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
+          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
         }
+      },
+      "dba_name": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "clean": { "type": "text", "analyzer": "name_clean" },
+          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
+          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
+        }
+      },
+      "phy_street": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "clean": { "type": "text", "analyzer": "street_clean" },
+          "tokens": { "type": "text", "analyzer": "street_tokens" }
+        }
+      },
+      "phy_city": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
+        }
+      },
+      "phy_state": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "mailing_street": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "clean": { "type": "text", "analyzer": "street_clean" },
+          "tokens": { "type": "text", "analyzer": "street_tokens" }
+        }
+      },
+      "mailing_city": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
+        }
+      },
+      "mailing_state": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "telephone": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "phone_clean"
+          }
+        }
+      },
+      "email_address": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "add_date": {
+        "type": "date",
+        "format": "strict_date_optional_time||yyyy-MM-dd"
+      },
+      "phy_zip": { "type": "keyword" },
+      "mailing_zip": { "type": "keyword" },
+      "fax": {
+        "type": "text",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "clean": { "type": "text", "analyzer": "phone_clean" }
+        }
+      },
+      "boc3_agents": {
+        "properties": {
+          "dot_number": { "type": "long" },
+          "co_name": {
+            "type": "text",
+            "fields": {
+              "keyword": { "type": "keyword" },
+              "clean": { "type": "text", "analyzer": "name_clean" },
+              "phonetic": { "type": "text", "analyzer": "name_phonetic" }
+            }
+          },
+          "street_po": {
+            "type": "text",
+            "fields": {
+              "keyword": { "type": "keyword" },
+              "clean": { "type": "text", "analyzer": "street_clean" },
+              "tokens": { "type": "text", "analyzer": "street_tokens" }
+            }
+          },
+          "city": { "type": "keyword" },
+          "state_code": { "type": "keyword" },
+          "zip_code": { "type": "keyword" }
+        }
+      }
     }
+  }
 }

@@ -107,7 +107,7 @@ This is a work in progress
 ## Setup
 
 1. Have access to a docker cluster.
-   - I use ElasticSearch on Docker using https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch
+   - I use ElasticSearch on Docker using <https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch>
    - Elasticsearch analysis plugins must be loaded
 1. Clone this repo
 1. Requires Python 3.11 or higher (see `.python-version`)
@@ -118,19 +118,19 @@ This is a work in progress
 1. Run `python3 execute_project.py --project<the-project-dir>`
    - `python3 execute_project.py --project=CMS-Providers`
 1. Verify the indexes have been created
-   - The Elasticsearch url is usually something like the following when running locally http://localhost:5601/
+   - The Elasticsearch url is usually something like the following when running locally <http://localhost:5601/>
 
 ## Government Datasets
 
-- DOT Commercial https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx
-- Medicare Providers https://data.cms.gov/provider-data/
+- DOT Commercial <https://ai.fmcsa.dot.gov/SMS/Tools/Downloads.aspx>
+- Medicare Providers <https://data.cms.gov/provider-data/>
 
 ## References
 
 ### Elasticsearch indexing
 
-- https://dev.to/makalaaneesh/updating-the-mapping-of-an-elasticsearch-index-3h9n
+- <https://dev.to/makalaaneesh/updating-the-mapping-of-an-elasticsearch-index-3h9n>
 
 ### Analyzers
 
-- https://www.informit.com/articles/article.aspx?p=1848528
+- <https://www.informit.com/articles/article.aspx?p=1848528>

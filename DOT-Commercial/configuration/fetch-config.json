@@ -1,49 +1,49 @@
 {
-    "base_url": "https://data.transportation.gov",
-    "app_token_env_var": "SOCRATA_APP_TOKEN",
-    "page_size": 50000,
-    "datasets": {
-        "carriers": {
-            "dataset_id": "kjg3-diqy",
-            "output": "data/carriers/carriers.csv",
-            "date_field": null,
-            "window_months": null
-        },
-        "crashes": {
-            "dataset_id": "aayw-vxb3",
-            "output": "data/crashes/crashes.csv",
-            "date_field": "report_date",
-            "window_months": 24
-        },
-        "inspections": {
-            "dataset_id": "fx4q-ay7w",
-            "output": "data/inspections/inspections.csv",
-            "date_field": "insp_date",
-            "window_months": 24
-        },
-        "inspections_per_unit": {
-            "dataset_id": "wt8s-2hbx",
-            "output": "data/inspections-per-unit/inspections_per_unit.csv",
-            "date_field": "change_date",
-            "window_months": 24
-        },
-        "auth_history": {
-            "dataset_id": "9mw4-x3tu",
-            "output": "data/auth-history/auth_history.csv",
-            "date_field": null,
-            "window_months": null
-        },
-        "out_of_service_orders": {
-            "dataset_id": "p2mt-9ige",
-            "output": "data/out-of-service-orders/out_of_service_orders.csv",
-            "date_field": null,
-            "window_months": null
-        },
-        "boc3_agents": {
-            "dataset_id": "2emp-mxtb",
-            "output": "data/boc3-agents/boc3_agents.csv",
-            "date_field": null,
-            "window_months": null
-        }
+  "base_url": "https://data.transportation.gov",
+  "app_token_env_var": "SOCRATA_APP_TOKEN",
+  "page_size": 50000,
+  "datasets": {
+    "carriers": {
+      "dataset_id": "kjg3-diqy",
+      "output": "data/carriers/carriers.csv",
+      "date_field": null,
+      "window_months": null
+    },
+    "crashes": {
+      "dataset_id": "aayw-vxb3",
+      "output": "data/crashes/crashes.csv",
+      "date_field": "report_date",
+      "window_months": 24
+    },
+    "inspections": {
+      "dataset_id": "fx4q-ay7w",
+      "output": "data/inspections/inspections.csv",
+      "date_field": "insp_date",
+      "window_months": 24
+    },
+    "inspections_per_unit": {
+      "dataset_id": "wt8s-2hbx",
+      "output": "data/inspections-per-unit/inspections_per_unit.csv",
+      "date_field": "change_date",
+      "window_months": 24
+    },
+    "auth_history": {
+      "dataset_id": "9mw4-x3tu",
+      "output": "data/auth-history/auth_history.csv",
+      "date_field": null,
+      "window_months": null
+    },
+    "out_of_service_orders": {
+      "dataset_id": "p2mt-9ige",
+      "output": "data/out-of-service-orders/out_of_service_orders.csv",
+      "date_field": null,
+      "window_months": null
+    },
+    "boc3_agents": {
+      "dataset_id": "2emp-mxtb",
+      "output": "data/boc3-agents/boc3_agents.csv",
+      "date_field": null,
+      "window_months": null
     }
+  }
 }

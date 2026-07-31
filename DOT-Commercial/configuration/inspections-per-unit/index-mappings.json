@@ -1,43 +1,43 @@
 {
-    "index": "inspections-per-unit-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "inspection_id": {
-                "type": "long"
-            },
-            "insp_unit_id": {
-                "type": "keyword"
-            },
-            "insp_unit_type_id": {
-                "type": "keyword"
-            },
-            "insp_unit_number": {
-                "type": "keyword"
-            },
-            "insp_unit_make": {
-                "type": "keyword"
-            },
-            "insp_unit_company": {
-                "type": "keyword"
-            },
-            "insp_unit_license": {
-                "type": "keyword"
-            },
-            "insp_unit_license_state": {
-                "type": "keyword"
-            },
-            "insp_unit_vehicle_id_number": {
-                "type": "keyword"
-            },
-            "insp_unit_decal": {
-                "type": "keyword"
-            },
-            "insp_unit_decal_number": {
-                "type": "keyword"
-            },
-            "change_date": {
-                "type": "keyword"
-            }
-        }
+  "index": "inspections-per-unit-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "inspection_id": {
+        "type": "long"
+      },
+      "insp_unit_id": {
+        "type": "keyword"
+      },
+      "insp_unit_type_id": {
+        "type": "keyword"
+      },
+      "insp_unit_number": {
+        "type": "keyword"
+      },
+      "insp_unit_make": {
+        "type": "keyword"
+      },
+      "insp_unit_company": {
+        "type": "keyword"
+      },
+      "insp_unit_license": {
+        "type": "keyword"
+      },
+      "insp_unit_license_state": {
+        "type": "keyword"
+      },
+      "insp_unit_vehicle_id_number": {
+        "type": "keyword"
+      },
+      "insp_unit_decal": {
+        "type": "keyword"
+      },
+      "insp_unit_decal_number": {
+        "type": "keyword"
+      },
+      "change_date": {
+        "type": "keyword"
+      }
     }
+  }
 }

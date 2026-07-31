@@ -37,11 +37,11 @@ Run `bash download_cms_provider.sh` from this directory. It resolves the **curre
 
 Every dataset has an `id_field` in its `index-config.json`, so re-running a dataset's `index-populate` phase against the same day's index overwrites existing documents by deterministic `_id` instead of duplicating them (`phase_index_populate.py`'s `compute_id()` joins a list of columns with `|`). Each composite is the **minimal** key empirically verified 100% unique against the full downloaded dataset — larger keys work too but are unnecessary, and no smaller key is unique.
 
-| dataset | `id_field` | rows | why this key |
-| --- | --- | --- | --- |
-| `hospitals` | `Facility ID` (single column) | 5,432 | naturally unique |
-| `facillity-affiliations` | `["Ind_PAC_ID", "Facility Affiliations Certification Number"]` | 2,260,193 | a 2-column key **is** unique here; `[NPI, facility_type, cert]` collides on 47 rows, `Ind_PAC_ID` + affiliation cert separates all |
-| `doctors-clinicians` | `["Ind_enrl_ID", "org_pac_id", "adrs_id"]` | 3,387,942 | no 1- or 2-column key is unique (best pair `[Ind_PAC_ID, adrs_id]` still collides on 49,795 rows); a clinician recurs across org + address, so enrollment + org + address is the minimal unique key |
+| dataset                  | `id_field`                                                     | rows      | why this key                                                                                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hospitals`              | `Facility ID` (single column)                                  | 5,432     | naturally unique                                                                                                                                                                                    |
+| `facillity-affiliations` | `["Ind_PAC_ID", "Facility Affiliations Certification Number"]` | 2,260,193 | a 2-column key **is** unique here; `[NPI, facility_type, cert]` collides on 47 rows, `Ind_PAC_ID` + affiliation cert separates all                                                                  |
+| `doctors-clinicians`     | `["Ind_enrl_ID", "org_pac_id", "adrs_id"]`                     | 3,387,942 | no 1- or 2-column key is unique (best pair `[Ind_PAC_ID, adrs_id]` still collides on 49,795 rows); a clinician recurs across org + address, so enrollment + org + address is the minimal unique key |
 
 Neither big dataset has exact full-row duplicates, so these keys separate every row (they do not collapse identical rows).
 
@@ -57,5 +57,5 @@ Notes from validating the datasets, the download script, and loading against a l
 
 ## References
 
-- Medicare Providers https://data.cms.gov/provider-data/
-- Data Dictionary https://data.cms.gov/provider-data/sites/default/files/data_dictionaries/physician/DOC_Data_Dictionary.pdf
+- Medicare Providers <https://data.cms.gov/provider-data/>
+- Data Dictionary <https://data.cms.gov/provider-data/sites/default/files/data_dictionaries/physician/DOC_Data_Dictionary.pdf>

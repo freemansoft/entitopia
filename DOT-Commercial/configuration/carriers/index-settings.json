@@ -22,10 +22,29 @@
             "type": "stop",
             "ignore_case": true,
             "stopwords": [
-              "llc", "inc", "ltd", "co", "corp", "corporation", "company",
-              "trucking", "truck", "transport", "transportation", "express",
-              "logistics", "carrier", "carriers", "enterprises", "enterprise",
-              "services", "service", "group", "freight", "hauling", "the"
+              "llc",
+              "inc",
+              "ltd",
+              "co",
+              "corp",
+              "corporation",
+              "company",
+              "trucking",
+              "truck",
+              "transport",
+              "transportation",
+              "express",
+              "logistics",
+              "carrier",
+              "carriers",
+              "enterprises",
+              "enterprise",
+              "services",
+              "service",
+              "group",
+              "freight",
+              "hauling",
+              "the"
             ]
           },
           "street_suffix_synonyms": {
@@ -91,12 +110,7 @@
             "tokenizer": "keyword"
           },
           "street_tokens": {
-            "filter": [
-              "icu_normalizer",
-              "icu_folding",
-              "punct_white",
-              "street_suffix_synonyms"
-            ],
+            "filter": ["icu_normalizer", "icu_folding", "punct_white", "street_suffix_synonyms"],
             "tokenizer": "standard"
           },
           "phone_clean": {
