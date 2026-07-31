@@ -453,12 +453,29 @@ def _flatten(values):
     return flattened
 
 
+def _normalize_agent_key(name) -> str:
+    """Casefold an agent name for keying and lookup.
+
+    Must match how AgentSignal normalizes names before intersecting them,
+    otherwise a lookup silently misses and every agent degrades to the 1.0
+    "unseen" fallback — turning the rarity weighting off without any error.
+    """
+    return str(name).strip().lower()
+
+
 @dataclass
 class ScoringContext:
     """Corpus-level statistics gathered once per sweep."""
 
     agent_counts: dict[str, int] = field(default_factory=dict)
     total_agent_carriers: int = 0
+
+    def __post_init__(self):
+        # Normalize keys on the way in so callers cannot introduce a silent
+        # case mismatch, regardless of how they built the dict.
+        self.agent_counts = {
+            _normalize_agent_key(k): v for k, v in self.agent_counts.items()
+        }
 
     def agent_rarity(self, agent_name: str) -> float:
         """1.0 for an agent nobody uses, near 0.0 for a dominant filer.
@@ -475,7 +492,7 @@ class ScoringContext:
         """
         if self.total_agent_carriers <= 0:
             return 0.0
-        count = self.agent_counts.get(agent_name, 0)
+        count = self.agent_counts.get(_normalize_agent_key(agent_name), 0)
         if count <= 0:
             return 1.0
         return math.log(self.total_agent_carriers / count) / math.log(
@@ -1047,7 +1064,24 @@ def test_agent_shared_rare_agent_scores_high():
     ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
     pred = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
-    assert signal.score(pred, cand, ctx) > 0.99
+    # True normalized IDF for count=2 is ~0.951. An earlier draft asserted
+    # > 0.99, which passed only because a case mismatch made the lookup miss
+    # and fall back to the 1.0 "unseen agent" value — a test passing for the
+    # wrong reason, and masking the bug the next test now pins.
+    assert signal.score(pred, cand, ctx) > 0.94
+
+
+def test_agent_lookup_is_case_insensitive():
+    # AgentSignal lowercases names before intersecting them, while the sweep
+    # builds agent_counts from a terms aggregation. If those two disagree on
+    # case the lookup misses, every agent scores the 1.0 "unseen" fallback,
+    # and the rarity weighting silently turns itself off. ScoringContext
+    # normalizes both sides so casing cannot cause that.
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "big filer"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "BiG FiLeR"}]})
+    assert signal.score(pred, cand, ctx) < 0.20
 
 
 def test_agent_shared_common_agent_scores_low():
