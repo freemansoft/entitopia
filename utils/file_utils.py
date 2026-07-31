@@ -1,6 +1,6 @@
-from types import SimpleNamespace
 import json
 import logging
+from types import SimpleNamespace
 
 
 def load_from_file(file_name):
@@ -8,17 +8,17 @@ def load_from_file(file_name):
     logger = logging.getLogger(__name__)
     try:
         logger.debug("Loading from file {}".format(file_name))
-        config_file = open(file_name)
-        try:
-            loaded_config = json.loads(
-                config_file.read(), object_hook=lambda d: SimpleNamespace(**d)
-            )
-            logger.debug("Loaded {} info : {}".format(file_name, loaded_config))
-            return loaded_config
-        except Exception as e:
-            logger.warning("Failed loading:{} error:{}".format(file_name, e))
-        finally:
-            config_file.close()
+        with open(file_name) as config_file:
+            try:
+                loaded_config = json.loads(
+                    config_file.read(), object_hook=lambda d: SimpleNamespace(**d)
+                )
+                logger.debug(
+                    "Loaded {} info : {}".format(file_name, loaded_config)
+                )
+                return loaded_config
+            except Exception as e:
+                logger.warning("Failed loading:{} error:{}".format(file_name, e))
     except Exception as e:
         logger.warning("Failed opening:{} error:{}".format(file_name, e))
         return None

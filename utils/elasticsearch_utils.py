@@ -1,18 +1,17 @@
-from elasticsearch import Elasticsearch
 import logging
-import requests
 from datetime import datetime
+
+import requests
+from elasticsearch import Elasticsearch
+
+from utils import elasticsearch_utils, file_utils
 from utils.custom_logging_formatter import CustomFormatter
-
-
-import utils.file_utils as file_utils
-import utils.elasticsearch_utils as elasticsearch_utils
 
 
 def connect_to_es(es_connection_info):
     logger = logging.getLogger(__name__)
     # Elasticsearch's client transport logging is really chatty
-    logging.getLogger("elastic_transport.transport").setLevel(logging.WARN)
+    logging.getLogger("elastic_transport.transport").setLevel(logging.WARNING)
     # For locally generated certs
     requests.packages.urllib3.disable_warnings()
 

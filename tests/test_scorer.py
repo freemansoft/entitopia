@@ -15,12 +15,12 @@ def doc(dot_number="1", source=None, tokens=None):
 
 
 def scoring(**overrides):
-    base = dict(
-        min_total_score=0.35,
-        min_signals=2,
-        require_identity_signal=True,
-        max_pairs_per_predecessor=10,
-    )
+    base = {
+        "min_total_score": 0.35,
+        "min_signals": 2,
+        "require_identity_signal": True,
+        "max_pairs_per_predecessor": 10,
+    }
     base.update(overrides)
     return cfg(**base)
 

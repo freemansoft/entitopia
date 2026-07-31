@@ -2,8 +2,8 @@ import logging
 
 from phase_providers.phase_enrichment_policies import PhaseEnrichmentPolicies
 from phase_providers.phase_index_creation import PhaseindexCreate
-from phase_providers.phase_index_populate import PhaseIndexingPopulate
 from phase_providers.phase_index_mappings import PhaseIndexMappings
+from phase_providers.phase_index_populate import PhaseIndexingPopulate
 from phase_providers.phase_pipelines import PhasePipelines
 
 
@@ -32,4 +32,6 @@ class PhaseDispatcher:
             handler = PhaseIndexingPopulate(es, project, step_name, project_config)
             handler.handle()
         else:
-            logger.error("Unrecognized phase: {}".format(step_name.phase))
+            self.logger.error(
+                "Unrecognized phase: {} in step {}".format(one_phase, step_name)
+            )

@@ -1,17 +1,13 @@
-import logging as logging
+import contextlib
+import logging
 from itertools import islice
-import utils.elasticsearch_utils as elasticsearch_utils
-import utils.id_utils as id_utils
 
 import numpy as np
-import pandas as pd
 import tqdm
-
 from elasticsearch.helpers import parallel_bulk
 
-import utils.file_utils as file_utils
+from utils import elasticsearch_utils, file_utils, id_utils
 from utils.csv_load_utils import CsvLoadUtils
-
 
 MAX_LOGGED_FAILURES = 20
 
@@ -106,18 +102,14 @@ class PhaseIndexingPopulate:
                 pass
 
             id_field = None
-            try:
+            # auto generate the id_field if not present
+            with contextlib.suppress(AttributeError):
                 id_field = index_config.id_field
-            except AttributeError:
-                # auto generate the id_field
-                pass
 
             num_rows = None
-            try:
+            # all rows if not present
+            with contextlib.suppress(AttributeError):
                 num_rows = index_config.num_rows
-            except AttributeError:
-                # all rows
-                pass
 
             failure_count = 0
             for success, response in parallel_bulk(

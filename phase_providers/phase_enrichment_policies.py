@@ -1,10 +1,9 @@
-import utils.file_utils as file_utils
-import utils.elasticsearch_utils as elasticsearch_utils
-import logging as logging
 import json
-from utils.csv_load_utils import CsvLoadUtils
-from elasticsearch import NotFoundError, ConflictError, BadRequestError
-from elasticsearch import client
+import logging
+
+from elasticsearch import BadRequestError, ConflictError, NotFoundError, client
+
+from utils import elasticsearch_utils, file_utils
 
 
 class PhaseEnrichmentPolicies:
@@ -56,9 +55,7 @@ class PhaseEnrichmentPolicies:
                     )
                 )
                 try:
-                    match_json = json.dumps(
-                        phase_config.match, default=lambda s: vars(s)
-                    )
+                    match_json = json.dumps(phase_config.match, default=vars)
                     match_dicts = json.loads(match_json)
                     r = enrichClient.put_policy(
                         name=phase_config.name, match=match_dicts

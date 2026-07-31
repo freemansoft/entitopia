@@ -191,14 +191,26 @@ _MONTHS = {
 BACKWARD_WINDOW_DAYS = 180
 BACKWARD_SCALE = 0.5
 
+# A dd-MMM-yy Oracle export splits on "-" into exactly 3 parts; anything else
+# isn't this format.
+ORACLE_DATE_PART_COUNT = 3
+# A 2-digit part means the year needs CENTURY_PIVOT to resolve its century, as
+# with "01-JUN-74" -> 1974.
+TWO_DIGIT_YEAR_LENGTH = 2
 
-def parse_flexible_date(value) -> datetime.date | None:
+
+def parse_flexible_date(value) -> datetime.date | None:  # noqa: PLR0911
     """Parse ISO (2022-07-09) or Oracle (01-JUN-74) dates. None on failure.
 
     FMCSA data mixes both: newer records come through as ISO, but older
     out-of-service and registration dates are exports from a legacy Oracle
     system using the two-digit-year dd-MMM-yy format. See CENTURY_PIVOT below
     for why that two-digit year can't be resolved naively.
+
+    The early returns below are deliberate bail-outs for each way the input
+    can fail to parse; flattening them into fewer returns would nest the
+    format checks instead of listing them, making the function harder to
+    follow, not easier.
     """
     if value is None:
         return None
@@ -212,13 +224,13 @@ def parse_flexible_date(value) -> datetime.date | None:
         pass
 
     parts = text.split("-")
-    if len(parts) == 3 and parts[1] in _MONTHS:
+    if len(parts) == ORACLE_DATE_PART_COUNT and parts[1] in _MONTHS:
         try:
             day = int(parts[0])
             year = int(parts[2])
         except ValueError:
             return None
-        if len(parts[2]) == 2:
+        if len(parts[2]) == TWO_DIGIT_YEAR_LENGTH:
             year += 1900 if year > CENTURY_PIVOT else 2000
         try:
             return datetime.date(year, _MONTHS[parts[1]], day)

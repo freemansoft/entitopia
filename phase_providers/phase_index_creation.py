@@ -1,10 +1,9 @@
-import utils.file_utils as file_utils
-import utils.elasticsearch_utils as elasticsearch_utils
-import logging as logging
 import json
-from utils.csv_load_utils import CsvLoadUtils
-from elasticsearch import NotFoundError, ConflictError, BadRequestError
-from elasticsearch import client
+import logging
+
+from elasticsearch import BadRequestError, client
+
+from utils import elasticsearch_utils, file_utils
 
 
 class PhaseindexCreate:
@@ -26,9 +25,7 @@ class PhaseindexCreate:
 
         if index_setting_config:
             self.logger.debug("Processing {}".format(index_setting_config))
-            settings_json = json.dumps(
-                index_setting_config.settings, default=lambda s: vars(s)
-            )
+            settings_json = json.dumps(index_setting_config.settings, default=vars)
             settings_dicts = json.loads(settings_json)
             return settings_dicts
         else:

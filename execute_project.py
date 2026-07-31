@@ -10,14 +10,12 @@ if sys.version_info < MINIMUM_PYTHON_VERSION:
     )
 
 import argparse
-import logging as logging
-from utils.custom_logging_formatter import CustomFormatter
 import copy
+import logging
 
 from phase_providers.phase_dispatcher import PhaseDispatcher
-
-import utils.file_utils as file_utils
-import utils.elasticsearch_utils as elasticsearch_utils
+from utils import elasticsearch_utils, file_utils
+from utils.custom_logging_formatter import CustomFormatter
 
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
@@ -41,7 +39,7 @@ def process_phase_steps(
                 project_config,
             )
     if not phase_steps:
-        logger.warn("No steps specified - no work done")
+        logger.warning("No steps specified - no work done")
 
 
 def load_project_config(project):
@@ -114,7 +112,7 @@ def apply_args_to_config(config, args):
 def update_logger_based_from_config(project_config, logger):
     try:
         logger.setLevel(project_config.logLevel)
-    except AttributeError as e:
+    except AttributeError:
         logger.warning("No default logging level in config {}".format(project_config))
 
 
@@ -145,7 +143,7 @@ def main():
             dispatcher, es, args.project, project_config.steps, project_config
         )
     else:
-        root_logger.critical("Could not load configuration for ".format(args.project))
+        root_logger.critical("Could not load configuration for ")
 
 
 if __name__ == "__main__":

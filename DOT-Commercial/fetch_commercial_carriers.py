@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import utils.file_utils as file_utils
+from utils import file_utils
 
 
 def compute_where_clause(date_field, window_months, now):

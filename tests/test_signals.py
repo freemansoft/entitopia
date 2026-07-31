@@ -167,14 +167,14 @@ def test_signal_exposes_weight_as_float():
 
 
 def address_cfg(**overrides):
-    base = dict(
-        type="address",
-        weight=0.20,
-        fields=["phy_street", "mailing_street"],
-        exact_subfield="clean",
-        fuzzy_subfield="tokens",
-        fuzzy_scale=0.7,
-    )
+    base = {
+        "type": "address",
+        "weight": 0.20,
+        "fields": ["phy_street", "mailing_street"],
+        "exact_subfield": "clean",
+        "fuzzy_subfield": "tokens",
+        "fuzzy_scale": 0.7,
+    }
     base.update(overrides)
     return cfg(**base)
 
@@ -351,13 +351,13 @@ def test_agent_blank_names_never_match():
 
 
 def temporal_cfg(**overrides):
-    base = dict(
-        type="temporal",
-        weight=0.05,
-        predecessor_date="out_of_service_orders.oos_date",
-        successor_date="add_date",
-        max_gap_days=365,
-    )
+    base = {
+        "type": "temporal",
+        "weight": 0.05,
+        "predecessor_date": "out_of_service_orders.oos_date",
+        "successor_date": "add_date",
+        "max_gap_days": 365,
+    }
     base.update(overrides)
     return cfg(**base)
 
