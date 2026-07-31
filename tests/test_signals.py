@@ -1,4 +1,9 @@
+from types import SimpleNamespace
+
+import pytest
+
 from matching.documents import CarrierDoc, ScoringContext
+from matching.signals import SIGNAL_TYPES, build_signal
 
 
 def make_doc(dot_number="1", source=None, tokens=None):
@@ -88,3 +93,73 @@ def test_agent_rarity_unknown_agent_is_maximally_rare():
 def test_agent_rarity_with_no_corpus_is_neutral_zero():
     ctx = ScoringContext(agent_counts={}, total_agent_carriers=0)
     assert ctx.agent_rarity("ANY") == 0.0
+
+
+def cfg(**kwargs):
+    return SimpleNamespace(**kwargs)
+
+
+def test_build_signal_rejects_unknown_type():
+    with pytest.raises(ValueError, match="unknown signal type"):
+        build_signal(cfg(type="not-a-signal", weight=0.1))
+
+
+def test_name_overlap_registered_under_both_names():
+    assert "name-phonetic" in SIGNAL_TYPES
+    assert "name-token" in SIGNAL_TYPES
+
+
+def test_name_overlap_scores_identical_names_as_one():
+    signal = build_signal(
+        cfg(type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic")
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}})
+    cand = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_name_overlap_returns_none_when_tokens_absent():
+    signal = build_signal(
+        cfg(type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic")
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": {"SM0"}})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_name_overlap_cross_field_matches_legal_name_against_dba():
+    # The classic chameleon move: the old legal name becomes the new DBA.
+    signal = build_signal(
+        cfg(
+            type="name-phonetic",
+            weight=0.22,
+            fields=["legal_name", "dba_name"],
+            subfield="phonetic",
+            cross_field=True,
+        )
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}, "dba_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": set(), "dba_name.phonetic": {"SM0", "TRKN"}})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_name_overlap_without_cross_field_ignores_the_dba_crossover():
+    signal = build_signal(
+        cfg(
+            type="name-phonetic",
+            weight=0.22,
+            fields=["legal_name", "dba_name"],
+            subfield="phonetic",
+            cross_field=False,
+        )
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0"}, "dba_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": set(), "dba_name.phonetic": {"SM0"}})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_signal_exposes_weight_as_float():
+    signal = build_signal(
+        cfg(type="name-token", weight="0.10", fields=["legal_name"], subfield="clean")
+    )
+    assert signal.weight == 0.10
