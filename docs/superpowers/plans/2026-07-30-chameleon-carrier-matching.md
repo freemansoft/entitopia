@@ -15,7 +15,8 @@
 - **Python 3.11+.** Enforced at `execute_project.py:3-10`. Use `X | None` union syntax, not `Optional[X]`.
 - **`elasticsearch==9.4.1`.** Use `request_timeout=`, not `timeout=`. `BadRequestError`/`NotFoundError`/`ConflictError` from the `elasticsearch` package.
 - **Never pass `body=` to a client call. Use explicit keyword arguments.** `body` is deprecated in 8.x and removed for these APIs in the pinned 9.4.1. Explicit kwargs work on both. The forms this plan uses: `es.search(index=, size=, query=, sort=, pit=, search_after=, track_total_hits=, aggs=, source=)`, `es.mtermvectors(index=, ids=, fields=, term_statistics=, field_statistics=, positions=, offsets=, payloads=)` — note `mtermvectors` takes these flat, with no `parameters` wrapper — `es.open_point_in_time(index=, keep_alive=)`, and `es.close_point_in_time(id=)`.
-- **Verify the installed client before starting cluster work.** `python3 -c "import elasticsearch; print(elasticsearch.__version__)"`. The venv observed during planning held 8.6.2 while `requirements.txt` pinned 9.4.1; the kwargs forms above are correct on both, but a mismatch is worth knowing about before debugging a cluster failure.
+- **Everything runs from `.venv`, never the system Python.** Use `.venv/bin/python …` for every command in this plan — tests, verification snippets, and `execute_project.py` alike. `bash dependencies.sh` creates `.venv` if missing and installs into it. The host machine's Python must never affect this project.
+- **`requirements.txt` pins every version, direct and transitive.** Add new dependencies there, pinned, rather than installing ad hoc into the venv.
 - **All JSON config loads as `types.SimpleNamespace`**, via `file_utils.load_from_file`'s `object_hook`. Access with attributes (`config.signals[0].weight`), never `config["signals"]`. Optional keys are read with `getattr(obj, "key", default)`, matching how `phase_index_populate.py:102-121` handles them.
 - **`{now/d}` expands client-side** to `%Y.%m.%d` (e.g. `carriers-2026.07.30-000001`) via `elasticsearch_utils.replace_index_with_now_version`. It operates on `config.index` in place.
 - **Signal weights need not sum to 1.0.** Unevaluable signals return `None`, drop out, and the total is renormalized over what remains. Only ratios matter.
@@ -94,7 +95,7 @@ Append to `requirements.txt`:
 pytest
 ```
 
-Then install: `pip install -r requirements.txt`
+Then install: `bash dependencies.sh`
 
 - [ ] **Step 2: Create the package markers**
 
@@ -177,7 +178,7 @@ def test_normalize_text_identifier_rejects_blank():
 
 - [ ] **Step 4: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_tokens.py -v`
+Run: `.venv/bin/python -m pytest tests/test_tokens.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'matching.tokens'`
 
 - [ ] **Step 5: Implement `matching/tokens.py`**
@@ -252,7 +253,7 @@ def normalize_text_identifier(value) -> str | None:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_tokens.py -v`
+Run: `.venv/bin/python -m pytest tests/test_tokens.py -v`
 Expected: PASS — all tests in the file green, no failures or errors
 
 - [ ] **Step 7: Commit**
@@ -370,7 +371,7 @@ def test_agent_rarity_with_no_corpus_is_neutral_zero():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'matching.documents'`
 
 - [ ] **Step 3: Implement `matching/documents.py`**
@@ -460,7 +461,7 @@ class ScoringContext:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: PASS — all tests in the file green, no failures or errors
 
 - [ ] **Step 5: Commit**
@@ -584,7 +585,7 @@ def test_signal_exposes_weight_as_float():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'matching.signals'`
 
 - [ ] **Step 3: Implement `matching/signals.py`**
@@ -677,7 +678,7 @@ def build_signal(config) -> Signal:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: PASS — all tests in the file green, including Task 2's
 
 - [ ] **Step 5: Commit**
@@ -822,7 +823,7 @@ def test_exact_identifier_returns_none_when_both_sides_blank():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: FAIL with `ValueError: unknown signal type 'address'`
 
 - [ ] **Step 3: Implement the two signals**
@@ -940,7 +941,7 @@ _register(ExactIdentifierSignal)
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: PASS — all tests in the file green, including Tasks 2-3's
 
 - [ ] **Step 5: Commit**
@@ -1143,7 +1144,7 @@ def test_vin_overlap_returns_none_without_vins():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: FAIL with `ImportError: cannot import name 'parse_flexible_date'`
 
 - [ ] **Step 3: Implement the three signals**
@@ -1284,7 +1285,7 @@ _register(VinOverlapSignal)
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/test_signals.py -v`
+Run: `.venv/bin/python -m pytest tests/test_signals.py -v`
 Expected: PASS — all tests in the file green, including Tasks 2-4's
 
 - [ ] **Step 5: Commit**
@@ -1493,7 +1494,7 @@ def test_rejects_zero_total_weight_config():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m pytest tests/test_scorer.py -v`
+Run: `.venv/bin/python -m pytest tests/test_scorer.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'matching.scorer'`
 
 - [ ] **Step 3: Implement `matching/scorer.py`**
@@ -1597,7 +1598,7 @@ class PairScorer:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `python3 -m pytest tests/ -v`
+Run: `.venv/bin/python -m pytest tests/ -v`
 Expected: PASS — the whole suite green across test_tokens, test_signals, and test_scorer
 
 - [ ] **Step 5: Commit**
@@ -1671,7 +1672,7 @@ Replace the `compute_id` method (lines 26-32) with:
 
 - [ ] **Step 3: Verify nothing broke**
 
-Run: `python3 -c "import phase_providers.phase_index_populate; import utils.id_utils; print(utils.id_utils.compute_id({'a': 1, 'b': 2}, ['a', 'b']))"`
+Run: `.venv/bin/python -c "import phase_providers.phase_index_populate; import utils.id_utils; print(utils.id_utils.compute_id({'a': 1, 'b': 2}, ['a', 'b']))"`
 Expected: `1|2`
 
 - [ ] **Step 4: Commit**
@@ -1825,7 +1826,7 @@ Key changes from the previous version:
 
 - [ ] **Step 2: Validate the JSON parses**
 
-Run: `python3 -c "import json; c = json.load(open('DOT-Commercial/configuration/carriers/index-settings.json')); print(sorted(c['settings']['index']['analysis']['analyzer']))"`
+Run: `.venv/bin/python -c "import json; c = json.load(open('DOT-Commercial/configuration/carriers/index-settings.json')); print(sorted(c['settings']['index']['analysis']['analyzer']))"`
 Expected: `['name_clean', 'name_phonetic', 'name_phonetic_bm', 'phone_clean', 'street_clean', 'street_tokens']`
 
 - [ ] **Step 3: Verify the analyzers work against a live cluster**
@@ -1833,7 +1834,7 @@ Expected: `['name_clean', 'name_phonetic', 'name_phonetic_bm', 'phone_clean', 's
 This requires the cluster from `README.md` with `analysis-icu` and `analysis-phonetic` installed. Create the index with the new settings and analyze a sample:
 
 ```bash
-python3 execute_project.py --project=DOT-Commercial --step=carriers --phase=index-create
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers --phase=index-create
 ```
 
 Then confirm the corporate-suffix stop and double-metaphone both apply:
@@ -2016,7 +2017,7 @@ registrations go back to the 1970s, so `74` must resolve to 1974.
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 import json
 m = json.load(open('DOT-Commercial/configuration/carriers/index-mappings.json'))
 p = json.load(open('DOT-Commercial/configuration/carriers-ingestion-setup/pipelines.json'))
@@ -2040,7 +2041,7 @@ first processor: ['script']
 - [ ] **Step 6: Verify the pipeline script against a live cluster**
 
 ```bash
-python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup --phase=pipelines
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup --phase=pipelines
 ```
 
 Then simulate:
@@ -2259,7 +2260,7 @@ names.
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 import json
 for name in ['index-config', 'index-mappings', 'entity-match']:
     json.load(open('DOT-Commercial/configuration/chameleon-detection/{}.json'.format(name)))
@@ -2447,7 +2448,7 @@ class PredecessorSelector:
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 from types import SimpleNamespace
 from matching.predecessors import PredecessorSelector, SELECTORS
 print('selectors:', sorted(SELECTORS))
@@ -2655,7 +2656,7 @@ def _to_carrier_doc(hit, tokens):
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 import json
 from types import SimpleNamespace as NS
 from matching.candidates import CandidateFinder
@@ -3063,7 +3064,7 @@ and append `"entity-match"` to `all_phases`.
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 import json
 from phase_providers.phase_dispatcher import PhaseDispatcher
 c = json.load(open('DOT-Commercial/configuration.json'))
@@ -3079,7 +3080,7 @@ Expected: both `True`, an ERROR log line, and the final print — no `NameError`
 
 - [ ] **Step 5: Run the full test suite**
 
-Run: `python3 -m pytest tests/ -v`
+Run: `.venv/bin/python -m pytest tests/ -v`
 Expected: PASS — the whole suite green, no failures or errors
 
 - [ ] **Step 6: Run the sweep end to end**
@@ -3087,9 +3088,9 @@ Expected: PASS — the whole suite green, no failures or errors
 Requires the `carriers` index rebuilt with Tasks 8-9 in place:
 
 ```bash
-python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
-python3 execute_project.py --project=DOT-Commercial --step=carriers
-python3 execute_project.py --project=DOT-Commercial --step=chameleon-detection
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=chameleon-detection
 ```
 
 Expected: the run summary logs non-zero predecessors and pairs. Then inspect the top hits:
@@ -3217,7 +3218,7 @@ document size for data no signal reads.
 Run:
 
 ```bash
-python3 -c "
+.venv/bin/python -c "
 import json
 p = json.load(open('DOT-Commercial/configuration/carriers-ingestion-setup/enrichment-policies.json'))
 pol = next(x for x in p if x['name'] == 'inspections-enrichment-policy')
@@ -3251,7 +3252,7 @@ curl -sk -u "$ES_USER:$ES_PASS" -XDELETE \
 Then rebuild the policy and pipeline together:
 
 ```bash
-python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
 ```
 
 Watch the log for `Failed to delete enrichment policy due to conflict`. If it
@@ -3272,7 +3273,7 @@ index itself lacks the data and `--step=inspections` must be rerun first.
 - [ ] **Step 5: Reload carriers and verify VINs landed**
 
 ```bash
-python3 execute_project.py --project=DOT-Commercial --step=carriers
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers
 ```
 
 Then confirm on a real document:
@@ -3375,11 +3376,11 @@ what a carrier document contains, so they share one rebuild.
 curl -sk -u "$ES_USER:$ES_PASS" -XDELETE \
   "$ES_URL/_ingest/pipeline/carrier-enrichment-pipeline-000001"
 
-python3 execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
-python3 execute_project.py --project=DOT-Commercial --step=carriers   # ~2M docs, slow
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers-ingestion-setup
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers   # ~2M docs, slow
 
 # after Task 13
-python3 execute_project.py --project=DOT-Commercial --step=chameleon-detection
+.venv/bin/python execute_project.py --project=DOT-Commercial --step=chameleon-detection
 ```
 
 The carriers reload is the expensive step. Run it once, after Tasks 8, 9, and
