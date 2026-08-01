@@ -103,10 +103,12 @@ class PairScorer:
             return None
 
         contributions: list[SignalContribution] = []
+        evidence_keys: set[frozenset[str]] = set()
         for signal in self.signals:
             score = signal.score(pred, cand, ctx)
             if score is None:
                 continue
+            evidence_keys.add(signal.evidence_key)
             contributions.append(
                 SignalContribution(
                     signal_type=signal.signal_type,
@@ -117,7 +119,12 @@ class PairScorer:
                 )
             )
 
-        if len(contributions) < self.min_signals:
+        # Count distinct evidence, not signal instances. Config lists three
+        # name signals over the same two fields (two phonetic encoders plus
+        # the cleaned form), so counting instances would let a pair matching
+        # on nothing but a name clear a floor whose whole purpose is to demand
+        # corroboration from a second, independent source.
+        if len(evidence_keys) < self.min_signals:
             return None
 
         # `fired` (score > 0), not `contributions` (merely evaluable), feeds

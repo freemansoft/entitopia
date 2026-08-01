@@ -4,6 +4,7 @@ import pytest
 
 from matching.documents import CarrierDoc, ScoringContext
 from matching.scorer import PairScorer
+from matching.signals import build_signal
 
 
 def cfg(**kwargs):
@@ -160,3 +161,48 @@ def test_rejects_a_carrier_matched_against_itself():
 def test_rejects_zero_total_weight_config():
     with pytest.raises(ValueError, match="weights sum to zero"):
         PairScorer([cfg(type="name-phonetic", weight=0.0, fields=["legal_name"], subfield="phonetic")], scoring())
+
+
+NAME_PHONETIC_BM = cfg(
+    type="name-phonetic", weight=0.13, fields=["legal_name"], subfield="phonetic_bm"
+)
+NAME_TOKEN = cfg(type="name-token", weight=0.10, fields=["legal_name"], subfield="clean")
+
+
+def test_signals_over_the_same_fields_share_an_evidence_key():
+    # The two phonetic encoders and the cleaned form are three readings of one
+    # field, deliberately listed separately so they can be weighted apart.
+    keys = {build_signal(c).evidence_key for c in (NAME_SIGNAL, NAME_PHONETIC_BM, NAME_TOKEN)}
+    assert len(keys) == 1
+
+
+def test_signals_over_different_fields_have_different_evidence_keys():
+    assert build_signal(NAME_SIGNAL).evidence_key != build_signal(VIN_SIGNAL).evidence_key
+
+
+def test_min_signals_counts_evidence_not_signal_instances():
+    # Three name arms over one field are one piece of evidence, so a pair
+    # matching on nothing but a name must not clear a min_signals=2 floor
+    # whose purpose is to demand corroboration from a second source.
+    scorer = PairScorer(
+        [NAME_SIGNAL, NAME_PHONETIC_BM, NAME_TOKEN], scoring(min_signals=2, min_total_score=0.0)
+    )
+    pred = doc("1", tokens={"legal_name.phonetic": {"SM0"}, "legal_name.phonetic_bm": {"zmit"}, "legal_name.clean": {"smith"}})
+    cand = doc("2", tokens={"legal_name.phonetic": {"SM0"}, "legal_name.phonetic_bm": {"zmit"}, "legal_name.clean": {"smith"}})
+    assert scorer.score_pair(pred, cand, ScoringContext()) is None
+
+
+def test_name_plus_a_second_source_clears_the_floor():
+    # The same three name arms DO clear it once genuinely independent
+    # evidence is present, which is what the guard is actually for.
+    scorer = PairScorer(
+        [NAME_SIGNAL, NAME_PHONETIC_BM, NAME_TOKEN, VIN_SIGNAL],
+        scoring(min_signals=2, min_total_score=0.0),
+    )
+    shared_vin = {"crashes": [{"vehicle_identification_number": "1ABC"}]}
+    tokens = {"legal_name.phonetic": {"SM0"}, "legal_name.phonetic_bm": {"zmit"}, "legal_name.clean": {"smith"}}
+    pred = doc("1", source=dict(shared_vin), tokens=dict(tokens))
+    cand = doc("2", source=dict(shared_vin), tokens=dict(tokens))
+    result = scorer.score_pair(pred, cand, ScoringContext())
+    assert result is not None
+    assert result.signals_present == 4

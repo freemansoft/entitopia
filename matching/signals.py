@@ -23,6 +23,19 @@ from matching.tokens import (
 logger = logging.getLogger(__name__)
 
 
+# Config keys whose values name the source fields a signal reads. Used to
+# decide which signals are looking at the same underlying evidence.
+_FIELD_CONFIG_KEYS = (
+    "fields",
+    "phone_fields",
+    "text_fields",
+    "name_field",
+    "address_field",
+    "predecessor_date",
+    "successor_date",
+)
+
+
 class Signal:
     """Base contract every scoring signal implements.
 
@@ -41,6 +54,35 @@ class Signal:
         self.config = config
         self.signal_type = config.type
         self.weight = float(config.weight)
+
+    @property
+    def evidence_key(self) -> frozenset[str]:
+        """The set of source fields this signal reads.
+
+        Two signals sharing a key are two readings of the same evidence, not
+        two independent corroborations of it. `PairScorer` counts distinct
+        keys rather than signal instances when applying `min_signals`.
+
+        This matters because config deliberately lists name signals more than
+        once over the same two fields — the two phonetic encoders are separate
+        arms so they can be weighted apart, and `name-token` reads the cleaned
+        form of the same text. Counting instances let a pair matching on
+        nothing but a name satisfy a floor written to require corroboration
+        from somewhere else.
+
+        Deliberately ignores `subfield`: different encodings of one field are
+        the same evidence, which is the entire reason the arms exist.
+        """
+        names: list[str] = []
+        for key in _FIELD_CONFIG_KEYS:
+            value = getattr(self.config, key, None)
+            if isinstance(value, str):
+                names.append(value)
+            elif isinstance(value, list):
+                names.extend(value)
+        # A signal naming no source fields still counts as its own evidence
+        # rather than collapsing together with every other such signal.
+        return frozenset(names) or frozenset({self.signal_type})
 
     def score(self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext) -> float | None:
         """Score one carrier pair. Subclasses implement; see the class
