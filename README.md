@@ -17,6 +17,8 @@ The framework ships with two example projects. They exist to prove the framework
 
 Each project has its own README covering its datasets, the steps it runs, its index relationships, and the dataset-specific problems solved there. **This README covers the framework and the hazards common to any dataset.**
 
+Adding a third dataset? Start with [docs/adding-a-dataset.md](docs/adding-a-dataset.md) — it walks the decisions in order and points back here for the details.
+
 ## How it works
 
 A **project** is a directory containing configuration and data. Running it executes **steps** in order; each step runs one or more **phases**.
