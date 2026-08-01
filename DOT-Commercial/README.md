@@ -1,6 +1,21 @@
 # DOT Commercial
 
+A reference implementation of the [entitopia framework](../README.md) over FMCSA commercial trucking data. It is the **complex** case: seven datasets, six enrichment policies, a two-level enrichment chain, ingestion pipelines, and the project's first `entity-match` step.
+
+Its goal is detecting **chameleon carriers** — trucking companies shut down for safety or insurance reasons that reopen under a new DOT number while reusing the same addresses, phones, trucks, and near-identical names.
+
+Framework concepts (steps, phases, configuration layout) and the data-loading hazards common to any dataset are in the [top-level README](../README.md). This README covers what is specific to the FMCSA data.
+
 On the DOT Site <https://data.transportation.gov/Trucking-and-Motorcoaches/>
+
+## Open items
+
+Dataset-specific. Framework-level items are in the [top-level README](../README.md).
+
+1. **`insp_carrier_state_id` is not pinned in `inspections/index-mappings.json`**, so inspections ingestion silently drops ~0.65% of documents (36,788 of 5,647,567 on a full run). Elasticsearch dynamically infers `float` from whichever value it sees first under `parallel_bulk`'s concurrency, but the source column mixes numeric and non-numeric strings (`'NONE'`, `'S00000030887'`), so every non-conforming row fails with `document_parsing_exception`. Deterministic and lossy on every full run; which rows drop varies with thread ordering. Fix by pinning it to `keyword`, mirroring `dot_number` / `inspection_id`.
+1. **`entity-match` has never run against production data, and its thresholds are uncalibrated.** Everything shipped so far was verified with synthetic documents. `min_total_score: 0.35` and all eight signal weights in `chameleon-detection/entity-match.json` are informed guesses, so the first full sweep is also the calibration run. Load the real data and tune against actual output before trusting a result.
+1. **Name similarity is effectively triple-weighted, which currently ranks the wrong pairs highest.** `entity-match.json` lists three name signals over the same two fields (`name-phonetic` twice plus `name-token`, together 0.45 of the 0.94 total). Because `carrier_suffix_stop` strips `TRUCKING`/`LOGISTICS`/`LLC`/`INC`, most carrier names reduce to a single token, so the blended overlap becomes effectively binary. Measured: a pair with a byte-identical street, same state, and registration 45 days after the shutdown scored **0.3483 and was dropped** by the 0.35 floor, while `ABC TRUCKING LLC` vs `ABC LOGISTICS INC` in different states — sharing nothing but the token `ABC` — scored **0.5113 and was emitted**. A complete name change is the defining chameleon move, so this is backwards. Note also that `min_signals: 2` is satisfied by three arms reading one field, so a name-only pair passes the floor that guard exists to enforce. Rebalance the name arms, or count them as one signal for `min_signals`.
+1. **`entity-match` over-selects predecessors** because `out_of_service_orders` is mapped as a plain `object` rather than `nested`. A carrier with an ACTIVE 2015 order and an INACTIVE 2022 order satisfies `status: ACTIVE` and `oos_date >= 2020` from two _different_ array elements, so it is swept even though no single order matches both filters. `TemporalSignal` then reports whichever `oos_date` is latest, so `shutdown_date` and `gap_days` on an emitted pair may come from an order the selector never intended to match. Over-selection preserves recall and `max_predecessors` bounds the cost, which is why it ships. Fix by mapping `out_of_service_orders` as `nested` and using a `nested` query in `matching/predecessors.py`.
 
 ## Fetching Data
 

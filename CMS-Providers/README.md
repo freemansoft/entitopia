@@ -2,12 +2,54 @@
 
 ## Purpose
 
-Provide a large data set using Medicare-related data.
+A reference implementation of the [entitopia framework](../README.md) over Medicare provider data. It exercises the framework at scale — 5.6M rows across three datasets — and demonstrates phonetic and fuzzy analyzers on names and addresses.
+
+This project is deliberately the **simple** case: three independent datasets, no enrichment, no ingestion pipelines, no cross-dataset matching. See [DOT-Commercial](../DOT-Commercial/) for the enrichment and entity-matching case.
+
+Framework concepts (steps, phases, configuration layout) and the data-loading hazards common to any dataset are documented in the [top-level README](../README.md). This README covers what is specific to the CMS data.
+
+## Index Data
+
+Three independent indexes, each loaded straight from its own CSV. Nothing enriches anything else — the relationships between these datasets exist in the data (shared `Ind_PAC_ID` / `NPI` values) but are not materialized in Elasticsearch.
+
+```mermaid
+flowchart LR
+    subgraph csv[source CSV]
+        direction TB
+        dac[DAC_NationalDownloadableFile.csv<br/>3,387,942 rows]
+        fac[Facility_Affiliation.csv<br/>2,260,193 rows]
+        hosp[Hospital_General_Information.csv<br/>5,432 rows]
+    end
+
+    subgraph steps
+        direction TB
+        dac-step[doctors-clinicians]
+        fac-step[facillity-affiliations]
+        hosp-step[hospitals]
+    end
+
+    subgraph indexes
+        direction TB
+        dac-index["doctors-clinicians-{day}-000001"] -..-|alias| dac-alias[doctors-clinicians-000001]
+        fac-index["facillity-affiliations-{day}-000001"] -..-|alias| fac-alias[facillity-affiliations-000001]
+        hosp-index["hospitals-{day}-000001"] -..-|alias| hosp-alias[hospitals-000001]
+    end
+
+    dac -->|import| dac-step -->|"index-create, index-map, index-populate"| dac-index
+    fac -->|import| fac-step -->|"index-create, index-map, index-populate"| fac-index
+    hosp -->|import| hosp-step -->|"index-create, index-map, index-populate"| hosp-index
+
+    dac-index -.->|"Ind_PAC_ID / NPI (not materialized)"| fac-index
+    fac-index -.->|"certification number (not materialized)"| hosp-index
+```
+
+Each step runs the same three phases — `index-create`, `index-map`, `index-populate` — because there is nothing to enrich and no pipeline to build. That makes this project the smallest complete example of the framework.
 
 ## Open Items
 
-1. No enrichment exists
-1. affiliations extend to more than hospitals
+1. No enrichment exists. The `Ind_PAC_ID`-to-facility and facility-to-hospital relationships shown dashed above could be materialized with enrichment policies, the way DOT-Commercial denormalizes five datasets onto its carriers index.
+1. Affiliations extend to more than hospitals, so `facillity-affiliations` is broader than its name suggests.
+1. No `entity-match` step. The phonetic and cleaning analyzers are configured on names and addresses here but nothing queries them — this project loads and analyzes, it does not yet match. Duplicate-clinician detection across registrations would be the natural use.
 
 ## Data
 
