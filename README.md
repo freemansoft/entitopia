@@ -113,6 +113,20 @@ flowchart LR
 
 Every one of these was hit for real in at least one reference project, usually more than once. They share a signature: **the run reports success and the data is quietly wrong.** Read this section before adding a dataset.
 
+### Measure the data first
+
+Most of the hazards below are decidable before you write a line of configuration, and cheaper to find there than after a load. `scripts/profile_dataset.py` runs the measurements that catch them:
+
+```bash
+.venv/bin/python scripts/profile_dataset.py DOT-Commercial/data/carriers/carriers.csv
+.venv/bin/python scripts/profile_dataset.py <path.csv> --key col_a --key col_b   # test a candidate id_field
+.venv/bin/python scripts/profile_dataset.py <path.csv> --rows 200000             # sample a huge file
+```
+
+It reports, per column: distinct count, blank rate, detected date formats, and the specific conditions that break a load — columns mixing numeric and non-numeric values, identifiers carrying leading zeros, and non-ISO dates. It also splits columns into **fingerprints** (high cardinality, can identify an entity) and **filters** (low cardinality, can only narrow a population), and tests whether a candidate key is unique — distinguishing real collisions from byte-identical source rows, which call for opposite responses.
+
+These measurements were previously done ad hoc, one throwaway snippet at a time, which is why the same mistakes recurred across datasets. Run it before configuring; act on every WARNING it prints.
+
 ### 1. Dynamic type inference silently drops or breaks documents
 
 Elasticsearch infers a field's type from the first document that carries it. That inference is made under concurrency, so it is not even deterministic across runs — and once made, non-conforming values fail with `document_parsing_exception` and **the whole document is rejected**, not just the field.
@@ -277,6 +291,7 @@ This is a work in progress.
 
 Framework-level. Dataset-specific items live in each project's README.
 
+1. **Every dataset joins to `carriers.dot_number` across a type boundary.** `carriers` maps `dot_number` as `keyword`, while `crashes`, `inspections`, `auth-history`, `out-of-service-orders`, and `boc3-agents` all map their own as `long`. The enrichment policies work today only through Elasticsearch's implicit coercion between the two. This is not currently broken, but it is the same shape as the `crashes.dot_number` bug already recorded in the closed items below — a `float`/`keyword` mismatch there produced **zero** enrich matches with no error. Any future change to either side's mapping, or a value that does not coerce cleanly, reintroduces that failure silently. Fix by aligning all six datasets on one type, which requires retyping five mappings and a full reload. Surfaced while evaluating a candidate sixth dataset; nobody had noticed it across the whole matching build.
 1. **`csv_load_utils.py` strips leading zeros from identifier columns before Elasticsearch ever sees them, and a `keyword` mapping cannot prevent it.** `pd.read_csv` is called without `dtype`, so an all-numeric column is inferred as `int64` in the loader. Confirmed live: CMS `Facility ID` is mapped `keyword` and CMS facility IDs are zero-padded six digits, yet `010001` indexes as `10001`. Because that column is also the `id_field`, every affected document gets a wrong `_id`, and any join against a source that preserved the padding fails. The same mechanism affects `ZIP Code` (also `keyword`-mapped, also inferred `int64`) and any zero-padded key in a future dataset. Fix by reading with `dtype=str` so Elasticsearch's mappings do the typing — numeric-mapped fields still coerce correctly from strings — or at minimum by reading columns pinned as `keyword` as strings.
 1. Cleaning up on exit
 1. Deleting enrichment policies when they are tied to pipelines. You have to delete the pipeline manually before policies can be deleted. This is worse than a bureaucratic annoyance: if a rerun's policy rebuild silently hits this conflict (because a pipeline referencing the policy is still live from a prior run), the enrich policy is left as a STALE, UNDERSIZED snapshot with no error — later steps keep enriching against outdated/incomplete data with no signal anything is wrong. Confirmed in practice during the DOT-Commercial VIN/units work: `inspections-enrichment-policy` silently stayed pinned to a 5,000-row validation-sample snapshot of `inspections` across a full 5.6M-row production run because `carrier-enrichment-pipeline-000001` still existed and blocked the policy delete-and-rebuild, dropping `carriers.inspections` enrichment coverage from ~572K to ~4K matches with no failure anywhere in the run.
