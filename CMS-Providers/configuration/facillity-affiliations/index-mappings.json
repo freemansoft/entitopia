@@ -1,58 +1,58 @@
 {
-    "index": "facillity-affiliations-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "NPI": {
-                "type": "keyword"
-            },
-            "Provider First Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            },
-            "Provider Last Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            },
-            "Provider Middle Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            }
+  "index": "facillity-affiliations-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "NPI": {
+        "type": "keyword"
+      },
+      "Provider First Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
         }
+      },
+      "Provider Last Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
+        }
+      },
+      "Provider Middle Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
+        }
+      }
     }
+  }
 }

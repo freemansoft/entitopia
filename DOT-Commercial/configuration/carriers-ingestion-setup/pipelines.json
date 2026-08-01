@@ -1,50 +1,66 @@
 {
-    "name": "carrier-enrichment-pipeline-000001",
-    "processors": [
-        {
-            "enrich": {
-                "description": "slipstream 'inspection' data",
-                "policy_name": "inspections-enrichment-policy",
-                "field": "dot_number",
-                "target_field": "inspections",
-                "max_matches": "100"
+  "name": "carrier-enrichment-pipeline-000001",
+  "processors": [
+    {
+      "script": {
+        "description": "rewrite add_date from dd-MMM-yy to ISO with a 1900/2000 century pivot",
+        "lang": "painless",
+        "source": "if (ctx.add_date == null) { return; } String raw = ctx.add_date.toString().trim().toUpperCase(); if (raw.length() == 0) { ctx.remove('add_date'); return; } def parts = /-/.split(raw); if (parts.length != 3) { ctx.remove('add_date'); return; } if (parts[0] ==~ /[0-9]{4}/ && parts[1] ==~ /[0-9]{2}/ && parts[2] ==~ /[0-9]{2}/) { /* ISO passthrough: mirrors parse_flexible_date's fromisoformat-first order in matching/signals.py. Shape alone (yyyy-MM-dd digit pattern) is not enough: add_date is mapped as a strict date, so a calendar-invalid value like 9999-99-99 or 2021-02-29 reaching the index fails the WHOLE carrier document, not just this field. LocalDate.of does real calendar validation (month range, per-month day counts, leap years) that a shape-only regex cannot, so only a value that genuinely constructs is kept; anything else is dropped exactly like garbage input. */ try { LocalDate.of(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2])); return; } catch (Exception e) { ctx.remove('add_date'); return; } } def months = ['JAN':1,'FEB':2,'MAR':3,'APR':4,'MAY':5,'JUN':6,'JUL':7,'AUG':8,'SEP':9,'OCT':10,'NOV':11,'DEC':12]; if (!months.containsKey(parts[1])) { ctx.remove('add_date'); return; } int day = Integer.parseInt(parts[0]); int year = Integer.parseInt(parts[2]); if (parts[2].length() == 2) { year = year > 30 ? 1900 + year : 2000 + year; } ctx.add_date = String.format('%04d-%02d-%02d', new def[]{year, months[parts[1]], day});",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a script failure must drop add_date, not the whole document — add_date is mapped as a strict date, so letting a raw unparsed value (e.g. '01-JUN-74') through fails the entire carrier document on index, the same failure class that silently dropped 36,788 records",
+              "field": "add_date",
+              "ignore_missing": true
             }
-        },
-        {
-            "enrich": {
-                "description": "slipstream 'crashes' data",
-                "policy_name": "crashes-enrichment-policy",
-                "field": "dot_number",
-                "target_field": "crashes",
-                "max_matches": "100"
-            }
-        },
-        {
-            "enrich": {
-                "description": "slipstream 'authority history' data (grants/revocations by docket/DOT number — the reincarnation timing signal)",
-                "policy_name": "auth-history-enrichment-policy",
-                "field": "dot_number",
-                "target_field": "auth_history",
-                "max_matches": "50"
-            }
-        },
-        {
-            "enrich": {
-                "description": "slipstream 'out of service order' data",
-                "policy_name": "out-of-service-orders-enrichment-policy",
-                "field": "dot_number",
-                "target_field": "out_of_service_orders",
-                "max_matches": "20"
-            }
-        },
-        {
-            "enrich": {
-                "description": "slipstream 'BOC-3 process agent' data (shared-agent/address fingerprint across otherwise-unrelated carriers)",
-                "policy_name": "boc3-agents-enrichment-policy",
-                "field": "dot_number",
-                "target_field": "boc3_agents",
-                "max_matches": "20"
-            }
-        }
-    ]
+          }
+        ]
+      }
+    },
+    {
+      "enrich": {
+        "description": "slipstream 'inspection' data",
+        "policy_name": "inspections-enrichment-policy",
+        "field": "dot_number",
+        "target_field": "inspections",
+        "max_matches": "100"
+      }
+    },
+    {
+      "enrich": {
+        "description": "slipstream 'crashes' data",
+        "policy_name": "crashes-enrichment-policy",
+        "field": "dot_number",
+        "target_field": "crashes",
+        "max_matches": "100"
+      }
+    },
+    {
+      "enrich": {
+        "description": "slipstream 'authority history' data (grants/revocations by docket/DOT number — the reincarnation timing signal)",
+        "policy_name": "auth-history-enrichment-policy",
+        "field": "dot_number",
+        "target_field": "auth_history",
+        "max_matches": "50"
+      }
+    },
+    {
+      "enrich": {
+        "description": "slipstream 'out of service order' data",
+        "policy_name": "out-of-service-orders-enrichment-policy",
+        "field": "dot_number",
+        "target_field": "out_of_service_orders",
+        "max_matches": "20"
+      }
+    },
+    {
+      "enrich": {
+        "description": "slipstream 'BOC-3 process agent' data (shared-agent/address fingerprint across otherwise-unrelated carriers)",
+        "policy_name": "boc3-agents-enrichment-policy",
+        "field": "dot_number",
+        "target_field": "boc3_agents",
+        "max_matches": "20"
+      }
+    }
+  ]
 }

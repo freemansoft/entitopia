@@ -5,3 +5,7 @@ es_config.json
 .venv/
 .claude/settings.local.json
 .DS_Store
+
+# Agent scratch: SDD ledgers, eval runs, optimization logs. Nothing here is
+# part of the project - durable artifacts get promoted into the repo proper.
+.superpowers/

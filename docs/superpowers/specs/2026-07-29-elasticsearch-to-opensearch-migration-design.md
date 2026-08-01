@@ -39,10 +39,10 @@ all. Enrichment has to move into the client or be dropped.
 `DOT-Commercial` depends on it heavily — 6 enrichment policies and 6 `enrich`
 processors:
 
-| Config | Policies | Enrich processors | Effect |
-| --- | --- | --- | --- |
-| `carriers-ingestion-setup/` | 5 (`inspections`, `crashes`, `auth-history`, `out-of-service-orders`, `boc3-agents`) | 5, all keyed on `dot_number` | Denormalizes 5 datasets into each carrier document |
-| `inspections-ingestion-setup/` | 1 (`inspections-per-unit`) | 1, keyed on `inspection_id` | Attaches unit-level VIN/vehicle data to each inspection |
+| Config                         | Policies                                                                             | Enrich processors            | Effect                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------- |
+| `carriers-ingestion-setup/`    | 5 (`inspections`, `crashes`, `auth-history`, `out-of-service-orders`, `boc3-agents`) | 5, all keyed on `dot_number` | Denormalizes 5 datasets into each carrier document      |
+| `inspections-ingestion-setup/` | 1 (`inspections-per-unit`)                                                           | 1, keyed on `inspection_id`  | Attaches unit-level VIN/vehicle data to each inspection |
 
 `CMS-Providers` uses **no** enrichment at all. Neither does
 `crashes-ingestion-setup/`, whose pipeline holds only a Painless `script`
@@ -67,15 +67,15 @@ Everything else. Verified, not assumed:
 
 Client API differences are shallow and mechanical:
 
-| elasticsearch-py 9.x | opensearch-py 3.x |
-| --- | --- |
-| `basic_auth=[user, pass]` | `http_auth=(user, pass)` |
-| `scheme` key inside the hosts dict | `use_ssl=` client kwarg |
-| `request_timeout=` | `timeout=` |
-| `BadRequestError` | `RequestError` (400; `NotFoundError`/`ConflictError` unchanged) |
-| `client.IndicesClient(es)` / `IngestClient(es)` | `client.indices` / `client.ingest` attributes |
-| kwarg-based (`create(index=…, settings=…)`) | body-based (`create(index=…, body={"settings": …})`) |
-| `elastic_transport.transport` logger | `opensearchpy` logger |
+| elasticsearch-py 9.x                            | opensearch-py 3.x                                               |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| `basic_auth=[user, pass]`                       | `http_auth=(user, pass)`                                        |
+| `scheme` key inside the hosts dict              | `use_ssl=` client kwarg                                         |
+| `request_timeout=`                              | `timeout=`                                                      |
+| `BadRequestError`                               | `RequestError` (400; `NotFoundError`/`ConflictError` unchanged) |
+| `client.IndicesClient(es)` / `IngestClient(es)` | `client.indices` / `client.ingest` attributes                   |
+| kwarg-based (`create(index=…, settings=…)`)     | body-based (`create(index=…, body={"settings": …})`)            |
+| `elastic_transport.transport` logger            | `opensearchpy` logger                                           |
 
 The attribute form also drops the `DeprecationWarning` that the `run-entitopia`
 skill currently documents as a harmless known wart.
@@ -87,11 +87,11 @@ Each was an explicit choice between presented alternatives:
 1. **Replace Elasticsearch entirely** rather than supporting both backends behind
    an abstraction layer. Git history preserves the ES version.
 2. **Reimplement enrichment client-side, sourced from the index** (not from the
-   CSVs). Index-sourced matters because it reads *post-pipeline* values — the
+   CSVs). Index-sourced matters because it reads _post-pipeline_ values — the
    `crashes.dot_number` Painless cast is applied before the enricher sees it,
    whereas a pandas-level CSV join would bypass it and let the two paths
    disagree.
-3. **Self-managed Docker only.** Explicitly *not* AWS managed OpenSearch — see
+3. **Self-managed Docker only.** Explicitly _not_ AWS managed OpenSearch — see
    below.
 4. **Batched `terms` queries per bulk chunk**, not a prebuilt in-memory lookup.
    This was forced by a constraint discovered mid-design: steps run as separate
@@ -135,7 +135,7 @@ Three pieces.
 enrich-only, so nothing remains, no pipeline is created, and `index-populate`
 omits the `pipeline` key from those bulk actions rather than referencing
 something that does not exist. The `enrich` blocks stay in `pipelines.json` as
-the declaration of *what* to enrich — one source of truth, no config edits.
+the declaration of _what_ to enrich — one source of truth, no config edits.
 
 **Resolving what to enrich.** `carriers/index-config.json` names
 `carrier-enrichment-pipeline-000001`, but that pipeline is defined under a
@@ -226,11 +226,20 @@ owning.
   carriers/inspections denormalization as a documented gap. `CMS-Providers`
   ports with zero capability loss, and it is the project that actually
   demonstrates the stated soft/probabilistic entity-matching purpose.
-- **AWS managed OpenSearch is disqualifying.** It does not permit installing
+- ~~**AWS managed OpenSearch is disqualifying.** It does not permit installing
   `analysis-phonetic`, so the metaphone-encoded `name_phonetic` analyzer — the
   core of the entity-matching demo — cannot exist there. If the motive for
   migrating is ever "move to AWS managed OpenSearch," the answer is no, and the
-  reason is the plugin, not the enrich gap.
+  reason is the plugin, not the enrich gap.~~
+
+  **CORRECTED 2026-07-30 — this was wrong.** Amazon OpenSearch Service ships
+  **Phonetic Analysis** (minimum OpenSearch version 1.0) and **ICU Analysis**
+  ("Included on all domains") as prepackaged plugins, per
+  [Plugins by engine version in Amazon OpenSearch Service](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/supported-plugins.html).
+  Both `name_phonetic` and the ICU-based analyzers run on AWS managed
+  OpenSearch unchanged. AWS is therefore **not** disqualifying, and the enrich
+  gap above is the only real blocker — which is what the rest of this document
+  already concluded.
 - **The validation-and-refresh fix is independently worth doing.** Refreshing
   and counting each enrichment policy's source index, and erroring on empty,
   would close the documented silent zero-match failure on the current

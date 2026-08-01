@@ -1,8 +1,8 @@
 {
-    "timeout": 180,
-    "host": "localhost",
-    "port": 9200,
-    "scheme": "https",
-    "username": "",
-    "password": ""
+  "timeout": 180,
+  "host": "localhost",
+  "port": 9200,
+  "scheme": "https",
+  "username": "",
+  "password": ""
 }

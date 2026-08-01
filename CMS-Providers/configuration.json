@@ -1,38 +1,20 @@
 {
-    "steps": [
-        {
-            "name": "doctors-clinicians",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "facillity-affiliations",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "hospitals",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        }
-    ],
-    "all_phases": [
-        "index-create",
-        "index-map",
-        "enrichment-policies",
-        "pipelines",
-        "index-populate"
-    ],
-    "configurationDir": "configuration",
-    "dataDir": "data",
-    "logLevel": "INFO"
+  "steps": [
+    {
+      "name": "doctors-clinicians",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "facillity-affiliations",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "hospitals",
+      "phases": ["index-create", "index-map", "index-populate"]
+    }
+  ],
+  "all_phases": ["index-create", "index-map", "enrichment-policies", "pipelines", "index-populate"],
+  "configurationDir": "configuration",
+  "dataDir": "data",
+  "logLevel": "INFO"
 }

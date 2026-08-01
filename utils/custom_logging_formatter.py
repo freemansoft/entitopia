@@ -1,4 +1,5 @@
 import logging
+from typing import ClassVar
 
 # came from https://stackoverflow.com/questions/384076/how-can-i-color-python-logging-output
 
@@ -14,7 +15,7 @@ class CustomFormatter(logging.Formatter):
     format = "%(asctime)s - %(name)30s - %(levelname)8s - %(message)s (%(filename)s:%(lineno)d)"
 
     # https://talyian.github.io/ansicolors/
-    FORMATS = {
+    FORMATS: ClassVar[dict[int, str]] = {
         logging.DEBUG: light_purple + format + reset,
         logging.INFO: grey + format + reset,
         logging.WARNING: yellow + format + reset,

@@ -1,9 +1,10 @@
-import utils.file_utils as file_utils
-import logging as logging
-import utils.elasticsearch_utils as elasticsearch_utils
+import contextlib
 import json
-from elasticsearch import NotFoundError, ConflictError, BadRequestError
-from elasticsearch import client
+import logging
+
+from elasticsearch import BadRequestError, NotFoundError, client
+
+from utils import file_utils
 
 
 class PhasePipelines:
@@ -33,17 +34,13 @@ class PhasePipelines:
         if pipeline_config:
             ingestClient = client.IngestClient(self.es)
 
-            try:
+            with contextlib.suppress(NotFoundError):
                 ingestClient.delete_pipeline(id=pipeline_config.name)
-            except NotFoundError:
-                pass
 
             self.logger.info("Processing policy name {} ".format(pipeline_config.name))
 
             try:
-                processors_json = json.dumps(
-                    pipeline_config.processors, default=lambda s: vars(s)
-                )
+                processors_json = json.dumps(pipeline_config.processors, default=vars)
                 processors_dict = json.loads(processors_json)
                 r = ingestClient.put_pipeline(
                     id=pipeline_config.name, processors=processors_dict

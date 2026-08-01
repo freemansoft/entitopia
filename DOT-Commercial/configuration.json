@@ -1,90 +1,59 @@
 {
-    "steps": [
-        {
-            "name": "crashes-ingestion-setup",
-            "phases": [
-                "pipelines"
-            ]
-        },
-        {
-            "name": "crashes",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "inspections-per-unit",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "inspections-ingestion-setup",
-            "phases": [
-                "enrichment-policies",
-                "pipelines"
-            ]
-        },
-        {
-            "name": "inspections",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "auth-history",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "out-of-service-orders",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "boc3-agents",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        },
-        {
-            "name": "carriers-ingestion-setup",
-            "phases": [
-                "enrichment-policies",
-                "pipelines"
-            ]
-        },
-        {
-            "name": "carriers",
-            "phases": [
-                "index-create",
-                "index-map",
-                "index-populate"
-            ]
-        }
-    ],
-    "all_phases": [
-        "index-create",
-        "index-map",
-        "enrichment-policies",
-        "pipelines",
-        "index-populate"
-    ],
-    "configurationDir": "configuration",
-    "dataDir": "data",
-    "logLevel": "INFO"
+  "steps": [
+    {
+      "name": "crashes-ingestion-setup",
+      "phases": ["pipelines"]
+    },
+    {
+      "name": "crashes",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "inspections-per-unit",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "inspections-ingestion-setup",
+      "phases": ["enrichment-policies", "pipelines"]
+    },
+    {
+      "name": "inspections",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "auth-history",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "out-of-service-orders",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "boc3-agents",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "carriers-ingestion-setup",
+      "phases": ["enrichment-policies", "pipelines"]
+    },
+    {
+      "name": "carriers",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "chameleon-detection",
+      "phases": ["index-create", "index-map", "entity-match"]
+    }
+  ],
+  "all_phases": [
+    "index-create",
+    "index-map",
+    "enrichment-policies",
+    "pipelines",
+    "index-populate",
+    "entity-match"
+  ],
+  "configurationDir": "configuration",
+  "dataDir": "data",
+  "logLevel": "INFO"
 }

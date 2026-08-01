@@ -10,14 +10,12 @@ if sys.version_info < MINIMUM_PYTHON_VERSION:
     )
 
 import argparse
-import logging as logging
-from utils.custom_logging_formatter import CustomFormatter
 import copy
+import logging
 
 from phase_providers.phase_dispatcher import PhaseDispatcher
-
-import utils.file_utils as file_utils
-import utils.elasticsearch_utils as elasticsearch_utils
+from utils import elasticsearch_utils, file_utils
+from utils.custom_logging_formatter import CustomFormatter
 
 PROJECT_CONFIGURATION_FILE_NAME = "configuration.json"
 
@@ -41,7 +39,7 @@ def process_phase_steps(
                 project_config,
             )
     if not phase_steps:
-        logger.warn("No steps specified - no work done")
+        logger.warning("No steps specified - no work done")
 
 
 def load_project_config(project):
@@ -65,6 +63,17 @@ def parse_args():
     )
     parser.add_argument(
         "--phase", required=False, default=None, help="Run a single phase"
+    )
+    parser.add_argument(
+        "--num-rows",
+        required=False,
+        default=None,
+        type=int,
+        help=(
+            "Cap rows loaded per dataset, overriding each index-config's num_rows. "
+            "Lets one checkout run against a small sample or the full download "
+            "without editing committed config. Omit for whatever the config says."
+        ),
     )
     args = parser.parse_args()
     logger.info("Args: {} ".format(args))
@@ -107,6 +116,15 @@ def apply_args_to_config(config, args):
                     one_step.phases, one_step.name
                 )
             )
+    if args.num_rows is not None:
+        # Carried on the project config so index-populate can prefer it over
+        # each index-config's own num_rows. Keeping it here rather than editing
+        # config files means a sample run and a full run are the same checkout,
+        # differing only by the flag.
+        new_config.num_rows_override = args.num_rows
+        logger.info(
+            "Row cap override: loading at most {} rows per dataset".format(args.num_rows)
+        )
     logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
     return new_config
 
@@ -114,7 +132,7 @@ def apply_args_to_config(config, args):
 def update_logger_based_from_config(project_config, logger):
     try:
         logger.setLevel(project_config.logLevel)
-    except AttributeError as e:
+    except AttributeError:
         logger.warning("No default logging level in config {}".format(project_config))
 
 
@@ -145,7 +163,7 @@ def main():
             dispatcher, es, args.project, project_config.steps, project_config
         )
     else:
-        root_logger.critical("Could not load configuration for ".format(args.project))
+        root_logger.critical("Could not load configuration for {}".format(args.project))
 
 
 if __name__ == "__main__":

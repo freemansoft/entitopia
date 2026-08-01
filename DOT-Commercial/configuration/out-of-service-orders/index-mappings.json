@@ -1,28 +1,28 @@
 {
-    "index": "out-of-service-orders-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "dot_number": {
-                "type": "long"
-            },
-            "legal_name": {
-                "type": "keyword"
-            },
-            "dba_name": {
-                "type": "keyword"
-            },
-            "oos_date": {
-                "type": "keyword"
-            },
-            "oos_reason": {
-                "type": "keyword"
-            },
-            "status": {
-                "type": "keyword"
-            },
-            "rescind_date": {
-                "type": "keyword"
-            }
-        }
+  "index": "out-of-service-orders-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "dot_number": {
+        "type": "long"
+      },
+      "legal_name": {
+        "type": "keyword"
+      },
+      "dba_name": {
+        "type": "keyword"
+      },
+      "oos_date": {
+        "type": "keyword"
+      },
+      "oos_reason": {
+        "type": "keyword"
+      },
+      "status": {
+        "type": "keyword"
+      },
+      "rescind_date": {
+        "type": "keyword"
+      }
     }
+  }
 }

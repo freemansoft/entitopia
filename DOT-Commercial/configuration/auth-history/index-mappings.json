@@ -1,34 +1,34 @@
 {
-    "index": "auth-history-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "dot_number": {
-                "type": "long"
-            },
-            "docket_number": {
-                "type": "keyword"
-            },
-            "sub_number": {
-                "type": "keyword"
-            },
-            "mod_col_1": {
-                "type": "keyword"
-            },
-            "original_action_desc": {
-                "type": "keyword"
-            },
-            "orig_served_date": {
-                "type": "keyword"
-            },
-            "disp_action_desc": {
-                "type": "keyword"
-            },
-            "disp_decided_date": {
-                "type": "keyword"
-            },
-            "disp_served_date": {
-                "type": "keyword"
-            }
-        }
+  "index": "auth-history-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "dot_number": {
+        "type": "long"
+      },
+      "docket_number": {
+        "type": "keyword"
+      },
+      "sub_number": {
+        "type": "keyword"
+      },
+      "mod_col_1": {
+        "type": "keyword"
+      },
+      "original_action_desc": {
+        "type": "keyword"
+      },
+      "orig_served_date": {
+        "type": "keyword"
+      },
+      "disp_action_desc": {
+        "type": "keyword"
+      },
+      "disp_decided_date": {
+        "type": "keyword"
+      },
+      "disp_served_date": {
+        "type": "keyword"
+      }
     }
+  }
 }

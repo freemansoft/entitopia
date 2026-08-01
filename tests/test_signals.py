@@ -1,0 +1,453 @@
+import datetime
+from types import SimpleNamespace
+
+import pytest
+
+from matching.documents import CarrierDoc, ScoringContext
+from matching.signals import SIGNAL_TYPES, build_signal, parse_flexible_date
+
+
+def make_doc(dot_number="1", source=None, tokens=None):
+    return CarrierDoc(
+        dot_number=dot_number,
+        source=source or {},
+        tokens=tokens or {},
+    )
+
+
+def test_token_set_reads_field_and_subfield():
+    doc = make_doc(tokens={"legal_name.phonetic": {"SM0"}})
+    assert doc.token_set("legal_name", "phonetic") == {"SM0"}
+
+
+def test_token_set_missing_field_is_empty_not_error():
+    doc = make_doc()
+    assert doc.token_set("legal_name", "phonetic") == set()
+
+
+def test_value_reads_a_plain_field():
+    doc = make_doc(source={"phy_state": "OR"})
+    assert doc.value("phy_state") == "OR"
+
+
+def test_value_reads_a_dotted_path_into_a_nested_object():
+    doc = make_doc(source={"boc3_agents": {"co_name": "ACME"}})
+    assert doc.value("boc3_agents.co_name") == "ACME"
+
+
+def test_value_collects_a_dotted_path_across_a_list():
+    # Enriched fields arrive as lists because max_matches > 1.
+    doc = make_doc(
+        source={"crashes": [{"vin": "A"}, {"vin": "B"}]},
+    )
+    assert doc.value("crashes.vin") == ["A", "B"]
+
+
+def test_value_flattens_doubly_nested_lists():
+    # Inspection VINs sit two enrichment levels deep on a carrier:
+    # inspections[] (max_matches 100) -> units[] (max_matches 10) -> vin.
+    # Without flattening, the units step yields a list of lists and the final
+    # step finds no dicts, silently returning None.
+    doc = make_doc(
+        source={
+            "inspections": [
+                {"units": [{"vin": "A"}, {"vin": "B"}]},
+                {"units": [{"vin": "C"}]},
+            ]
+        }
+    )
+    assert doc.value("inspections.units.vin") == ["A", "B", "C"]
+
+
+def test_value_missing_path_is_none():
+    assert make_doc().value("nope.not_here") is None
+
+
+def test_agent_rarity_common_agent_scores_low():
+    # The real top BOC-3 filer: 134,283 of 1,426,508 filings (9.4%).
+    # Normalized IDF puts it at ~0.167.
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    assert ctx.agent_rarity("BIG FILER") < 0.20
+
+
+def test_agent_rarity_rare_agent_scores_high():
+    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
+    assert ctx.agent_rarity("TINY FILER") > 0.94
+
+
+def test_agent_rarity_ranks_common_below_rare():
+    # The property that actually matters: a dominant filer must score well
+    # below a rare one. 1 - count/N would put both above 0.9 and rank them
+    # nearly equal, which is why that formula was rejected.
+    ctx = ScoringContext(
+        agent_counts={"BIG FILER": 134283, "TINY FILER": 2},
+        total_agent_carriers=1426508,
+    )
+    assert ctx.agent_rarity("BIG FILER") < ctx.agent_rarity("TINY FILER") - 0.5
+
+
+def test_agent_rarity_unknown_agent_is_maximally_rare():
+    ctx = ScoringContext(agent_counts={}, total_agent_carriers=1000)
+    assert ctx.agent_rarity("UNSEEN") == 1.0
+
+
+def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
+    # 0.0 here is the bottom of the signal's range ("contributes nothing"),
+    # not a neutral midpoint. Returning 1.0 (the "unseen agent" value) would
+    # misrepresent an unmeasured agent as a known-rare one; a shared agent
+    # under a missing corpus is real evidence the signal simply can't weigh.
+    ctx = ScoringContext(agent_counts={}, total_agent_carriers=0)
+    assert ctx.agent_rarity("ANY") == 0.0
+
+
+def test_agent_rarity_with_single_agent_corpus_does_not_raise():
+    # total_agent_carriers == 1 makes log(N) == log(1) == 0, so the naive
+    # log(N/count)/log(N) division is 0/0. This must return the same floor
+    # value as the no-corpus case rather than raising ZeroDivisionError.
+    ctx = ScoringContext(agent_counts={"ONLY FILER": 1}, total_agent_carriers=1)
+    assert ctx.agent_rarity("ONLY FILER") == 0.0
+
+
+def cfg(**kwargs):
+    return SimpleNamespace(**kwargs)
+
+
+def test_build_signal_rejects_unknown_type():
+    with pytest.raises(ValueError, match="unknown signal type"):
+        build_signal(cfg(type="not-a-signal", weight=0.1))
+
+
+def test_name_overlap_registered_under_both_names():
+    assert "name-phonetic" in SIGNAL_TYPES
+    assert "name-token" in SIGNAL_TYPES
+
+
+def test_name_overlap_scores_identical_names_as_one():
+    signal = build_signal(
+        cfg(type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic")
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}})
+    cand = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_name_overlap_returns_none_when_tokens_absent():
+    signal = build_signal(
+        cfg(type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic")
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": {"SM0"}})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_name_overlap_cross_field_matches_legal_name_against_dba():
+    # The classic chameleon move: the old legal name becomes the new DBA.
+    signal = build_signal(
+        cfg(
+            type="name-phonetic",
+            weight=0.22,
+            fields=["legal_name", "dba_name"],
+            subfield="phonetic",
+            cross_field=True,
+        )
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0", "TRKN"}, "dba_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": set(), "dba_name.phonetic": {"SM0", "TRKN"}})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_name_overlap_without_cross_field_ignores_the_dba_crossover():
+    signal = build_signal(
+        cfg(
+            type="name-phonetic",
+            weight=0.22,
+            fields=["legal_name", "dba_name"],
+            subfield="phonetic",
+            cross_field=False,
+        )
+    )
+    pred = make_doc(tokens={"legal_name.phonetic": {"SM0"}, "dba_name.phonetic": set()})
+    cand = make_doc(tokens={"legal_name.phonetic": set(), "dba_name.phonetic": {"SM0"}})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_signal_exposes_weight_as_float():
+    signal = build_signal(
+        cfg(type="name-token", weight="0.10", fields=["legal_name"], subfield="clean")
+    )
+    assert signal.weight == 0.10
+
+
+def address_cfg(**overrides):
+    base = {
+        "type": "address",
+        "weight": 0.20,
+        "fields": ["phy_street", "mailing_street"],
+        "exact_subfield": "clean",
+        "fuzzy_subfield": "tokens",
+        "fuzzy_scale": 0.7,
+    }
+    base.update(overrides)
+    return cfg(**base)
+
+
+def test_address_exact_match_scores_one():
+    signal = build_signal(address_cfg())
+    tokens = {"phy_street.clean": {"123 main street"}, "mailing_street.clean": set()}
+    pred = make_doc(source={"phy_state": "OR"}, tokens=tokens)
+    cand = make_doc(source={"phy_state": "OR"}, tokens=dict(tokens))
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_address_fuzzy_match_is_scaled_down():
+    signal = build_signal(address_cfg())
+    pred = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street"}, "phy_street.tokens": {"123", "main", "street"}},
+    )
+    cand = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street suite 4"}, "phy_street.tokens": {"123", "main", "street", "suite", "4"}},
+    )
+    # containment is 1.0 (pred tokens fully inside cand), scaled by fuzzy_scale
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.7)
+
+
+def test_address_fuzzy_match_across_states_is_halved():
+    # "100 MAIN ST" exists in every state; a fuzzy hit across states is weak.
+    signal = build_signal(address_cfg())
+    pred = make_doc(
+        source={"phy_state": "OR"},
+        tokens={"phy_street.clean": {"123 main street"}, "phy_street.tokens": {"123", "main", "street"}},
+    )
+    cand = make_doc(
+        source={"phy_state": "TX"},
+        tokens={"phy_street.clean": {"123 main street suite 4"}, "phy_street.tokens": {"123", "main", "street", "suite", "4"}},
+    )
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.35)
+
+
+def test_address_exact_match_across_states_is_not_halved():
+    # Identical street in a different state is genuinely suspicious.
+    signal = build_signal(address_cfg())
+    tokens = {"phy_street.clean": {"123 main street"}}
+    pred = make_doc(source={"phy_state": "OR"}, tokens=dict(tokens))
+    cand = make_doc(source={"phy_state": "TX"}, tokens=dict(tokens))
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_address_returns_none_when_no_address_data():
+    signal = build_signal(address_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+def identifier_cfg():
+    return cfg(
+        type="exact-identifier",
+        weight=0.12,
+        phone_fields=["telephone", "fax"],
+        text_fields=["email_address"],
+    )
+
+
+def test_exact_identifier_matching_phone_scores_one():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "(503) 289-5558"})
+    cand = make_doc(source={"telephone": "503-289-5558"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_exact_identifier_matching_email_scores_one():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"email_address": "Joe@Example.com"})
+    cand = make_doc(source={"email_address": "joe@example.com "})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_exact_identifier_different_values_score_zero():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "5032895558"})
+    cand = make_doc(source={"telephone": "2025555555"})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_exact_identifier_placeholder_phones_never_match():
+    signal = build_signal(identifier_cfg())
+    pred = make_doc(source={"telephone": "0000000000"})
+    cand = make_doc(source={"telephone": "0000000000"})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_exact_identifier_returns_none_when_both_sides_blank():
+    signal = build_signal(identifier_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+def test_parse_flexible_date_reads_iso():
+    assert parse_flexible_date("2022-07-09") == datetime.date(2022, 7, 9)
+
+
+def test_parse_flexible_date_reads_oracle_format_with_century_pivot():
+    # 01-JUN-74 is a 1974 registration, not 2074.
+    assert parse_flexible_date("01-JUN-74") == datetime.date(1974, 6, 1)
+
+
+def test_parse_flexible_date_pivots_low_years_to_2000s():
+    assert parse_flexible_date("23-JAN-02") == datetime.date(2002, 1, 23)
+
+
+def test_parse_flexible_date_returns_none_for_junk():
+    assert parse_flexible_date("") is None
+    assert parse_flexible_date(None) is None
+    assert parse_flexible_date("not a date") is None
+
+
+def agent_cfg():
+    return cfg(
+        type="agent",
+        weight=0.04,
+        name_field="boc3_agents.co_name",
+    )
+
+
+def test_agent_shared_rare_agent_scores_high():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
+    # True normalized IDF for count=2 is ~0.951. An earlier draft asserted
+    # > 0.99, which passed only because a case mismatch made the lookup miss
+    # and fall back to the 1.0 "unseen agent" value — a test passing for the
+    # wrong reason, and masking the bug the next test now pins.
+    assert signal.score(pred, cand, ctx) > 0.94
+
+
+def test_agent_lookup_is_case_insensitive():
+    # AgentSignal lowercases names before intersecting them, while the sweep
+    # builds agent_counts from a terms aggregation. If those two disagree on
+    # case the lookup misses, every agent scores the 1.0 "unseen" fallback,
+    # and the rarity weighting silently turns itself off. ScoringContext
+    # normalizes both sides so casing cannot cause that.
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "big filer"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "BiG FiLeR"}]})
+    assert signal.score(pred, cand, ctx) < 0.20
+
+
+def test_agent_shared_common_agent_scores_low():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
+    # The real top BOC-3 filer: 134,283 of 1,426,508 filings. Normalized IDF
+    # puts it at 0.1668, so this bound must sit above that, not below it.
+    assert signal.score(pred, cand, ctx) < 0.20
+
+
+def test_agent_no_shared_agent_scores_zero():
+    signal = build_signal(agent_cfg())
+    ctx = ScoringContext(agent_counts={}, total_agent_carriers=100)
+    pred = make_doc(source={"boc3_agents": [{"co_name": "A FILER"}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "B FILER"}]})
+    assert signal.score(pred, cand, ctx) == 0.0
+
+
+def test_agent_blank_names_never_match():
+    # co_name is blank on 23.3% of BOC-3 rows.
+    signal = build_signal(agent_cfg())
+    pred = make_doc(source={"boc3_agents": [{"co_name": ""}]})
+    cand = make_doc(source={"boc3_agents": [{"co_name": "  "}]})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def temporal_cfg(**overrides):
+    base = {
+        "type": "temporal",
+        "weight": 0.05,
+        "predecessor_date": "out_of_service_orders.oos_date",
+        "successor_date": "add_date",
+        "max_gap_days": 365,
+    }
+    base.update(overrides)
+    return cfg(**base)
+
+
+def test_temporal_same_day_reopen_scores_one():
+    signal = build_signal(temporal_cfg())
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2022-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_temporal_decays_linearly_over_the_window():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2022-02-20"})  # 50 days
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.5)
+
+
+def test_temporal_beyond_the_window_scores_zero():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    cand = make_doc(source={"add_date": "2024-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_temporal_uses_the_latest_shutdown_date():
+    signal = build_signal(temporal_cfg(max_gap_days=100))
+    pred = make_doc(
+        source={"out_of_service_orders": [{"oos_date": "2010-01-01"}, {"oos_date": "2022-01-01"}]}
+    )
+    cand = make_doc(source={"add_date": "2022-01-01"})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_temporal_pre_registered_shell_scores_at_half_weight():
+    # Registering the successor before the shutdown is a real tactic, but
+    # weaker evidence than registering right after. 90 days before is halfway
+    # through the 180-day backward window, scaled by 0.5 => 0.25.
+    signal = build_signal(temporal_cfg(max_gap_days=365))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
+    earlier = make_doc(source={"add_date": "2022-04-02"})  # 90 days before
+    assert signal.score(pred, earlier, ScoringContext()) == pytest.approx(0.25)
+
+
+def test_temporal_beyond_the_backward_window_scores_zero():
+    signal = build_signal(temporal_cfg(max_gap_days=365))
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
+    earlier = make_doc(source={"add_date": "2021-01-01"})  # far before the window
+    assert signal.score(pred, earlier, ScoringContext()) == 0.0
+
+
+def test_temporal_returns_none_when_a_date_is_missing():
+    signal = build_signal(temporal_cfg())
+    pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
+    assert signal.score(pred, make_doc(), ScoringContext()) is None
+
+
+def vin_cfg():
+    return cfg(
+        type="vin-overlap",
+        weight=0.08,
+        fields=["crashes.vehicle_identification_number"],
+    )
+
+
+def test_vin_overlap_shared_vin_scores_one():
+    signal = build_signal(vin_cfg())
+    pred = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    cand = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_vin_overlap_no_shared_vin_scores_zero():
+    signal = build_signal(vin_cfg())
+    pred = make_doc(source={"crashes": [{"vehicle_identification_number": "1ABC"}]})
+    cand = make_doc(source={"crashes": [{"vehicle_identification_number": "2XYZ"}]})
+    assert signal.score(pred, cand, ScoringContext()) == 0.0
+
+
+def test_vin_overlap_returns_none_without_vins():
+    signal = build_signal(vin_cfg())
+    assert signal.score(make_doc(), make_doc(), ScoringContext()) is None

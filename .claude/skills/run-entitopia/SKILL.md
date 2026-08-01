@@ -20,26 +20,43 @@ capability actually works, not just that CSVs got indexed.
 
 All paths below are relative to the repo root.
 
+## Related reading
+
+This skill is about **running** entitopia. For **adding a new dataset** —
+choosing field types, designing analyzers, wiring enrichment, configuring
+matching signals — read `docs/adding-a-dataset.md`, which walks those
+decisions in order, plus the hazards section of the top-level `README.md`.
+
 ## Prerequisites
 
-- Docker (used to run Elasticsearch 9.4.4 with the `analysis-icu` and
+- Docker (used to run Elasticsearch 9.4.1 with the `analysis-icu` and
   `analysis-phonetic` plugins — the index-settings.json analyzers in
   both example projects require them; without the plugins, index
   creation/mapping still "succeeds" but the custom analyzers silently
   fail with a 400 that's logged and swallowed).
 - Python 3.11+ (enforced at the top of `execute_project.py` and by
   `dependencies.sh`; a `.python-version` pins `3.12`). This repo was
-  tested with Homebrew's `python3.12`.
+  tested with Python 3.11.
 
 ```bash
 docker --version
-python3.12 --version   # or any python3 >= 3.11
+python3 --version      # >= 3.11, used only to create .venv
 ```
 
 ## Setup
 
+The cluster is defined by `docker/compose.yml` in the repo (Elasticsearch
+pinned to the same version as the client in `requirements.txt`, with
+`analysis-icu` and `analysis-phonetic` installed). `driver.sh es-up` delegates
+to it rather than building its own image — an earlier version built a second
+container on the same port at a different version, so the two could never run
+together.
+
+Everything runs from `.venv`; `bash dependencies.sh` creates it and installs
+pinned dependencies. Never invoke the system Python.
+
 ```bash
-python3.12 -m venv .venv
+bash dependencies.sh   # creates .venv and installs pinned deps
 source .venv/bin/activate
 bash dependencies.sh          # fails fast on Python < 3.11
 ```
@@ -55,16 +72,17 @@ runs — the driver writes it for you (`http`, no auth, matching the
 ```
 
 This is the harness that was actually run to verify this skill. It:
-1. Builds `entitopia-es-dev:9.4.4` (base ES image + the two analysis
-   plugins) if not already built, and starts it on `localhost:9200`
-   with `xpack.security.enabled=false` — no TLS/auth to configure.
-2. Creates `.venv` with `python3.12` and runs `dependencies.sh`.
+
+1. Brings up `entitopia-es` via `docker/compose.yml` (Elasticsearch 9.4.1
+   plus the two analysis plugins) on `localhost:9200` with
+   `xpack.security.enabled=false` — no TLS/auth to configure.
+2. Creates `.venv` and runs `dependencies.sh` to install pinned deps.
 3. Writes `es_config.json`.
 4. Writes tiny synthetic CSVs into `CMS-Providers/data/hospitals/` and
    `DOT-Commercial/data/{crashes,inspections,carriers}/` (the real
    `download_*.sh` scripts hit CMS/DOT URLs that go stale — see
    Gotchas).
-5. Runs `python3 execute_project.py --project=CMS-Providers --step=hospitals`,
+5. Runs `.venv/bin/python execute_project.py --project=CMS-Providers --step=hospitals`,
    then DOT-Commercial's 5 steps individually (not as one
    `--project=DOT-Commercial` call — see Gotchas on why), force-refreshing
    `crashes-000001`/`inspections-000001` right before the
@@ -93,7 +111,7 @@ this; standalone, run `fixtures` then
    `City.keyword`, ranked by `should` clauses against
    `Facility Name.phonetic` (metaphone-encoded) and
    `Facility Name.clean` with `fuzziness: AUTO` — and shows it returns
-   *both* records, the canonical one scored highest and the
+   _both_ records, the canonical one scored highest and the
    near-duplicate scored lower but present. Verified output:
    ```
    9.599 10001 -> SOUTHEAST HEALTH MEDICAL CENTER
@@ -116,24 +134,24 @@ phone) and tuning weights, not touching the plugin/analyzer setup.
 
 Individual subcommands, for finer-grained control:
 
-| command | what it does |
-|---|---|
-| `driver.sh es-up` | build (if needed) + start the ES dev container, wait for green health |
-| `driver.sh es-down` | remove the ES dev container |
-| `driver.sh venv-setup` | create `.venv` (if missing) and install deps |
-| `driver.sh es-config` | write `es_config.json` for the dev container |
-| `driver.sh fixtures` | write the synthetic CMS/DOT sample CSVs |
-| `driver.sh run <args>` | `python3 execute_project.py <args>`, e.g. `run --project=CMS-Providers --step=hospitals --phase=index-populate` |
-| `driver.sh verify` | refresh + count/query the hospitals and carriers indices |
-| `driver.sh match-demo` | inject a synthetic near-duplicate hospital, show absolute match missing it vs. soft match finding it, clean up |
-| `driver.sh smoke` | all of the above, in order |
+| command                | what it does                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `driver.sh es-up`      | build (if needed) + start the ES dev container, wait for green health                                                    |
+| `driver.sh es-down`    | remove the ES dev container                                                                                              |
+| `driver.sh venv-setup` | create `.venv` (if missing) and install deps                                                                             |
+| `driver.sh es-config`  | write `es_config.json` for the dev container                                                                             |
+| `driver.sh fixtures`   | write the synthetic CMS/DOT sample CSVs                                                                                  |
+| `driver.sh run <args>` | `.venv/bin/python execute_project.py <args>`, e.g. `run --project=CMS-Providers --step=hospitals --phase=index-populate` |
+| `driver.sh verify`     | refresh + count/query the hospitals and carriers indices                                                                 |
+| `driver.sh match-demo` | inject a synthetic near-duplicate hospital, show absolute match missing it vs. soft match finding it, clean up           |
+| `driver.sh smoke`      | all of the above, in order                                                                                               |
 
 Direct invocation (no fixtures, against whatever data/config already
 exists — most useful once you have real project data staged):
 
 ```bash
 source .venv/bin/activate
-python3 execute_project.py --project=<ProjectDir> [--step=<step>] [--phase=<phase>]
+.venv/bin/python execute_project.py --project=<ProjectDir> [--step=<step>] [--phase=<phase>]
 ```
 
 Query results directly:
@@ -149,7 +167,7 @@ Same as the agent path minus the driver: bring up Elasticsearch
 yourself (README points at
 https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch),
 populate `es_config.json`, drop real downloaded CSVs under
-`<Project>/data/<step>/`, then `python3 execute_project.py --project=<ProjectDir>`.
+`<Project>/data/<step>/`, then `.venv/bin/python execute_project.py --project=<ProjectDir>`.
 
 ## Test
 
@@ -169,15 +187,15 @@ actually running the pipeline against a live cluster, which is what
   continues — the index still gets created, just without the intended
   analyzers, and nothing else in the pipeline errors. Always build from
   `driver.sh`'s Dockerfile (or otherwise confirm both plugins are
-  installed) rather than a stock `elasticsearch:9.4.4` image.
+  installed) rather than a stock `elasticsearch:9.4.1` image.
 - **New documents aren't visible immediately after indexing — and this
   silently breaks enrichment, not just `_count`.** ES's default 1s
   refresh interval means a `_count`/`_search` run right after
   `execute_project.py` returns can read `0` even though `parallel_bulk`
   fully completed (the phase handler blocks on consuming the whole
   generator). Worse: `PhaseEnrichmentPolicies.execute_policy` only sees
-  *searchable* source documents, so running
-  `python3 execute_project.py --project=DOT-Commercial` as one shot
+  _searchable_ source documents, so running
+  `.venv/bin/python execute_project.py --project=DOT-Commercial` as one shot
   (crashes/inspections indexed, then enrichment policies built
   milliseconds later, all well under 1s) reproducibly builds enrichment
   indices with **zero** matches — every phase logs `acknowledged: True`
@@ -228,7 +246,7 @@ actually running the pipeline against a live cluster, which is what
 ## Troubleshooting
 
 - **`entitopia requires Python 3.11 or higher (found 3.9.x)`**: you're
-  on the system `/usr/bin/python3`. Use `python3.12` (or any 3.11+
+  on the system `/usr/bin/python3`. Use `.venv/bin/python` (or any 3.11+
   interpreter) to create `.venv`, then `source .venv/bin/activate`
   before running anything.
 - **`_count` / `_search` returns 0 hits right after a run that logged

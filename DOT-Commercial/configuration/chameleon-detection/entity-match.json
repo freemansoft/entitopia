@@ -1,0 +1,76 @@
+{
+  "source_index": "carriers-000001",
+  "predecessors": {
+    "selector": "out-of-service",
+    "oos_status": ["ACTIVE"],
+    "oos_date_from": "2020-01-01",
+    "max_predecessors": 2000
+  },
+  "candidates": {
+    "max_candidates": 100,
+    "seed_signals": ["name-phonetic", "address", "exact-identifier"]
+  },
+  "signals": [
+    {
+      "type": "name-phonetic",
+      "weight": 0.22,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "phonetic",
+      "cross_field": true
+    },
+    {
+      "type": "name-phonetic",
+      "weight": 0.13,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "phonetic_bm",
+      "cross_field": true
+    },
+    {
+      "type": "name-token",
+      "weight": 0.1,
+      "fields": ["legal_name", "dba_name"],
+      "subfield": "clean",
+      "cross_field": true
+    },
+    {
+      "type": "address",
+      "weight": 0.2,
+      "fields": ["phy_street", "mailing_street"],
+      "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.7
+    },
+    {
+      "type": "exact-identifier",
+      "weight": 0.12,
+      "phone_fields": ["telephone", "fax"],
+      "text_fields": ["email_address"]
+    },
+    {
+      "type": "agent",
+      "weight": 0.04,
+      "name_field": "boc3_agents.co_name"
+    },
+    {
+      "type": "temporal",
+      "weight": 0.05,
+      "predecessor_date": "out_of_service_orders.oos_date",
+      "successor_date": "add_date",
+      "max_gap_days": 365
+    },
+    {
+      "type": "vin-overlap",
+      "weight": 0.08,
+      "fields": [
+        "crashes.vehicle_identification_number",
+        "inspections.units.insp_unit_vehicle_id_number"
+      ]
+    }
+  ],
+  "scoring": {
+    "min_total_score": 0.35,
+    "min_signals": 2,
+    "require_identity_signal": true,
+    "max_pairs_per_predecessor": 10
+  }
+}

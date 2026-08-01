@@ -1,0 +1,77 @@
+# Ruff configuration.
+#
+# Pinned explicitly rather than relying on ruff's defaults, which shift between
+# releases — a project that lints clean today should still lint clean after a
+# ruff upgrade, and an explicit rule list is the only way to get that.
+#
+# Run:
+#     .venv/bin/python -m ruff check .
+#     .venv/bin/python -m ruff check . --fix
+#     .venv/bin/python -m ruff format .
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".venv", "__pycache__", ".superpowers"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes — undefined names, unused imports, the real bugs
+    "I",    # import sorting
+    "B",    # bugbear — likely-wrong constructs
+    "C4",   # comprehension simplifications
+    "SIM",  # simplifications
+    "UP",   # pyupgrade — modern syntax for the pinned Python
+    "DTZ",  # naive datetime usage
+    "LOG",  # logging misuse
+    "G",    # logging format-string misuse
+    "PL",   # pylint subset
+    "RUF",  # ruff-specific
+]
+
+ignore = [
+    # This codebase logs with str.format() throughout, e.g.
+    # logger.info("Indexing {} records".format(n)). G001 wants %-style lazy
+    # formatting instead. Converting every call site is a large, risky diff
+    # across code unrelated to the current work, and the eager formatting cost
+    # is irrelevant at these call rates — these are per-phase status lines, not
+    # per-document logging.
+    "G001",
+    # Same reasoning: UP032 would rewrite ~65 .format() calls into f-strings.
+    # Mechanical, but it churns files this work does not otherwise touch, and
+    # .format() is not a defect.
+    "UP032",
+    # Ingest phases must not abort a multi-million-document run because one
+    # document raised something unanticipated; failures are counted and logged
+    # instead. Blind except is deliberate here.
+    "BLE001",
+    # Long docstrings explaining rationale are required by CLAUDE.md and
+    # regularly exceed the line limit in prose. Ruff has no rule that bounds
+    # docstring/comment lines while leaving code lines alone, so this ignore
+    # is global: line-length is NOT enforced anywhere, including in code.
+    # `line-length = 100` above only sets the target `ruff format` wraps to;
+    # it does not make E501 fail a line that exceeds it.
+    "E501",
+    # Index names are generated from the operator's local calendar day
+    # (carriers-2026.07.30-000001), because someone running a load at 9pm
+    # expects today's date on the index, not tomorrow's UTC date. Forcing
+    # tz-aware UTC here would silently change which index a run writes to.
+    "DTZ005",
+]
+
+[tool.ruff.lint.pylint]
+# CsvLoadUtils.__init__ takes 6 and the Socrata fetcher takes 9. Both are
+# plain configuration carriers with no behavior to decompose; splitting them
+# into parameter objects would add indirection without removing complexity.
+max-args = 10
+max-positional-args = 10
+
+[tool.ruff.lint.per-file-ignores]
+# The Python version gate at the top of this file must run BEFORE importing
+# anything that needs 3.11+ syntax, so the remaining imports cannot sit at the
+# top of the module. That ordering is the point of the check.
+"execute_project.py" = ["E402"]
+# Magic values in assertions are what a test asserts.
+"tests/*" = ["PLR2004"]

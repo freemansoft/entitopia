@@ -1,0 +1,45 @@
+# Single-node Elasticsearch for local entitopia development.
+#
+#   docker compose -f docker/compose.yml up -d --build
+#   docker compose -f docker/compose.yml down          # keeps the volume
+#   docker compose -f docker/compose.yml down -v       # discards indexed data
+#
+# Security is disabled so the cluster matches es_config.json's http/no-auth
+# settings. This is a development cluster on localhost only — never expose it.
+services:
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: entitopia-elasticsearch:9.4.1
+    container_name: entitopia-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      # entitopia loads millions of documents through parallel_bulk; the 1GB
+      # default heap causes circuit-breaker failures partway through a full
+      # DOT-Commercial run.
+      #
+      # This must fit inside the container runtime's VM, which on macOS is
+      # smaller than the host. Colima defaults to a 2GB VM, where a 4g heap
+      # fails at startup with "Native memory allocation (mmap) failed" and the
+      # container exits 70 before Elasticsearch logs anything useful. Size the
+      # VM first: `colima start --cpu 6 --memory 12`.
+      - ES_JAVA_OPTS=-Xms6g -Xmx6g
+      # The carriers enrich coordinator queues one slot per in-flight lookup.
+      # README documents parallel_bulk's 8 threads exhausting the 1024 default
+      # and silently dropping a fraction of a percent of documents.
+      - thread_pool.write.queue_size=4000
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  esdata:

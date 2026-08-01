@@ -1,0 +1,405 @@
+"""Signal implementations.
+
+Each signal scores one kind of evidence that two carriers are the same
+operation. Every score() returns a float in [0.0, 1.0] or None.
+
+None means "not evaluable" — data missing on one or both sides. It is not the
+same as 0.0, which means "evaluated, no similarity". Returning 0.0 for missing
+data would penalize carriers for absent records rather than judging them
+neutrally.
+"""
+
+import datetime
+import logging
+
+from matching.documents import CarrierDoc, ScoringContext
+from matching.tokens import (
+    blended_overlap,
+    containment,
+    normalize_phone,
+    normalize_text_identifier,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# Config keys whose values name the source fields a signal reads. Used to
+# decide which signals are looking at the same underlying evidence.
+_FIELD_CONFIG_KEYS = (
+    "fields",
+    "phone_fields",
+    "text_fields",
+    "name_field",
+    "address_field",
+    "predecessor_date",
+    "successor_date",
+)
+
+
+class Signal:
+    """Base contract every scoring signal implements.
+
+    Subclasses turn one kind of evidence (name overlap, shared phone, timing
+    between shutdown and re-registration, ...) into a score in [0.0, 1.0], or
+    None when that evidence can't be evaluated for this pair. scorer.py relies
+    on None being distinct from 0.0 to drop the signal and renormalize the
+    remaining weights, rather than treating missing data as "evaluated and
+    dissimilar" and penalizing a carrier for a gap in its records.
+    """
+
+    type_names: tuple[str, ...] = ()
+
+    def __init__(self, config):
+        """Bind the signal to its config entry, including its blend weight."""
+        self.config = config
+        self.signal_type = config.type
+        self.weight = float(config.weight)
+
+    @property
+    def evidence_key(self) -> frozenset[str]:
+        """The set of source fields this signal reads.
+
+        Two signals sharing a key are two readings of the same evidence, not
+        two independent corroborations of it. `PairScorer` counts distinct
+        keys rather than signal instances when applying `min_signals`.
+
+        This matters because config deliberately lists name signals more than
+        once over the same two fields — the two phonetic encoders are separate
+        arms so they can be weighted apart, and `name-token` reads the cleaned
+        form of the same text. Counting instances let a pair matching on
+        nothing but a name satisfy a floor written to require corroboration
+        from somewhere else.
+
+        Deliberately ignores `subfield`: different encodings of one field are
+        the same evidence, which is the entire reason the arms exist.
+        """
+        names: list[str] = []
+        for key in _FIELD_CONFIG_KEYS:
+            value = getattr(self.config, key, None)
+            if isinstance(value, str):
+                names.append(value)
+            elif isinstance(value, list):
+                names.extend(value)
+        # A signal naming no source fields still counts as its own evidence
+        # rather than collapsing together with every other such signal.
+        return frozenset(names) or frozenset({self.signal_type})
+
+    def score(self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext) -> float | None:
+        """Score one carrier pair. Subclasses implement; see the class
+        docstring for the None-vs-0.0 contract every implementation must honor.
+        """
+        raise NotImplementedError
+
+
+class NameOverlapSignal(Signal):
+    """Token-set overlap over name fields.
+
+    Registered for both name-phonetic and name-token: the math is identical and
+    only the subfield differs. Listing the same type twice in config with
+    different subfields is how the double-metaphone and Beider-Morse arms get
+    weighted independently.
+    """
+
+    type_names = ("name-phonetic", "name-token")
+
+    def score(self, pred, cand, ctx):
+        fields = list(self.config.fields)
+        subfield = self.config.subfield
+        cross_field = getattr(self.config, "cross_field", False)
+
+        if cross_field:
+            pairings = [(p, c) for p in fields for c in fields]
+        else:
+            pairings = [(f, f) for f in fields]
+
+        best = None
+        for pred_field, cand_field in pairings:
+            score = blended_overlap(
+                pred.token_set(pred_field, subfield),
+                cand.token_set(cand_field, subfield),
+            )
+            if score is not None and (best is None or score > best):
+                best = score
+        return best
+
+
+CROSS_STATE_FUZZY_PENALTY = 0.5
+
+
+class AddressSignal(Signal):
+    """Street similarity, exact first then fuzzy.
+
+    The exact subfield uses a keyword tokenizer, so its "token set" is a single
+    normalized string. The fuzzy subfield is standard-tokenized with street
+    suffix synonyms applied.
+    """
+
+    type_names = ("address",)
+
+    def score(self, pred, cand, ctx):
+        fields = list(self.config.fields)
+        exact_subfield = self.config.exact_subfield
+        fuzzy_subfield = self.config.fuzzy_subfield
+        fuzzy_scale = float(self.config.fuzzy_scale)
+
+        pred_state = pred.value("phy_state")
+        cand_state = cand.value("phy_state")
+        same_state = bool(pred_state) and pred_state == cand_state
+
+        best = None
+        saw_any_data = False
+
+        for pred_field in fields:
+            for cand_field in fields:
+                pred_exact = pred.token_set(pred_field, exact_subfield)
+                cand_exact = cand.token_set(cand_field, exact_subfield)
+                pred_fuzzy = pred.token_set(pred_field, fuzzy_subfield)
+                cand_fuzzy = cand.token_set(cand_field, fuzzy_subfield)
+
+                if not (pred_exact or pred_fuzzy) or not (cand_exact or cand_fuzzy):
+                    continue
+                saw_any_data = True
+
+                if pred_exact and pred_exact == cand_exact:
+                    score = 1.0
+                else:
+                    score = containment(pred_fuzzy, cand_fuzzy) * fuzzy_scale
+                    if not same_state:
+                        # "100 MAIN ST" exists in every state. An exact match
+                        # across states stays strong; a fuzzy one does not.
+                        score *= CROSS_STATE_FUZZY_PENALTY
+
+                if best is None or score > best:
+                    best = score
+
+        return best if saw_any_data else None
+
+
+class ExactIdentifierSignal(Signal):
+    """Shared phone, fax, or email. Binary.
+
+    Reads raw _source rather than analyzed tokens, so placeholder rejection
+    happens here rather than relying on the analyzer.
+    """
+
+    type_names = ("exact-identifier",)
+
+    def score(self, pred, cand, ctx):
+        pred_values = set()
+        cand_values = set()
+
+        for field_name in getattr(self.config, "phone_fields", []):
+            _collect(pred_values, pred.value(field_name), normalize_phone)
+            _collect(cand_values, cand.value(field_name), normalize_phone)
+
+        for field_name in getattr(self.config, "text_fields", []):
+            _collect(pred_values, pred.value(field_name), normalize_text_identifier)
+            _collect(cand_values, cand.value(field_name), normalize_text_identifier)
+
+        if not pred_values or not cand_values:
+            return None
+        return 1.0 if pred_values & cand_values else 0.0
+
+
+def _collect(target: set, raw, normalize) -> None:
+    """Accumulate normalized values from a scalar-or-list field into a set.
+
+    A carrier can carry more than one value for a field (multiple phones,
+    agent names across amendments); a set lets a signal check for any shared
+    value without caring how many there are. Values that fail normalization
+    (blanks, placeholders) are dropped silently rather than raising, so one
+    bad value on a record doesn't block comparison of the rest.
+    """
+    if raw is None:
+        return
+    items = raw if isinstance(raw, list) else [raw]
+    for item in items:
+        normalized = normalize(item)
+        if normalized is not None:
+            target.add(normalized)
+
+
+# Two-digit years above this pivot are 19xx. FMCSA carrier registrations go
+# back to the 1970s, so "01-JUN-74" is 1974. Java's yy pattern would render it
+# as 2074, which is why add_date needs explicit handling rather than a naive
+# dd-MMM-yy date mapping.
+CENTURY_PIVOT = 30
+
+_MONTHS = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+BACKWARD_WINDOW_DAYS = 180
+BACKWARD_SCALE = 0.5
+
+# A dd-MMM-yy Oracle export splits on "-" into exactly 3 parts; anything else
+# isn't this format.
+ORACLE_DATE_PART_COUNT = 3
+# A 2-digit part means the year needs CENTURY_PIVOT to resolve its century, as
+# with "01-JUN-74" -> 1974.
+TWO_DIGIT_YEAR_LENGTH = 2
+
+
+def parse_flexible_date(value) -> datetime.date | None:  # noqa: PLR0911
+    """Parse ISO (2022-07-09) or Oracle (01-JUN-74) dates. None on failure.
+
+    FMCSA data mixes both: newer records come through as ISO, but older
+    out-of-service and registration dates are exports from a legacy Oracle
+    system using the two-digit-year dd-MMM-yy format. See CENTURY_PIVOT below
+    for why that two-digit year can't be resolved naively.
+
+    The early returns below are deliberate bail-outs for each way the input
+    can fail to parse; flattening them into fewer returns would nest the
+    format checks instead of listing them, making the function harder to
+    follow, not easier.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+
+    try:
+        return datetime.date.fromisoformat(text)
+    except ValueError:
+        pass
+
+    parts = text.split("-")
+    if len(parts) == ORACLE_DATE_PART_COUNT and parts[1] in _MONTHS:
+        try:
+            day = int(parts[0])
+            year = int(parts[2])
+        except ValueError:
+            return None
+        if len(parts[2]) == TWO_DIGIT_YEAR_LENGTH:
+            year += 1900 if year > CENTURY_PIVOT else 2000
+        try:
+            return datetime.date(year, _MONTHS[parts[1]], day)
+        except ValueError:
+            return None
+    return None
+
+
+class AgentSignal(Signal):
+    """Shared BOC-3 process agent, weighted by how rare the agent is.
+
+    Only 89 distinct agents cover 1.43M filings, so an unweighted version of
+    this signal fires on roughly 7% of random pairs. Weight is deliberately low.
+    """
+
+    type_names = ("agent",)
+
+    def score(self, pred, cand, ctx):
+        pred_agents = set()
+        cand_agents = set()
+        _collect(pred_agents, pred.value(self.config.name_field), normalize_text_identifier)
+        _collect(cand_agents, cand.value(self.config.name_field), normalize_text_identifier)
+
+        if not pred_agents or not cand_agents:
+            return None
+
+        shared = pred_agents & cand_agents
+        if not shared:
+            return 0.0
+        return max(ctx.agent_rarity(name) for name in shared)
+
+
+class TemporalSignal(Signal):
+    """Closeness between the predecessor's shutdown and the successor's registration.
+
+    A chameleon carrier typically re-registers under a new DOT number soon
+    after being ordered out of service, to resume operating with minimal
+    downtime. A short gap is therefore corroborating evidence of
+    reincarnation; a gap of years is more likely coincidence.
+    """
+
+    type_names = ("temporal",)
+
+    def score(self, pred, cand, ctx):
+        shutdown = _latest_date(pred.value(self.config.predecessor_date))
+        registered = _latest_date(cand.value(self.config.successor_date))
+        if shutdown is None or registered is None:
+            return None
+
+        gap_days = (registered - shutdown).days
+        max_gap = float(self.config.max_gap_days)
+
+        if gap_days >= 0:
+            return max(0.0, 1.0 - (gap_days / max_gap))
+
+        # Registered before the shutdown: a pre-positioned shell is a real
+        # tactic, but weaker evidence than reopening days afterward.
+        backward = min(1.0, abs(gap_days) / float(BACKWARD_WINDOW_DAYS))
+        return max(0.0, (1.0 - backward) * BACKWARD_SCALE)
+
+
+class VinOverlapSignal(Signal):
+    """Any shared VIN. Binary — VINs are globally unique, so one is damning."""
+
+    type_names = ("vin-overlap",)
+
+    def score(self, pred, cand, ctx):
+        pred_vins = set()
+        cand_vins = set()
+        for path in self.config.fields:
+            _collect(pred_vins, pred.value(path), normalize_text_identifier)
+            _collect(cand_vins, cand.value(path), normalize_text_identifier)
+
+        if not pred_vins or not cand_vins:
+            return None
+        return 1.0 if pred_vins & cand_vins else 0.0
+
+
+def _latest_date(raw) -> datetime.date | None:
+    """Most recent parseable date from a scalar or list.
+
+    A carrier can accumulate many out-of-service orders over its history; only
+    the most recent shutdown is relevant to whether a successor registered
+    shortly after, so earlier ones are discarded rather than averaged or
+    taken first.
+    """
+    if raw is None:
+        return None
+    items = raw if isinstance(raw, list) else [raw]
+    dates = [d for d in (parse_flexible_date(item) for item in items) if d is not None]
+    return max(dates) if dates else None
+
+
+SIGNAL_TYPES: dict[str, type[Signal]] = {}
+
+
+def _register(signal_class: type[Signal]) -> None:
+    """Map a signal class's declared type_names to the class itself.
+
+    Config selects signals by type string (see build_signal), so signal
+    classes need to be discoverable by name rather than requiring the
+    config-loading code to import and know about every signal class directly.
+    """
+    for name in signal_class.type_names:
+        SIGNAL_TYPES[name] = signal_class
+
+
+_register(NameOverlapSignal)
+_register(AddressSignal)
+_register(ExactIdentifierSignal)
+_register(AgentSignal)
+_register(TemporalSignal)
+_register(VinOverlapSignal)
+
+
+def build_signal(config) -> Signal:
+    """Construct the Signal a config entry names, by its `type` string.
+
+    Keeps config decoupled from Python import paths: adding a signal means
+    registering it via _register, not changing how scorer.py builds its
+    signal list from config.
+    """
+    signal_class = SIGNAL_TYPES.get(config.type)
+    if signal_class is None:
+        raise ValueError(
+            "unknown signal type {!r}; known types are {}".format(
+                config.type, ", ".join(sorted(SIGNAL_TYPES))
+            )
+        )
+    return signal_class(config)

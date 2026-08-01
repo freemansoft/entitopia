@@ -1,117 +1,117 @@
 {
-    "index": "doctors-clinicians-{now/d}-000001",
-    "mappings": {
-        "properties": {
-            "NPI": {
-                "type": "keyword"
-            },
-            "ZIP Code": {
-                "type": "keyword"
-            },
-            "Facility Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            },
-            "Provider First Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            },
-            "Provider Last Name": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    },
-                    "phonetic": {
-                        "type": "text",
-                        "analyzer": "name_phonetic"
-                    }
-                }
-            },
-            "adr_ln_1": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "street_clean"
-                    }
-                }
-            },
-            "adr_ln_2": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "street_clean"
-                    }
-                }
-            },
-            "City/Town": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "name_clean"
-                    }
-                }
-            },
-            "State": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    }
-                }
-            },
-            "Telephone Number": {
-                "type": "text",
-                "fields": {
-                    "keyword": {
-                        "type": "keyword"
-                    },
-                    "clean": {
-                        "type": "text",
-                        "analyzer": "phone_clean"
-                    }
-                }
-            }
+  "index": "doctors-clinicians-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "NPI": {
+        "type": "keyword"
+      },
+      "ZIP Code": {
+        "type": "keyword"
+      },
+      "Facility Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
         }
+      },
+      "Provider First Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
+        }
+      },
+      "Provider Last Name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          }
+        }
+      },
+      "adr_ln_1": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          }
+        }
+      },
+      "adr_ln_2": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          }
+        }
+      },
+      "City/Town": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
+        }
+      },
+      "State": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "Telephone Number": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "phone_clean"
+          }
+        }
+      }
     }
+  }
 }

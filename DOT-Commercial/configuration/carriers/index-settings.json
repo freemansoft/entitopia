@@ -1,66 +1,135 @@
-    {
-        "index": "carriers-{now/d}-000001",
-        "settings": {
-            "index": {
-                "number_of_shards": 1,
-                "number_of_replicas": 1,
-                "analysis": {
-                    "filter": {
-                        "street_suffix_map": {
-                            "pattern": "(st)",
-                            "type": "pattern_replace",
-                            "replacement": "street"
-                        },
-                        "phonetic": {
-                            "type": "phonetic",
-                            "encoder": "metaphone"
-                        },
-                        "punct_white": {
-                            "pattern": "\\p{Punct}",
-                            "type": "pattern_replace",
-                            "replacement": " "
-                        },
-                        "remove_non_digits": {
-                            "pattern": "[^\\d]",
-                            "type": "pattern_replace",
-                            "replacement": ""
-                        }
-                    },
-                    "analyzer": {
-                        "name_clean": {
-                            "filter": [
-                                "icu_normalizer",
-                                "icu_folding",
-                                "punct_white"
-                            ],
-                            "tokenizer": "standard"
-                        },
-                        "name_phonetic": {
-                            "filter": [
-                                "icu_normalizer",
-                                "icu_folding",
-                                "punct_white",
-                                "phonetic"
-                            ],
-                            "tokenizer": "standard"
-                        },
-                        "street_clean": {
-                            "filter": [
-                                "icu_normalizer",
-                                "icu_folding",
-                                "punct_white",
-                                "trim"
-                            ],
-                            "tokenizer": "keyword"
-                        },
-                        "phone_clean": {
-                            "filter": [
-                                "remove_non_digits"
-                            ],
-                            "tokenizer": "keyword"
-                        }
-                    }
-                }
-            }
+{
+  "index": "carriers-{now/d}-000001",
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "analysis": {
+        "filter": {
+          "phonetic_dm": {
+            "type": "phonetic",
+            "encoder": "double_metaphone",
+            "max_code_len": 6
+          },
+          "phonetic_bm": {
+            "type": "phonetic",
+            "encoder": "beider_morse",
+            "rule_type": "approx",
+            "name_type": "generic",
+            "languageset": ["english", "spanish"]
+          },
+          "carrier_suffix_stop": {
+            "type": "stop",
+            "ignore_case": true,
+            "stopwords": [
+              "llc",
+              "inc",
+              "ltd",
+              "co",
+              "corp",
+              "corporation",
+              "company",
+              "trucking",
+              "truck",
+              "transport",
+              "transportation",
+              "express",
+              "logistics",
+              "carrier",
+              "carriers",
+              "enterprises",
+              "enterprise",
+              "services",
+              "service",
+              "group",
+              "freight",
+              "hauling",
+              "the"
+            ]
+          },
+          "street_suffix_synonyms": {
+            "type": "synonym",
+            "lenient": true,
+            "synonyms": [
+              "st, street",
+              "ave, av, avenue",
+              "rd, road",
+              "blvd, boulevard",
+              "dr, drive",
+              "ln, lane",
+              "hwy, highway",
+              "pkwy, parkway",
+              "ct, court",
+              "cir, circle",
+              "ste, suite",
+              "apt, apartment",
+              "n, north",
+              "s, south",
+              "e, east",
+              "w, west"
+            ]
+          },
+          "punct_white": {
+            "pattern": "\\p{Punct}",
+            "type": "pattern_replace",
+            "replacement": " "
+          },
+          "collapse_whitespace": {
+            "pattern": "\\s+",
+            "type": "pattern_replace",
+            "replacement": " "
+          },
+          "remove_non_digits": {
+            "pattern": "[^\\d]",
+            "type": "pattern_replace",
+            "replacement": ""
+          }
+        },
+        "analyzer": {
+          "name_clean": {
+            "filter": ["icu_normalizer", "icu_folding", "punct_white"],
+            "tokenizer": "standard"
+          },
+          "name_phonetic": {
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "carrier_suffix_stop",
+              "phonetic_dm"
+            ],
+            "tokenizer": "standard"
+          },
+          "name_phonetic_bm": {
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "carrier_suffix_stop",
+              "phonetic_bm"
+            ],
+            "tokenizer": "standard"
+          },
+          "street_clean": {
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "collapse_whitespace",
+              "trim"
+            ],
+            "tokenizer": "keyword"
+          },
+          "street_tokens": {
+            "filter": ["icu_normalizer", "icu_folding", "punct_white", "street_suffix_synonyms"],
+            "tokenizer": "standard"
+          },
+          "phone_clean": {
+            "filter": ["remove_non_digits"],
+            "tokenizer": "keyword"
+          }
         }
+      }
     }
+  }
+}

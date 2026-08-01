@@ -1,16 +1,13 @@
-import logging as logging
+import contextlib
+import logging
 from itertools import islice
-import utils.elasticsearch_utils as elasticsearch_utils
 
 import numpy as np
-import pandas as pd
 import tqdm
-
 from elasticsearch.helpers import parallel_bulk
 
-import utils.file_utils as file_utils
+from utils import elasticsearch_utils, file_utils, id_utils
 from utils.csv_load_utils import CsvLoadUtils
-
 
 MAX_LOGGED_FAILURES = 20
 
@@ -27,9 +24,7 @@ class PhaseIndexingPopulate:
         # id_field as a list builds a composite key by joining the named
         # fields' values; a KeyError here is handled the same as the
         # single-field case, falling back to an ES auto-generated _id
-        if isinstance(id_field, list):
-            return "|".join(str(record[field]) for field in id_field)
-        return record[id_field]
+        return id_utils.compute_id(record, id_field)
 
     def record_action(
         self,
@@ -80,12 +75,27 @@ class PhaseIndexingPopulate:
         if index_config:
             elasticsearch_utils.replace_index_with_now_version(index_config)
             self.logger.debug("loaded config {}".format(index_config))
+            # A --num-rows on the command line wins over the config file, so
+            # one checkout can run against a small sample or the full download
+            # without editing anything committed. Resolved before the loader is
+            # built so the cap also limits what pandas reads, rather than
+            # pulling millions of rows into memory and discarding most of them.
+            num_rows = getattr(index_config, "num_rows", None)
+            override = getattr(self.project_config, "num_rows_override", None)
+            if override is not None:
+                self.logger.info(
+                    "Row cap override in effect: {} rows (config said {})".format(
+                        override, num_rows
+                    )
+                )
+                num_rows = override
+
             csv_loader = CsvLoadUtils(
                 self.project,
                 self.project_config.dataDir,
                 self.one_step,
                 index_config.source,
-                index_config.num_rows,
+                num_rows,
                 index_config.skip_rows,
             )
             data = csv_loader.load_csv()
@@ -107,18 +117,9 @@ class PhaseIndexingPopulate:
                 pass
 
             id_field = None
-            try:
+            # auto generate the id_field if not present
+            with contextlib.suppress(AttributeError):
                 id_field = index_config.id_field
-            except AttributeError:
-                # auto generate the id_field
-                pass
-
-            num_rows = None
-            try:
-                num_rows = index_config.num_rows
-            except AttributeError:
-                # all rows
-                pass
 
             failure_count = 0
             for success, response in parallel_bulk(
