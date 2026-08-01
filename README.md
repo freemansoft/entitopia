@@ -61,6 +61,7 @@ Each step can contain one or more phases as described by json configuration file
 1. `enrichment-policies` - create enrichment policies and the related enrichment indexes
 1. `pipelines` - create elasticsearch ingestion pipelines
 1. `index-populate` - load data into an index
+1. `entity-match` - score pairs of related entities and write ranked candidates to an output index
 
 ### Data : Steps
 

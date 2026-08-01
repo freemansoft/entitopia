@@ -39,9 +39,13 @@
     {
       "name": "carriers",
       "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "chameleon-detection",
+      "phases": ["index-create", "index-map", "entity-match"]
     }
   ],
-  "all_phases": ["index-create", "index-map", "enrichment-policies", "pipelines", "index-populate"],
+  "all_phases": ["index-create", "index-map", "enrichment-policies", "pipelines", "index-populate", "entity-match"],
   "configurationDir": "configuration",
   "dataDir": "data",
   "logLevel": "INFO"

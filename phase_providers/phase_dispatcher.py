@@ -1,6 +1,7 @@
 import logging
 
 from phase_providers.phase_enrichment_policies import PhaseEnrichmentPolicies
+from phase_providers.phase_entity_match import PhaseEntityMatch
 from phase_providers.phase_index_creation import PhaseindexCreate
 from phase_providers.phase_index_mappings import PhaseIndexMappings
 from phase_providers.phase_index_populate import PhaseIndexingPopulate
@@ -30,6 +31,9 @@ class PhaseDispatcher:
             handler.handle()
         elif one_phase == "index-populate":
             handler = PhaseIndexingPopulate(es, project, step_name, project_config)
+            handler.handle()
+        elif one_phase == "entity-match":
+            handler = PhaseEntityMatch(es, project, step_name, project_config)
             handler.handle()
         else:
             self.logger.error(

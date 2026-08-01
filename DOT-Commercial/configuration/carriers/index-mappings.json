@@ -135,6 +135,42 @@
           "state_code": { "type": "keyword" },
           "zip_code": { "type": "keyword" }
         }
+      },
+      "out_of_service_orders": {
+        "properties": {
+          "dot_number": { "type": "long" },
+          "oos_date": { "type": "keyword" },
+          "oos_reason": { "type": "keyword" },
+          "status": { "type": "keyword" },
+          "rescind_date": { "type": "keyword" }
+        }
+      },
+      "auth_history": {
+        "properties": {
+          "dot_number": { "type": "long" },
+          "docket_number": { "type": "keyword" },
+          "sub_number": { "type": "keyword" },
+          "mod_col_1": { "type": "keyword" },
+          "original_action_desc": { "type": "keyword" },
+          "orig_served_date": { "type": "keyword" },
+          "disp_action_desc": { "type": "keyword" },
+          "disp_decided_date": { "type": "keyword" },
+          "disp_served_date": { "type": "keyword" }
+        }
+      },
+      "crashes": {
+        "properties": {
+          "dot_number": { "type": "long" },
+          "report_number": { "type": "keyword" },
+          "report_seq_no": { "type": "keyword" },
+          "vehicle_identification_number": { "type": "keyword" }
+        }
+      },
+      "inspections": {
+        "properties": {
+          "dot_number": { "type": "long" },
+          "inspection_id": { "type": "keyword" }
+        }
       }
     }
   }
