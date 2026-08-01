@@ -169,7 +169,12 @@
       "inspections": {
         "properties": {
           "dot_number": { "type": "long" },
-          "inspection_id": { "type": "keyword" }
+          "inspection_id": { "type": "keyword" },
+          "units": {
+            "properties": {
+              "insp_unit_vehicle_id_number": { "type": "keyword" }
+            }
+          }
         }
       }
     }

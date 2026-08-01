@@ -4,7 +4,7 @@
     "match": {
       "indices": "inspections-{now/d}-000001",
       "match_field": "dot_number",
-      "enrich_fields": ["dot_number", "inspection_id"]
+      "enrich_fields": ["dot_number", "inspection_id", "units.insp_unit_vehicle_id_number"]
     }
   },
   {
