@@ -188,19 +188,29 @@ class PhaseEntityMatch:
             )
         except Exception as e:
             self.logger.warning(
-                "Could not gather agent frequencies ({}); agent signal will treat "
-                "every agent as maximally rare".format(e)
+                "Could not gather agent frequencies ({}); agent signal has no corpus "
+                "to weight against and will score every shared agent at 0.0 (no "
+                "discriminating power) rather than fabricate a rarity value".format(e)
             )
             return ScoringContext()
 
         buckets = response["aggregations"]["agents"]["buckets"]
         counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
         total = sum(counts.values())
-        self.logger.info(
-            "Loaded {} distinct BOC-3 agents covering {} carrier filings".format(
-                len(counts), total
+        if total == 0:
+            # A zero-agent corpus is the signature of enrichment having
+            # silently produced nothing (see the README's documented enrich
+            # bugs) rather than a legitimately agent-free carrier population.
+            self.logger.warning(
+                "Loaded 0 distinct BOC-3 agents; boc3_agents enrichment may not "
+                "have run. The agent signal will score every shared agent at 0.0."
             )
-        )
+        else:
+            self.logger.info(
+                "Loaded {} distinct BOC-3 agents covering {} carrier filings".format(
+                    len(counts), total
+                )
+            )
         return ScoringContext(agent_counts=counts, total_agent_carriers=total)
 
     def _generate_actions(

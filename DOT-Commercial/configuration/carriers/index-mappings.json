@@ -115,6 +115,7 @@
       "boc3_agents": {
         "properties": {
           "dot_number": { "type": "long" },
+          "docket_number": { "type": "keyword" },
           "co_name": {
             "type": "text",
             "fields": {
@@ -123,6 +124,7 @@
               "phonetic": { "type": "text", "analyzer": "name_phonetic" }
             }
           },
+          "attn_to_or_title": { "type": "keyword" },
           "street_po": {
             "type": "text",
             "fields": {
@@ -133,7 +135,8 @@
           },
           "city": { "type": "keyword" },
           "state_code": { "type": "keyword" },
-          "zip_code": { "type": "keyword" }
+          "zip_code": { "type": "keyword" },
+          "ctry_code": { "type": "keyword" }
         }
       },
       "out_of_service_orders": {

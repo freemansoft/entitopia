@@ -48,8 +48,11 @@ ignore = [
     # instead. Blind except is deliberate here.
     "BLE001",
     # Long docstrings explaining rationale are required by CLAUDE.md and
-    # regularly exceed the line limit in prose. Code lines are still bound by
-    # line-length above.
+    # regularly exceed the line limit in prose. Ruff has no rule that bounds
+    # docstring/comment lines while leaving code lines alone, so this ignore
+    # is global: line-length is NOT enforced anywhere, including in code.
+    # `line-length = 100` above only sets the target `ruff format` wraps to;
+    # it does not make E501 fail a line that exceeds it.
     "E501",
     # Index names are generated from the operator's local calendar day
     # (carriers-2026.07.30-000001), because someone running a load at 9pm

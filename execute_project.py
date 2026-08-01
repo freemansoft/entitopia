@@ -143,7 +143,7 @@ def main():
             dispatcher, es, args.project, project_config.steps, project_config
         )
     else:
-        root_logger.critical("Could not load configuration for ")
+        root_logger.critical("Could not load configuration for {}".format(args.project))
 
 
 if __name__ == "__main__":

@@ -74,6 +74,11 @@
             "type": "pattern_replace",
             "replacement": " "
           },
+          "collapse_whitespace": {
+            "pattern": "\\s+",
+            "type": "pattern_replace",
+            "replacement": " "
+          },
           "remove_non_digits": {
             "pattern": "[^\\d]",
             "type": "pattern_replace",
@@ -106,7 +111,13 @@
             "tokenizer": "standard"
           },
           "street_clean": {
-            "filter": ["icu_normalizer", "icu_folding", "punct_white", "trim"],
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "collapse_whitespace",
+              "trim"
+            ],
             "tokenizer": "keyword"
           },
           "street_tokens": {

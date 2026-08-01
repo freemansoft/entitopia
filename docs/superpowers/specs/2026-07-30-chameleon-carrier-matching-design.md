@@ -292,8 +292,7 @@ Config _selects and weights_. It never expresses query logic.
       "type": "agent",
       "weight": 0.04,
       "name_field": "boc3_agents.co_name",
-      "address_field": "boc3_agents.street_po",
-      "idf_weighted": true
+      "address_field": "boc3_agents.street_po"
     },
     {
       "type": "temporal",
@@ -648,6 +647,32 @@ Recorded deliberately, not discovered later.
    weight 0.04 as weak corroboration only.
 5. **A full sweep takes hours.** ~680,000 round trips for the 340K
    `out-of-service` population.
+6. **Object-array filters cross-match.** `matching/predecessors.py` builds
+   sibling `must` clauses over `out_of_service_orders`, which is mapped as a
+   plain `object`, not `nested`. So a carrier with an ACTIVE 2015 order and an
+   INACTIVE 2022 order satisfies `status: ACTIVE` AND `oos_date >= 2020` from
+   _different_ array elements. This over-selects the predecessor population.
+   `TemporalSignal` then takes the latest `oos_date` regardless, so the
+   reported `shutdown_date` and `gap_days` may come from an order the selector
+   never intended. Over-selection preserves recall and `max_predecessors`
+   bounds cost, which is why it ships. The fix is `nested` mapping plus a
+   `nested` query.
+7. **Name is effectively triple-weighted, and `min_signals` does not do what
+   it appears to.** `entity-match.json` lists three name signals over the same
+   two fields (0.45 of 0.94 total). Because `carrier_suffix_stop` strips
+   TRUCKING/LOGISTICS/LLC/INC, most carrier names reduce to a single token, so
+   `blended_overlap` becomes effectively binary. Measured: a pair with a
+   byte-identical street, same state, and registration 45 days after the
+   shutdown scored **0.3483 and was dropped** by `min_total_score: 0.35`,
+   while `ABC TRUCKING LLC` vs `ABC LOGISTICS INC` in different states sharing
+   nothing but the token `ABC` scored **0.5113 and was emitted**. A complete
+   name change is the defining chameleon move, so this is backwards. Also note
+   `min_signals: 2` is satisfied by three arms reading one field, so a
+   name-only pair passes the floor that guard was written to enforce.
+8. **`signals[].detail` was never implemented.** The spec's output example
+   above shows `"detail"` carrying human-readable evidence such as `"shared
+tokens: SM0, TRKN"`. `SignalContribution` has no such field. Recorded here
+   as deferred.
 
 ## Follow-on work identified but not included
 

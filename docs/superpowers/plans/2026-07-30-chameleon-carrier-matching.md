@@ -32,30 +32,30 @@
 
 **New — pure Python, no cluster needed (Tasks 1-5):**
 
-| File | Responsibility |
-| --- | --- |
-| `matching/__init__.py` | Package marker |
-| `matching/tokens.py` | Set math (jaccard, containment, blend) and identifier normalization |
+| File                    | Responsibility                                                      |
+| ----------------------- | ------------------------------------------------------------------- |
+| `matching/__init__.py`  | Package marker                                                      |
+| `matching/tokens.py`    | Set math (jaccard, containment, blend) and identifier normalization |
 | `matching/documents.py` | `CarrierDoc` and `ScoringContext` — the data shapes signals consume |
-| `matching/signals.py` | `Signal` base, registry, and all seven signal implementations |
-| `matching/scorer.py` | `PairScorer` — aggregation, renormalization, the three guards |
+| `matching/signals.py`   | `Signal` base, registry, and all seven signal implementations       |
+| `matching/scorer.py`    | `PairScorer` — aggregation, renormalization, the three guards       |
 
 **New — cluster-facing (Tasks 10-12):**
 
-| File | Responsibility |
-| --- | --- |
-| `matching/predecessors.py` | `PredecessorSelector` — the four selectors and PIT/`search_after` iteration |
-| `matching/candidates.py` | `CandidateFinder` — seed query construction and `_mtermvectors` fetch |
-| `phase_providers/phase_entity_match.py` | Orchestration, config validation, mapping precondition, output writing |
+| File                                    | Responsibility                                                              |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| `matching/predecessors.py`              | `PredecessorSelector` — the four selectors and PIT/`search_after` iteration |
+| `matching/candidates.py`                | `CandidateFinder` — seed query construction and `_mtermvectors` fetch       |
+| `phase_providers/phase_entity_match.py` | Orchestration, config validation, mapping precondition, output writing      |
 
 **New — utils and config:**
 
-| File | Responsibility |
-| --- | --- |
-| `utils/id_utils.py` | `compute_id` lifted out of `phase_index_populate.py` |
-| `DOT-Commercial/configuration/chameleon-detection/index-config.json` | Output index name and alias |
-| `DOT-Commercial/configuration/chameleon-detection/index-mappings.json` | Output document mapping |
-| `DOT-Commercial/configuration/chameleon-detection/entity-match.json` | Selector, signals, weights, guards |
+| File                                                                   | Responsibility                                       |
+| ---------------------------------------------------------------------- | ---------------------------------------------------- |
+| `utils/id_utils.py`                                                    | `compute_id` lifted out of `phase_index_populate.py` |
+| `DOT-Commercial/configuration/chameleon-detection/index-config.json`   | Output index name and alias                          |
+| `DOT-Commercial/configuration/chameleon-detection/index-mappings.json` | Output document mapping                              |
+| `DOT-Commercial/configuration/chameleon-detection/entity-match.json`   | Selector, signals, weights, guards                   |
 
 **New — tests:**
 
@@ -63,16 +63,16 @@
 
 **Modified:**
 
-| File | Change |
-| --- | --- |
-| `DOT-Commercial/configuration/carriers/index-settings.json` | Replace metaphone, add beider_morse, corporate-suffix stop, street synonyms |
-| `DOT-Commercial/configuration/carriers/index-mappings.json` | New subfields; pin `add_date`, `phy_zip`, `fax`, `boc3_agents.*` |
-| `DOT-Commercial/configuration/carriers-ingestion-setup/pipelines.json` | Painless `add_date` century fix |
-| `DOT-Commercial/configuration.json` | New `chameleon-detection` step, `entity-match` in `all_phases` |
-| `phase_providers/phase_dispatcher.py` | New `entity-match` branch; fix the broken `else` |
-| `phase_providers/phase_index_populate.py` | Delegate to `utils/id_utils.py` |
-| `requirements.txt` | Add pytest |
-| `DOT-Commercial/README.md` | New step; correct the BOC-3 claim |
+| File                                                                   | Change                                                                      |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `DOT-Commercial/configuration/carriers/index-settings.json`            | Replace metaphone, add beider_morse, corporate-suffix stop, street synonyms |
+| `DOT-Commercial/configuration/carriers/index-mappings.json`            | New subfields; pin `add_date`, `phy_zip`, `fax`, `boc3_agents.*`            |
+| `DOT-Commercial/configuration/carriers-ingestion-setup/pipelines.json` | Painless `add_date` century fix                                             |
+| `DOT-Commercial/configuration.json`                                    | New `chameleon-detection` step, `entity-match` in `all_phases`              |
+| `phase_providers/phase_dispatcher.py`                                  | New `entity-match` branch; fix the broken `else`                            |
+| `phase_providers/phase_index_populate.py`                              | Delegate to `utils/id_utils.py`                                             |
+| `requirements.txt`                                                     | Add pytest                                                                  |
+| `DOT-Commercial/README.md`                                             | New step; correct the BOC-3 claim                                           |
 
 ---
 
@@ -1056,7 +1056,6 @@ def agent_cfg():
         type="agent",
         weight=0.04,
         name_field="boc3_agents.co_name",
-        idf_weighted=True,
     )
 
 
@@ -1789,10 +1788,29 @@ so there is one implementation."
             "type": "stop",
             "ignore_case": true,
             "stopwords": [
-              "llc", "inc", "ltd", "co", "corp", "corporation", "company",
-              "trucking", "truck", "transport", "transportation", "express",
-              "logistics", "carrier", "carriers", "enterprises", "enterprise",
-              "services", "service", "group", "freight", "hauling", "the"
+              "llc",
+              "inc",
+              "ltd",
+              "co",
+              "corp",
+              "corporation",
+              "company",
+              "trucking",
+              "truck",
+              "transport",
+              "transportation",
+              "express",
+              "logistics",
+              "carrier",
+              "carriers",
+              "enterprises",
+              "enterprise",
+              "services",
+              "service",
+              "group",
+              "freight",
+              "hauling",
+              "the"
             ]
           },
           "street_suffix_synonyms": {
@@ -1858,12 +1876,7 @@ so there is one implementation."
             "tokenizer": "keyword"
           },
           "street_tokens": {
-            "filter": [
-              "icu_normalizer",
-              "icu_folding",
-              "punct_white",
-              "street_suffix_synonyms"
-            ],
+            "filter": ["icu_normalizer", "icu_folding", "punct_white", "street_suffix_synonyms"],
             "tokenizer": "standard"
           },
           "phone_clean": {
@@ -2273,8 +2286,7 @@ No `source`, `id_field`, or `pipeline` keys — this index is not populated from
     {
       "type": "agent",
       "weight": 0.04,
-      "name_field": "boc3_agents.co_name",
-      "idf_weighted": true
+      "name_field": "boc3_agents.co_name"
     },
     {
       "type": "temporal",
@@ -3123,10 +3135,10 @@ Replace the `else` body (line 35). It currently calls an undefined `logger` and 
 In `DOT-Commercial/configuration.json`, append to `steps`:
 
 ```json
-  {
-    "name": "chameleon-detection",
-    "phases": ["index-create", "index-map", "entity-match"]
-  }
+{
+  "name": "chameleon-detection",
+  "phases": ["index-create", "index-map", "entity-match"]
+}
 ```
 
 and append `"entity-match"` to `all_phases`.
@@ -3387,34 +3399,34 @@ it are megafleets that do not reincarnate under new DOT numbers."
 
 **Spec coverage:**
 
-| Spec section | Task |
-| --- | --- |
-| §1 phonetic filters (double_metaphone, beider_morse) | 8 |
-| §1 corporate-suffix stop filter | 8 |
-| §1 street analyzer fix (delete `street_suffix_map`, add `street_tokens`) | 8 |
-| §1 mapping additions | 9 |
-| §1 `add_date` century fix | 9 |
-| §2 `entity-match` phase and dispatcher branch | 13 |
-| §2 config schema | 10 |
-| §2 three scoring guards | 6 |
-| §3 `_mtermvectors` token retrieval | 12 |
-| §3 per-signal math | 3, 4, 5 |
-| §3 containment vs jaccard | 1 |
-| §3 placeholder identifiers | 1, 4 |
-| §3 cross-state address penalty | 4 |
-| §3 BOC-3 IDF weighting | 2, 5, 13 |
-| §3 asymmetric temporal | 5 |
-| §4 four selectors, disposition trap | 11 |
-| §4 PIT + `search_after` | 11 |
-| §4 candidate query | 12 |
-| §4 directed pairs and dedupe | 13 |
-| §4 truncation warning | 13 |
-| §5 output document and `_id` | 10, 13 |
-| §5 `compute_id` refactor | 7 |
-| §5 error handling (5 items) | 13 |
-| §5 unit tests | 1-6 |
-| Follow-on: correct README BOC-3 claim | 13 |
-| Follow-on: inspection VINs reachable from carriers | 14 |
+| Spec section                                                             | Task     |
+| ------------------------------------------------------------------------ | -------- |
+| §1 phonetic filters (double_metaphone, beider_morse)                     | 8        |
+| §1 corporate-suffix stop filter                                          | 8        |
+| §1 street analyzer fix (delete `street_suffix_map`, add `street_tokens`) | 8        |
+| §1 mapping additions                                                     | 9        |
+| §1 `add_date` century fix                                                | 9        |
+| §2 `entity-match` phase and dispatcher branch                            | 13       |
+| §2 config schema                                                         | 10       |
+| §2 three scoring guards                                                  | 6        |
+| §3 `_mtermvectors` token retrieval                                       | 12       |
+| §3 per-signal math                                                       | 3, 4, 5  |
+| §3 containment vs jaccard                                                | 1        |
+| §3 placeholder identifiers                                               | 1, 4     |
+| §3 cross-state address penalty                                           | 4        |
+| §3 BOC-3 IDF weighting                                                   | 2, 5, 13 |
+| §3 asymmetric temporal                                                   | 5        |
+| §4 four selectors, disposition trap                                      | 11       |
+| §4 PIT + `search_after`                                                  | 11       |
+| §4 candidate query                                                       | 12       |
+| §4 directed pairs and dedupe                                             | 13       |
+| §4 truncation warning                                                    | 13       |
+| §5 output document and `_id`                                             | 10, 13   |
+| §5 `compute_id` refactor                                                 | 7        |
+| §5 error handling (5 items)                                              | 13       |
+| §5 unit tests                                                            | 1-6      |
+| Follow-on: correct README BOC-3 claim                                    | 13       |
+| Follow-on: inspection VINs reachable from carriers                       | 14       |
 
 **Deliberately not implemented** (spec's "follow-on work"): filtering `dot_number = 00000000` from BOC-3 ingestion, and re-typing the shadow datasets' date fields. Both are listed in the spec as out of scope.
 

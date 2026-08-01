@@ -91,9 +91,21 @@ def test_agent_rarity_unknown_agent_is_maximally_rare():
     assert ctx.agent_rarity("UNSEEN") == 1.0
 
 
-def test_agent_rarity_with_no_corpus_is_neutral_zero():
+def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
+    # 0.0 here is the bottom of the signal's range ("contributes nothing"),
+    # not a neutral midpoint. Returning 1.0 (the "unseen agent" value) would
+    # misrepresent an unmeasured agent as a known-rare one; a shared agent
+    # under a missing corpus is real evidence the signal simply can't weigh.
     ctx = ScoringContext(agent_counts={}, total_agent_carriers=0)
     assert ctx.agent_rarity("ANY") == 0.0
+
+
+def test_agent_rarity_with_single_agent_corpus_does_not_raise():
+    # total_agent_carriers == 1 makes log(N) == log(1) == 0, so the naive
+    # log(N/count)/log(N) division is 0/0. This must return the same floor
+    # value as the no-corpus case rather than raising ZeroDivisionError.
+    ctx = ScoringContext(agent_counts={"ONLY FILER": 1}, total_agent_carriers=1)
+    assert ctx.agent_rarity("ONLY FILER") == 0.0
 
 
 def cfg(**kwargs):
@@ -295,7 +307,6 @@ def agent_cfg():
         type="agent",
         weight=0.04,
         name_field="boc3_agents.co_name",
-        idf_weighted=True,
     )
 
 

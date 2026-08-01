@@ -79,6 +79,11 @@ def _flatten(values):
     return flattened
 
 
+# Below this many carriers in the corpus, log(N) is 0 or undefined and
+# normalized IDF cannot be computed; agent_rarity floors to 0.0 instead.
+MIN_AGENT_CORPUS = 2
+
+
 def _normalize_agent_key(name) -> str:
     """Casefold an agent name for keying and lookup.
 
@@ -115,8 +120,18 @@ class ScoringContext:
         1 - share would compress every agent into [0.906, 1.0] and the signal
         would carry no discriminating power at all. Normalized IDF spreads the
         same population across [0.167, 1.0].
+
+        Returns 0.0 — the floor of the signal's range, not "neutral" and
+        emphatically not "maximally common" — when there is no usable corpus:
+        either total_agent_carriers is 0 (frequencies were never gathered) or
+        1 (log(N) is 0, making the ratio undefined). A shared agent under
+        either condition is still real evidence; scoring it 1.0 (the "unseen
+        agent" placeholder) would misrepresent a known agent as novel, and
+        inventing a mid-range value would fabricate precision the data can't
+        support. 0.0 makes the signal contribute nothing until real stats
+        exist, rather than pretend to a discriminating power it doesn't have.
         """
-        if self.total_agent_carriers <= 0:
+        if self.total_agent_carriers < MIN_AGENT_CORPUS:
             return 0.0
         count = self.agent_counts.get(_normalize_agent_key(agent_name), 0)
         if count <= 0:
