@@ -45,7 +45,14 @@
       "phases": ["index-create", "index-map", "entity-match"]
     }
   ],
-  "all_phases": ["index-create", "index-map", "enrichment-policies", "pipelines", "index-populate", "entity-match"],
+  "all_phases": [
+    "index-create",
+    "index-map",
+    "enrichment-policies",
+    "pipelines",
+    "index-populate",
+    "entity-match"
+  ],
   "configurationDir": "configuration",
   "dataDir": "data",
   "logLevel": "INFO"
