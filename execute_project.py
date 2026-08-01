@@ -64,6 +64,17 @@ def parse_args():
     parser.add_argument(
         "--phase", required=False, default=None, help="Run a single phase"
     )
+    parser.add_argument(
+        "--num-rows",
+        required=False,
+        default=None,
+        type=int,
+        help=(
+            "Cap rows loaded per dataset, overriding each index-config's num_rows. "
+            "Lets one checkout run against a small sample or the full download "
+            "without editing committed config. Omit for whatever the config says."
+        ),
+    )
     args = parser.parse_args()
     logger.info("Args: {} ".format(args))
     return args
@@ -105,6 +116,15 @@ def apply_args_to_config(config, args):
                     one_step.phases, one_step.name
                 )
             )
+    if args.num_rows is not None:
+        # Carried on the project config so index-populate can prefer it over
+        # each index-config's own num_rows. Keeping it here rather than editing
+        # config files means a sample run and a full run are the same checkout,
+        # differing only by the flag.
+        new_config.num_rows_override = args.num_rows
+        logger.info(
+            "Row cap override: loading at most {} rows per dataset".format(args.num_rows)
+        )
     logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
     return new_config
 

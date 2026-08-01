@@ -41,6 +41,13 @@ MAX_TRACKED_DISTINCT = 200_000
 # state abbreviations). Categories make good filters and poor fingerprints.
 CATEGORY_MAX_DISTINCT = 200
 
+# ...but an absolute count only means something relative to how many rows there
+# are. A key column in a 20-row sample has 20 distinct values and is a perfect
+# fingerprint; judging it by count alone would call it a category. Any column
+# whose distinct values cover this share of its populated rows discriminates
+# well regardless of how few there are.
+FINGERPRINT_DISTINCT_RATIO = 0.5
+
 # A shared value carried by more than this share of rows cannot discriminate
 # between entities — two unrelated records will collide on it by chance.
 COMMON_VALUE_SHARE = 0.01
@@ -170,7 +177,8 @@ class ColumnProfile:
 
         if not self.distinct_capped and self.populated:
             distinct = len(self.values)
-            if 0 < distinct <= CATEGORY_MAX_DISTINCT:
+            near_unique = distinct / self.populated >= FINGERPRINT_DISTINCT_RATIO
+            if 0 < distinct <= CATEGORY_MAX_DISTINCT and not near_unique:
                 top_value, top_count = self.values.most_common(1)[0]
                 share = top_count / self.populated
                 if share > COMMON_VALUE_SHARE:
@@ -303,7 +311,8 @@ def _print_signals(fieldnames, columns):
         col = columns[name]
         if not col.populated:
             continue
-        if col.distinct_capped or len(col.values) > CATEGORY_MAX_DISTINCT:
+        near_unique = len(col.values) / col.populated >= FINGERPRINT_DISTINCT_RATIO
+        if col.distinct_capped or len(col.values) > CATEGORY_MAX_DISTINCT or near_unique:
             fingerprints.append(name)
         else:
             categories.append(name)

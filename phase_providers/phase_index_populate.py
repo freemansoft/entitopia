@@ -75,12 +75,27 @@ class PhaseIndexingPopulate:
         if index_config:
             elasticsearch_utils.replace_index_with_now_version(index_config)
             self.logger.debug("loaded config {}".format(index_config))
+            # A --num-rows on the command line wins over the config file, so
+            # one checkout can run against a small sample or the full download
+            # without editing anything committed. Resolved before the loader is
+            # built so the cap also limits what pandas reads, rather than
+            # pulling millions of rows into memory and discarding most of them.
+            num_rows = getattr(index_config, "num_rows", None)
+            override = getattr(self.project_config, "num_rows_override", None)
+            if override is not None:
+                self.logger.info(
+                    "Row cap override in effect: {} rows (config said {})".format(
+                        override, num_rows
+                    )
+                )
+                num_rows = override
+
             csv_loader = CsvLoadUtils(
                 self.project,
                 self.project_config.dataDir,
                 self.one_step,
                 index_config.source,
-                index_config.num_rows,
+                num_rows,
                 index_config.skip_rows,
             )
             data = csv_loader.load_csv()
@@ -105,11 +120,6 @@ class PhaseIndexingPopulate:
             # auto generate the id_field if not present
             with contextlib.suppress(AttributeError):
                 id_field = index_config.id_field
-
-            num_rows = None
-            # all rows if not present
-            with contextlib.suppress(AttributeError):
-                num_rows = index_config.num_rows
 
             failure_count = 0
             for success, response in parallel_bulk(

@@ -20,6 +20,41 @@ ES_URL=http://localhost:9200
 PY=python3
 VENV_PY="$ROOT/.venv/bin/python"
 
+# How much data to run against. Size is a parameter rather than something you
+# discover after the fact, because the three cases have genuinely different
+# purposes and the wrong default is expensive either way — a fixture run that
+# silently used 2M rows wastes an hour, and a "full" run that silently used 5
+# rows proves nothing.
+#
+#   fixture  tiny synthetic CSVs written into data/. Seconds. Use when you have
+#            no real download, or want to exercise a specific edge case.
+#   sample   the REAL downloaded files, capped to SAMPLE_ROWS via --num-rows.
+#            Nothing is written to data/. Minutes. The usual choice.
+#   full     the real files, uncapped. Hours on DOT-Commercial.
+#
+#   DATA_MODE=sample SAMPLE_ROWS=50000 driver.sh smoke
+DATA_MODE="${DATA_MODE:-fixture}"
+SAMPLE_ROWS="${SAMPLE_ROWS:-25000}"
+
+case "$DATA_MODE" in
+    fixture|sample|full) ;;
+    *) echo "DATA_MODE must be fixture, sample, or full (got '$DATA_MODE')" >&2; exit 2 ;;
+esac
+
+# Row cap passed to execute_project.py, empty for fixture and full modes.
+row_cap_args() {
+    if [ "$DATA_MODE" = "sample" ]; then
+        printf '%s' "--num-rows=$SAMPLE_ROWS"
+    fi
+}
+
+# Fixtures are only written in fixture mode. In sample and full mode the real
+# downloads are what we want, and writing over them is exactly the accident the
+# guard below exists to prevent.
+fixtures_wanted() {
+    [ "$DATA_MODE" = "fixture" ]
+}
+
 es_up() {
     # Delegate to the repo's own cluster definition rather than building a
     # second one here. This script used to build an inline image pinned to a
@@ -73,14 +108,43 @@ es_config_write() {
 EOF
 }
 
+# Fixtures are written into the same data directories the real downloads land
+# in, so writing one over a genuine multi-million-row file destroys it — and
+# `*/data/` is gitignored, so there is no copy to restore from and the only
+# recovery is a multi-gigabyte re-download. That happened once. Nothing a
+# fixture writes is anywhere near this size, so anything bigger is real data.
+MAX_FIXTURE_BYTES=10240
+
+write_fixture() {
+    local target="$1"
+    if [ -f "$target" ]; then
+        local size
+        size=$(wc -c < "$target" | tr -d ' ')
+        if [ "$size" -gt "$MAX_FIXTURE_BYTES" ] && [ "${FORCE_FIXTURES:-0}" != "1" ]; then
+            echo "" >&2
+            echo "REFUSING to overwrite $target" >&2
+            echo "  It is ${size} bytes — far larger than any fixture, so this is" >&2
+            echo "  almost certainly real downloaded data. */data/ is gitignored," >&2
+            echo "  so overwriting it means re-downloading from the source." >&2
+            echo "" >&2
+            echo "  Move the file aside, or set FORCE_FIXTURES=1 to overwrite" >&2
+            echo "  deliberately." >&2
+            echo "" >&2
+            exit 1
+        fi
+    fi
+    cat > "$target"
+}
+
 fixtures_cms() {
+    fixtures_wanted || { echo "DATA_MODE=$DATA_MODE - using real CMS data, not writing fixtures"; return 0; }
     # Column names must match CMS-Providers/configuration/hospitals/index-mappings.json
     # exactly. A mapping naming a column that does not exist is accepted silently
     # and applies nothing — which is how all three CMS analyzers were inert for
     # months after CMS renamed its columns. Verify with _analyze, not by reading
     # the mapping file.
     mkdir -p CMS-Providers/data/hospitals
-    cat > CMS-Providers/data/hospitals/Hospital_General_Information.csv <<'EOF'
+    write_fixture CMS-Providers/data/hospitals/Hospital_General_Information.csv <<'EOF'
 Facility ID,Facility Name,Address,City/Town,State,ZIP Code,Telephone Number
 010001,SOUTHEAST HEALTH MEDICAL CENTER,1108 ROSS CLARK CIRCLE,DOTHAN,AL,36301,(334) 793-8701
 010005,MARSHALL MEDICAL CENTER SOUTH,2505 U S HIGHWAY 431 NORTH,BOAZ,AL,35957,(256) 593-8310
@@ -91,17 +155,18 @@ EOF
 }
 
 fixtures_dot() {
+    fixtures_wanted || { echo "DATA_MODE=$DATA_MODE - using real DOT data, not writing fixtures"; return 0; }
     # Filenames and column names come from the Socrata API and are lowercase.
     # The pre-Socrata uppercase .txt fixtures this script used to write no
     # longer match any index-config source, so every DOT step silently loaded
     # nothing.
     mkdir -p DOT-Commercial/data/crashes DOT-Commercial/data/inspections DOT-Commercial/data/carriers
-    cat > DOT-Commercial/data/crashes/crashes.csv <<'EOF'
+    write_fixture DOT-Commercial/data/crashes/crashes.csv <<'EOF'
 crash_id,dot_number,report_number,report_seq_no,vehicle_identification_number
 C0001,1000001,RPT001,1,1FDXE4FS0AA000001
 C0002,1000002,RPT002,1,1FDXE4FS0AA000002
 EOF
-    cat > DOT-Commercial/data/inspections/inspections.csv <<'EOF'
+    write_fixture DOT-Commercial/data/inspections/inspections.csv <<'EOF'
 inspection_id,dot_number,insp_date
 INS001,1000001,2023-02-01
 INS002,1000002,2023-02-02
@@ -109,7 +174,7 @@ EOF
     # add_date is deliberately in the legacy Oracle format the carriers
     # pipeline converts, so a smoke run exercises the century pivot rather
     # than only the happy ISO path.
-    cat > DOT-Commercial/data/carriers/carriers.csv <<'EOF'
+    write_fixture DOT-Commercial/data/carriers/carriers.csv <<'EOF'
 dot_number,legal_name,dba_name,phy_street,phy_city,phy_state,phy_zip,mailing_street,mailing_city,mailing_state,telephone,fax,email_address,add_date
 1000001,ACME TRUCKING LLC,ACME,123 MAIN ST,SPRINGFIELD,IL,62701,123 MAIN ST,SPRINGFIELD,IL,(217) 555-1234,,dispatch@acme.example,01-JUN-74
 1000002,BOLT FREIGHT INC,BOLT,456 OAK AVE,DECATUR,IL,62521,456 OAK AVE,DECATUR,IL,(217) 555-5678,,ops@boltfreight.example,23-JAN-02
@@ -119,7 +184,13 @@ EOF
 run_project() {
     # shellcheck disable=SC1091
     source .venv/bin/activate
-    "$VENV_PY" execute_project.py "$@"
+    local cap
+    cap="$(row_cap_args)"
+    if [ -n "$cap" ]; then
+        "$VENV_PY" execute_project.py "$@" "$cap"
+    else
+        "$VENV_PY" execute_project.py "$@"
+    fi
 }
 
 verify_cms() {
