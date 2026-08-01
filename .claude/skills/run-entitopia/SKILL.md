@@ -20,6 +20,13 @@ capability actually works, not just that CSVs got indexed.
 
 All paths below are relative to the repo root.
 
+## Related skill
+
+This skill is about **running** entitopia. For **adding a new dataset** —
+choosing field types, designing analyzers, wiring enrichment, configuring
+matching signals — use `add-entitopia-dataset`, which carries the accumulated
+decisions and the hazards that make a load silently wrong.
+
 ## Prerequisites
 
 - Docker (used to run Elasticsearch 9.4.4 with the `analysis-icu` and
@@ -33,10 +40,20 @@ All paths below are relative to the repo root.
 
 ```bash
 docker --version
-python3.12 --version   # or any python3 >= 3.11
+python3 --version      # >= 3.11, used only to create .venv
 ```
 
 ## Setup
+
+The cluster is defined by `docker/compose.yml` in the repo (Elasticsearch
+pinned to the same version as the client in `requirements.txt`, with
+`analysis-icu` and `analysis-phonetic` installed). `driver.sh es-up` delegates
+to it rather than building its own image — an earlier version built a second
+container on the same port at a different version, so the two could never run
+together.
+
+Everything runs from `.venv`; `bash dependencies.sh` creates it and installs
+pinned dependencies. Never invoke the system Python.
 
 ```bash
 python3.12 -m venv .venv
@@ -64,7 +81,7 @@ This is the harness that was actually run to verify this skill. It:
    `DOT-Commercial/data/{crashes,inspections,carriers}/` (the real
    `download_*.sh` scripts hit CMS/DOT URLs that go stale — see
    Gotchas).
-5. Runs `python3 execute_project.py --project=CMS-Providers --step=hospitals`,
+5. Runs `.venv/bin/python execute_project.py --project=CMS-Providers --step=hospitals`,
    then DOT-Commercial's 5 steps individually (not as one
    `--project=DOT-Commercial` call — see Gotchas on why), force-refreshing
    `crashes-000001`/`inspections-000001` right before the
@@ -123,7 +140,7 @@ Individual subcommands, for finer-grained control:
 | `driver.sh venv-setup` | create `.venv` (if missing) and install deps |
 | `driver.sh es-config` | write `es_config.json` for the dev container |
 | `driver.sh fixtures` | write the synthetic CMS/DOT sample CSVs |
-| `driver.sh run <args>` | `python3 execute_project.py <args>`, e.g. `run --project=CMS-Providers --step=hospitals --phase=index-populate` |
+| `driver.sh run <args>` | `.venv/bin/python execute_project.py <args>`, e.g. `run --project=CMS-Providers --step=hospitals --phase=index-populate` |
 | `driver.sh verify` | refresh + count/query the hospitals and carriers indices |
 | `driver.sh match-demo` | inject a synthetic near-duplicate hospital, show absolute match missing it vs. soft match finding it, clean up |
 | `driver.sh smoke` | all of the above, in order |
@@ -133,7 +150,7 @@ exists — most useful once you have real project data staged):
 
 ```bash
 source .venv/bin/activate
-python3 execute_project.py --project=<ProjectDir> [--step=<step>] [--phase=<phase>]
+.venv/bin/python execute_project.py --project=<ProjectDir> [--step=<step>] [--phase=<phase>]
 ```
 
 Query results directly:
@@ -149,7 +166,7 @@ Same as the agent path minus the driver: bring up Elasticsearch
 yourself (README points at
 https://github.com/freemansoft/docker-scripts/tree/main/elasticsearch),
 populate `es_config.json`, drop real downloaded CSVs under
-`<Project>/data/<step>/`, then `python3 execute_project.py --project=<ProjectDir>`.
+`<Project>/data/<step>/`, then `.venv/bin/python execute_project.py --project=<ProjectDir>`.
 
 ## Test
 
@@ -177,7 +194,7 @@ actually running the pipeline against a live cluster, which is what
   fully completed (the phase handler blocks on consuming the whole
   generator). Worse: `PhaseEnrichmentPolicies.execute_policy` only sees
   *searchable* source documents, so running
-  `python3 execute_project.py --project=DOT-Commercial` as one shot
+  `.venv/bin/python execute_project.py --project=DOT-Commercial` as one shot
   (crashes/inspections indexed, then enrichment policies built
   milliseconds later, all well under 1s) reproducibly builds enrichment
   indices with **zero** matches — every phase logs `acknowledged: True`

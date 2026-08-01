@@ -9,34 +9,28 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
-ES_CONTAINER=entitopia-es-dev
-ES_IMAGE=entitopia-es-dev:9.4.4
+# Must match the container name and port in docker/compose.yml, which is the
+# single definition of this project's cluster.
+ES_CONTAINER=entitopia-es
+COMPOSE_FILE="$ROOT/docker/compose.yml"
 ES_URL=http://localhost:9200
-PY=python3.12
-[ -x "$(command -v python3.12)" ] || PY=python3
+
+# Bootstrap interpreter, used only to create .venv. Once .venv exists every
+# command runs through it, so the host Python cannot affect the project.
+PY=python3
+VENV_PY="$ROOT/.venv/bin/python"
 
 es_up() {
+    # Delegate to the repo's own cluster definition rather than building a
+    # second one here. This script used to build an inline image pinned to a
+    # different Elasticsearch version than requirements.txt pins the client to,
+    # on the same port 9200 — so the two could never run together and could
+    # drift apart silently. docker/compose.yml is now the single definition.
     if docker ps --format '{{.Names}}' | grep -qx "$ES_CONTAINER"; then
         echo "Elasticsearch already running"
     else
-        docker rm -f "$ES_CONTAINER" >/dev/null 2>&1 || true
-        if ! docker image inspect "$ES_IMAGE" >/dev/null 2>&1; then
-            echo "Building $ES_IMAGE (base ES image + analysis-icu + analysis-phonetic plugins)"
-            tmpdir=$(mktemp -d)
-            cat > "$tmpdir/Dockerfile" <<'EOF'
-FROM docker.elastic.co/elasticsearch/elasticsearch:9.4.4
-RUN bin/elasticsearch-plugin install --batch analysis-icu analysis-phonetic
-EOF
-            docker build -t "$ES_IMAGE" "$tmpdir"
-            rm -rf "$tmpdir"
-        fi
-        echo "Starting $ES_CONTAINER"
-        docker run -d --name "$ES_CONTAINER" \
-            -p 9200:9200 \
-            -e discovery.type=single-node \
-            -e xpack.security.enabled=false \
-            -e ES_JAVA_OPTS="-Xms512m -Xmx512m" \
-            "$ES_IMAGE" >/dev/null
+        echo "Starting Elasticsearch via docker/compose.yml"
+        docker compose -f "$COMPOSE_FILE" up -d --build
     fi
 
     echo "Waiting for Elasticsearch health..."
@@ -53,8 +47,8 @@ EOF
 }
 
 es_down() {
-    docker rm -f "$ES_CONTAINER" >/dev/null 2>&1 || true
-    echo "Removed $ES_CONTAINER"
+    docker compose -f "$COMPOSE_FILE" down
+    echo "Stopped $ES_CONTAINER (volume kept; add -v to discard indexed data)"
 }
 
 venv_setup() {
@@ -80,40 +74,52 @@ EOF
 }
 
 fixtures_cms() {
+    # Column names must match CMS-Providers/configuration/hospitals/index-mappings.json
+    # exactly. A mapping naming a column that does not exist is accepted silently
+    # and applies nothing — which is how all three CMS analyzers were inert for
+    # months after CMS renamed its columns. Verify with _analyze, not by reading
+    # the mapping file.
     mkdir -p CMS-Providers/data/hospitals
     cat > CMS-Providers/data/hospitals/Hospital_General_Information.csv <<'EOF'
-Facility ID,Facility Name,Addresss,City,State,Phone Number
-010001,SOUTHEAST HEALTH MEDICAL CENTER,1108 ROSS CLARK CIRCLE,DOTHAN,AL,(334) 793-8701
-010005,MARSHALL MEDICAL CENTER SOUTH,2505 U S HIGHWAY 431 NORTH,BOAZ,AL,(256) 593-8310
-010006,ELIZA COFFEE MEMORIAL HOSPITAL,205 MARENGO STREET,FLORENCE,AL,(256) 768-9191
-010007,MIZELL MEMORIAL HOSPITAL,702 N MAIN ST,OPP,AL,(334) 493-3541
-010008,CRENSHAW COMMUNITY HOSPITAL,101 HOSPITAL CIRCLE,LUVERNE,AL,(334) 335-3374
+Facility ID,Facility Name,Address,City/Town,State,ZIP Code,Telephone Number
+010001,SOUTHEAST HEALTH MEDICAL CENTER,1108 ROSS CLARK CIRCLE,DOTHAN,AL,36301,(334) 793-8701
+010005,MARSHALL MEDICAL CENTER SOUTH,2505 U S HIGHWAY 431 NORTH,BOAZ,AL,35957,(256) 593-8310
+010006,ELIZA COFFEE MEMORIAL HOSPITAL,205 MARENGO STREET,FLORENCE,AL,35630,(256) 768-9191
+010007,MIZELL MEMORIAL HOSPITAL,702 N MAIN ST,OPP,AL,36467,(334) 493-3541
+010008,CRENSHAW COMMUNITY HOSPITAL,101 HOSPITAL CIRCLE,LUVERNE,AL,36049,(334) 335-3374
 EOF
 }
 
 fixtures_dot() {
+    # Filenames and column names come from the Socrata API and are lowercase.
+    # The pre-Socrata uppercase .txt fixtures this script used to write no
+    # longer match any index-config source, so every DOT step silently loaded
+    # nothing.
     mkdir -p DOT-Commercial/data/crashes DOT-Commercial/data/inspections DOT-Commercial/data/carriers
-    cat > DOT-Commercial/data/crashes/2023Feb_Crash.txt <<'EOF'
-REPORT_NUMBER,REPORT_SEQ_NO,DOT_NUMBER,VEHICLE_ID_NUMBER
-RPT001,1,1000001,1FDXE4FS0AA000001
-RPT002,1,1000002,1FDXE4FS0AA000002
+    cat > DOT-Commercial/data/crashes/crashes.csv <<'EOF'
+crash_id,dot_number,report_number,report_seq_no,vehicle_identification_number
+C0001,1000001,RPT001,1,1FDXE4FS0AA000001
+C0002,1000002,RPT002,1,1FDXE4FS0AA000002
 EOF
-    cat > DOT-Commercial/data/inspections/2023Feb_Inspection.txt <<'EOF'
-UNIQUE_ID,DOT_NUMBER,VIN,VIN2
-INS001,1000001,1FDXE4FS0AA000001,1FDXE4FS0AA000001
-INS002,1000002,1FDXE4FS0AA000002,1FDXE4FS0AA000002
+    cat > DOT-Commercial/data/inspections/inspections.csv <<'EOF'
+inspection_id,dot_number,insp_date
+INS001,1000001,2023-02-01
+INS002,1000002,2023-02-02
 EOF
-    cat > DOT-Commercial/data/carriers/FMCSA_CENSUS1_2023Feb.txt <<'EOF'
-DOT_NUMBER,LEGAL_NAME,DBA_NAME,PHY_STREET,PHY_CITY,PHY_STATE,MAILING_STREET,MAILING_CITY,MAILING_STATE,TELEPHONE,EMAIL_ADDRESS
-1000001,ACME TRUCKING LLC,ACME,123 MAIN ST,SPRINGFIELD,IL,123 MAIN ST,SPRINGFIELD,IL,2175551234,dispatch@acme.example
-1000002,BOLT FREIGHT INC,BOLT,456 OAK AVE,DECATUR,IL,456 OAK AVE,DECATUR,IL,2175555678,ops@boltfreight.example
+    # add_date is deliberately in the legacy Oracle format the carriers
+    # pipeline converts, so a smoke run exercises the century pivot rather
+    # than only the happy ISO path.
+    cat > DOT-Commercial/data/carriers/carriers.csv <<'EOF'
+dot_number,legal_name,dba_name,phy_street,phy_city,phy_state,phy_zip,mailing_street,mailing_city,mailing_state,telephone,fax,email_address,add_date
+1000001,ACME TRUCKING LLC,ACME,123 MAIN ST,SPRINGFIELD,IL,62701,123 MAIN ST,SPRINGFIELD,IL,(217) 555-1234,,dispatch@acme.example,01-JUN-74
+1000002,BOLT FREIGHT INC,BOLT,456 OAK AVE,DECATUR,IL,62521,456 OAK AVE,DECATUR,IL,(217) 555-5678,,ops@boltfreight.example,23-JAN-02
 EOF
 }
 
 run_project() {
     # shellcheck disable=SC1091
     source .venv/bin/activate
-    python3 execute_project.py "$@"
+    "$VENV_PY" execute_project.py "$@"
 }
 
 verify_cms() {
@@ -153,7 +159,7 @@ match_demo() {
     echo "(the typo'd near-duplicate is invisible to exact matching, by construction)"
     curl -s "$ES_URL/hospitals-000001/_search" -H 'Content-Type: application/json' -d '{
         "query": {"term": {"Facility Name.keyword": "SOUTHEAST HEALTH MEDICAL CENTER"}}
-    }' | python3 -c "
+    }' | "$VENV_PY" -c "
 import json,sys
 d=json.load(sys.stdin)
 print('hits:', d['hits']['total']['value'])
@@ -174,7 +180,7 @@ for h in d['hits']['hits']:
                 ]
             }
         }
-    }' | python3 -c "
+    }' | "$VENV_PY" -c "
 import json,sys
 d=json.load(sys.stdin)
 for h in d['hits']['hits']:
