@@ -6,6 +6,14 @@ Its goal is detecting **chameleon carriers** — trucking companies shut down fo
 
 Framework concepts (steps, phases, configuration layout) and the data-loading hazards common to any dataset are in the [top-level README](../README.md). This README covers what is specific to the FMCSA data.
 
+> **Counts here are point-in-time**, measured against the **July 2026** FMCSA
+> extract unless stated otherwise. FMCSA republishes continuously: carriers are
+> added and shut down daily, so row counts, the predecessor population, the
+> placeholder values in `ignore_values`, and every match count below will differ
+> on your own download. Sweep results depend on the extract twice over — once
+> through the data and once through thresholds tuned against it. Treat these as
+> evidence of magnitude and shape, not as figures to reproduce.
+
 On the DOT Site <https://data.transportation.gov/Trucking-and-Motorcoaches/>
 
 ## Open items
@@ -271,8 +279,10 @@ flowchart LR
     carriers-ingestion-setup-step -.->|enrichment-policies| boc3-enrichment-index
     carriers-ingestion-setup-step -.->|"pipelines (create)"| enriching-pipeline
 
-    carriers-index -->|entity-match| chameleon-step
-    chameleon-step -->|"index-map, entity-match"| chameleon-index
+    carriers-index -->|"source_index — read only"| chameleon-step
+    chameleon-step -->|"index-create, index-map, entity-match"| chameleon-index
+    entity-match-config["entity-match.json<br/>selector · seed_signals · weights<br/>ignore_values · max_shared_records"] -.-> chameleon-step
+    carriers-index -.->|"corpus frequency scan<br/>finds non-identifying values"| chameleon-step
 
 
 ```

@@ -19,6 +19,21 @@ Each project has its own README covering its datasets, the steps it runs, its in
 
 Adding a third dataset? Start with [docs/adding-a-dataset.md](docs/adding-a-dataset.md) — it walks the decisions in order and points back here for the details.
 
+### A note on the numbers in this document
+
+Every record count, distinct-value count, match count and percentage here is a
+**point-in-time measurement against one extract**, kept because the _magnitude_
+is what makes an argument concrete — "36,788 of 5,647,567 documents dropped"
+lands where "some documents dropped" does not.
+
+They are not invariants. The source agencies republish on their own schedules,
+so row counts drift, placeholder values come and go, and a threshold tuned
+against one extract can behave differently against the next. Treat a number
+here as evidence that a problem is real and roughly how big it was, never as a
+value to assert against in a test or to expect on your own download. If a
+measurement you take disagrees with one written here, **trust yours** and
+update the document — that is how this material was written in the first place.
+
 ## How it works
 
 A **project** is a directory containing configuration and data. Running it executes **steps** in order; each step runs one or more **phases**.
@@ -48,8 +63,8 @@ flowchart LR
     Create --> Map --> Populate
     Policies -.->|enrich source| Pipelines
     Pipelines -.->|transform on ingest| Populate
-    Populate --> Index[(Elasticsearch index)]
-    Index --> Match --> Output[(candidate pairs index)]
+    Populate --> Index[(Elasticsearch index<br/>loaded entities)]
+    Index --> Match --> Output[(Elasticsearch index<br/>candidate pairs)]
 ```
 
 ### `execute_project.py` command line options
@@ -106,29 +121,40 @@ Retrieval and scoring are separate problems, and a match must survive both. A pa
 flowchart TB
     Sel[PredecessorSelector<br/>shut-down population] --> Seed
 
-    subgraph retrieve["retrieval — decides what CAN be found"]
+    subgraph retrieve["retrieval — sets what CAN be found"]
         direction TB
-        Seed["each signal builds its own<br/>seed clauses (seed_signals)"]
-        Cands[bool.should query<br/>capped at max_candidates]
-        Tokens[one _mtermvectors call<br/>for analyzed tokens]
+        Seed["each signal builds its own seed clauses<br/>signal.seed_clauses, limited to seed_signals"]
+        Cands["bool.should query<br/>capped at max_candidates"]
+        Tokens["one _mtermvectors call<br/>signal.token_subfields"]
         Seed --> Cands --> Tokens
     end
 
-    subgraph score["scoring — decides what IS reported"]
+    subgraph score["scoring — sets what IS reported"]
         direction TB
-        Sig[signals score the pair<br/>None = not evaluable]
-        Norm[renormalize over<br/>evaluable weights only]
-        Guard{"guards:<br/>min_signals,<br/>identity fired,<br/>min_total_score"}
+        Sig["each signal scores the pair<br/>None = not evaluable, ≠ 0.0"]
+        Norm["renormalize over<br/>evaluable weights only"]
+        Guard{"guards<br/>min_signals · identity fired<br/>min_total_score"}
         Sig --> Norm --> Guard
     end
 
-    Ignore[(ignore_values +<br/>frequency scan)] -.->|drops placeholder values| Seed
-    Ignore -.-> Sig
+    subgraph exclude["exclusion — what is not identity evidence"]
+        direction TB
+        Scan["corpus frequency scan<br/>signal.exact_evidence_fields<br/>over max_shared_records"]
+        Decl["ignore_values<br/>declared per field"]
+    end
+
+    Scan --> Ignore[(ignored values<br/>per field)]
+    Decl --> Ignore
+    Ignore -.->|"a filing service's email<br/>must not retrieve"| Seed
+    Ignore -.->|"nor score 1.0"| Sig
+
     Tokens --> Sig
-    Guard -->|kept| Out[(chameleon-candidates)]
+    Conc["a conclusive signal fired"] -.->|"bypasses the score floor only"| Guard
+    Guard -->|kept| Out[("Elasticsearch index<br/>chameleon-candidates")]
     Guard -->|rejected| Drop["discarded"]
-    Conc[conclusive signal fired] -.->|bypasses score floor only| Guard
 ```
+
+Retrieval and exclusion are wired to the same values on purpose. If a value could seed but not score — or the reverse — the sweep would retrieve candidates it then refuses to credit, which reads as a silent recall loss rather than an error.
 
 Three configuration knobs shape this, all in the step's `entity-match.json`:
 
