@@ -98,6 +98,44 @@ Each step contains zero or more phases. Phases are the units of work, implemente
 1. `index-populate` — load data into an index, directly or through a pipeline
 1. `entity-match` — score pairs of related entities and write ranked candidates to an output index
 
+#### Inside `entity-match`
+
+Retrieval and scoring are separate problems, and a match must survive both. A pair the seed query never returns cannot be scored at any threshold, so recall is set by seeding, not by the signal weights.
+
+```mermaid
+flowchart TB
+    Sel[PredecessorSelector<br/>shut-down population] --> Seed
+
+    subgraph retrieve["retrieval — decides what CAN be found"]
+        direction TB
+        Seed["each signal builds its own<br/>seed clauses (seed_signals)"]
+        Cands[bool.should query<br/>capped at max_candidates]
+        Tokens[one _mtermvectors call<br/>for analyzed tokens]
+        Seed --> Cands --> Tokens
+    end
+
+    subgraph score["scoring — decides what IS reported"]
+        direction TB
+        Sig[signals score the pair<br/>None = not evaluable]
+        Norm[renormalize over<br/>evaluable weights only]
+        Guard{"guards:<br/>min_signals,<br/>identity fired,<br/>min_total_score"}
+        Sig --> Norm --> Guard
+    end
+
+    Ignore[(ignore_values +<br/>frequency scan)] -.->|drops placeholder values| Seed
+    Ignore -.-> Sig
+    Tokens --> Sig
+    Guard -->|kept| Out[(chameleon-candidates)]
+    Guard -->|rejected| Drop["discarded"]
+    Conc[conclusive signal fired] -.->|bypasses score floor only| Guard
+```
+
+Three configuration knobs shape this, all in the step's `entity-match.json`:
+
+- **`candidates.seed_signals`** — which signals may retrieve, not merely corroborate. Each signal builds its own clauses, so this list is the whole extent of what the sweep can reach. A signal absent here still scores pairs; it just cannot widen the search. `agent` is deliberately excluded: 87 BOC-3 agents cover 519,139 filings, so seeding on one returns essentially random carriers.
+- **`signals[].conclusive`** — when this signal fires, report the pair even if the blended total falls under `min_total_score`. For evidence that is decisive rather than merely strong. A weighted average of eight signals cannot express "this one fact settles it": a shared VIN scores 1.0 at weight 0.08, so a pair sharing nothing else totals ~0.11 against a 0.35 floor and was discarded. Only the score floor is bypassed — `min_signals` and `require_identity_signal` still apply.
+- **`ignore_values`** — values that carry no evidence on a given field, keyed by field path with `"*"` for all fields. Keyed by field because a value that is junk in one attribute is fine in another: `"0"` is not a VIN but is a real street number. This is merged with a frequency scan that flags any value attached to more than `max_shared_carriers` records, so operator knowledge and corpus evidence both feed the same list.
+
 ### Data staging
 
 Source data lives in `data` subdirectories named after the step that consumes it. Setup-only steps have no data.
@@ -173,12 +211,31 @@ Without `id_field`, Elasticsearch generates document IDs, so re-running a load a
 
 ### 6. Enrichment policies go stale without erroring
 
-An enrich policy is a **point-in-time snapshot** of its source index. It does not track later changes. Two ways this bites:
+An enrich policy is a **point-in-time snapshot** of its source index. It does not track later changes. Ways this bites:
 
-- A policy bound to a live pipeline **cannot be deleted**. The rebuild fails with a conflict that is caught and logged as a warning, so the run continues against the _old_ snapshot. This left a policy pinned to a 5,000-row validation sample across a full 5.6M-row production run, silently cutting enrichment coverage from ~572K matches to ~4K. **Delete the pipeline before rebuilding its policies.**
+- A policy bound to a live pipeline **cannot be deleted**. The rebuild fails with a conflict that is caught and logged as a warning, so the run continues against the _old_ snapshot. This left a policy pinned to a 5,000-row validation sample across a full 5.6M-row production run, silently cutting enrichment coverage from ~572K matches to ~4K.
+- Worse, and now fixed: `delete_policy`, `put_policy` and `execute_policy` used to share one `try`. On any cluster loaded before, the delete raised `ConflictError`, the put then raised `resource_already_exists_exception`, and **`execute_policy` never ran at all** — so the previous run's enrich index stayed live. On a reused cluster that index was frequently _empty_: carriers loaded with no `out_of_service_orders` field, `PredecessorSelector` matched zero predecessors, and the chameleon sweep logged a tidy `0 pairs` that is indistinguishable from "this data contains no chameleons". Execution is now unconditional, and a policy that cannot be replaced is compared against config rather than executed blind.
 - If a source index is missing when policies rebuild, the loop aborts and every policy after it keeps its previous snapshot (see open items).
 
-**After rebuilding policies, check the enrich index document count** rather than trusting an `acknowledged: true`.
+**After rebuilding policies, check the enrich index document count** rather than trusting an `acknowledged: true`. `phase_enrichment_policies.py` now does this for you: it compares each enrich index against its source and logs an ERROR when the enrich index is empty while the source is not. That is the difference between a run that reports success and a run you can believe.
+
+The measured signature of the bug, for recognition: the step completes in **~1 second** and the enrich index holds **0 documents**. Correctly rebuilt, the same step takes **~3 minutes** and the counts match exactly.
+
+### 7. Enrichment back-pressure drops documents, and the count looks like deduplication
+
+An enriched load can silently come up short. `parallel_bulk` cannot retry — it has no `max_retries` — so a 429 from the enrich coordinator discards that document permanently. A full DOT-Commercial run lost **91,439 of 2,085,534 carriers (4.4%)** this way.
+
+What makes it dangerous is how the shortfall reads afterwards. Every dataset here uses a deterministic `id_field`, so an index legitimately holding fewer documents than its CSV has rows is normal — repeated keys upsert. A 4.4% gap looks exactly like that, and it is tempting to write it off. Confirm which one you are looking at:
+
+```bash
+# rows the loader read vs documents that landed
+curl -s "localhost:9200/carriers-000001/_count"
+tail -n +2 data/carriers/carriers.csv | cut -d, -f1 | sort -u | wc -l
+```
+
+If the **distinct key count** equals the CSV row count but the index holds fewer, nothing was deduplicated and documents were lost. `phase_index_populate.py` also logs the truth directly — `N of M documents failed to index into ...` — so read that line before drawing conclusions from a document count.
+
+The fix is the enrich coordinator queue sizing in the Docker section above. Reruns are idempotent, so reloading fills the gap once the queue is large enough.
 
 ## Framework code vs project-specific code
 
@@ -221,7 +278,8 @@ The server version is pinned to **9.4.1**, matching the `elasticsearch` client p
 Both are in `docker/compose.yml` and both exist because of failures documented above:
 
 - **`ES_JAVA_OPTS=-Xms6g -Xmx6g`** — the 1 GB default trips circuit breakers partway through a multi-million-document load. This must fit inside the container runtime's VM, which on macOS is smaller than the host. Colima defaults to a **2 GB** VM, where a 6 GB heap fails at startup with `Native memory allocation (mmap) failed` and the container exits `70` before Elasticsearch logs anything recognizable. Size the VM first: `colima start --cpu 6 --memory 12`.
-- **`thread_pool.write.queue_size=4000`** — `parallel_bulk`'s 8 threads exhaust the 1024-slot default enrich-coordinator queue and drop a fraction of a percent of documents.
+- **`thread_pool.write.queue_size=4000`** — `parallel_bulk`'s 8 threads outrun the 1000-slot default write queue on large loads.
+- **`enrich.coordinator_proxy.queue_capacity=16384`** and **`max_concurrent_requests=16`** — the write queue above is _not_ the queue that overflows on an enriched load, and raising it never touched the real one. Enrichment has its own coordinator queue, defaulting to 1024. A full DOT-Commercial load rejected **91,439 of 2,085,534 carriers (4.4%)** and 2,197 inspections with `Could not perform enrichment, enrich coordination queue at capacity [1024/1024]`, while the write pool reported `rejected: 0` throughout — which is exactly why the wrong knob looked like the right one for so long. Rejected documents are **dropped, not retried**: `parallel_bulk` exposes no `max_retries` (only `streaming_bulk` does), so a 429 there is permanent. Sizing: `carriers` runs five enrich processors, and 8 threads × 500-document chunks put ~4,000 documents in flight, so a burst can demand ~20,000 lookup slots. Adding an enrich processor means revisiting this; the symptom is a 429 naming the enrich coordination queue.
 
 Security is disabled to match `es_config.json`'s http/no-auth settings. This is a localhost development cluster; do not expose it.
 
@@ -296,11 +354,11 @@ Framework-level. Dataset-specific items live in each project's README.
 1. **Every dataset joins to `carriers.dot_number` across a type boundary.** `carriers` maps `dot_number` as `keyword`, while `crashes`, `inspections`, `auth-history`, `out-of-service-orders`, and `boc3-agents` all map their own as `long`. The enrichment policies work today only through Elasticsearch's implicit coercion between the two. This is not currently broken, but it is the same shape as the `crashes.dot_number` bug already recorded in the closed items below — a `float`/`keyword` mismatch there produced **zero** enrich matches with no error. Any future change to either side's mapping, or a value that does not coerce cleanly, reintroduces that failure silently. Fix by aligning all six datasets on one type, which requires retyping five mappings and a full reload. Surfaced while evaluating a candidate sixth dataset; nobody had noticed it across the whole matching build.
 1. **`csv_load_utils.py` strips leading zeros from identifier columns before Elasticsearch ever sees them, and a `keyword` mapping cannot prevent it.** `pd.read_csv` is called without `dtype`, so an all-numeric column is inferred as `int64` in the loader. Confirmed live: CMS `Facility ID` is mapped `keyword` and CMS facility IDs are zero-padded six digits, yet `010001` indexes as `10001`. Because that column is also the `id_field`, every affected document gets a wrong `_id`, and any join against a source that preserved the padding fails. The same mechanism affects `ZIP Code` (also `keyword`-mapped, also inferred `int64`) and any zero-padded key in a future dataset. Fix by reading with `dtype=str` so Elasticsearch's mappings do the typing — numeric-mapped fields still coerce correctly from strings — or at minimum by reading columns pinned as `keyword` as strings.
 1. Cleaning up on exit
-1. Deleting enrichment policies when they are tied to pipelines. You have to delete the pipeline manually before policies can be deleted. This is worse than a bureaucratic annoyance: if a rerun's policy rebuild silently hits this conflict (because a pipeline referencing the policy is still live from a prior run), the enrich policy is left as a STALE, UNDERSIZED snapshot with no error — later steps keep enriching against outdated/incomplete data with no signal anything is wrong. Confirmed in practice during the DOT-Commercial VIN/units work: `inspections-enrichment-policy` silently stayed pinned to a 5,000-row validation-sample snapshot of `inspections` across a full 5.6M-row production run because `carrier-enrichment-pipeline-000001` still existed and blocked the policy delete-and-rebuild, dropping `carriers.inspections` enrichment coverage from ~572K to ~4K matches with no failure anywhere in the run.
+1. Enrichment policies bound to a live pipeline still cannot be **deleted**, so a policy whose _definition_ needs to change (different source index, different `enrich_fields`) still requires deleting the pipeline by hand. The dangerous half is fixed — the policy is now always re-executed, and one whose definition disagrees with config is refused with a loud error instead of being executed blind — but changing a bound policy's shape remains a manual, ordered operation. A real fix deletes and recreates the dependent pipelines around the policy rebuild.
 1. `phase_enrichment_policies.py` aborts the whole policy-rebuild loop on a missing source index. `execute_policy` sits in a `try` that catches only `BadRequestError`, while `delete_policy` above it catches both `ConflictError` and `NotFoundError`. So if a dated source index is absent — which happens when a run crosses midnight and earlier steps created indexes under yesterday's date — the `NotFoundError` escapes and every policy _after_ the failing one in the list is never rebuilt. Those policies keep serving their previous snapshot, which is the same stale-enrichment failure described above, reached by a different route. It fails loudly with a traceback rather than silently, but an unattended overnight run can still finish with several policies quietly out of date. Fix by catching `NotFoundError` around `execute_policy`, logging which policy and index were missing, and continuing to the next policy.
 1. **`matching/` is not yet dataset-agnostic.** `CarrierDoc.dot_number` hardcodes the entity key name, and `matching/predecessors.py` hardcodes FMCSA field paths (`out_of_service_orders.oos_date`, `auth_history.disp_action_desc`), the literal `"REVOKED"`, and a `dot_number` sort. Using `entity-match` on another dataset requires editing framework code rather than writing configuration, which contradicts the project's premise. Generalize by making the entity key name configurable and moving selector definitions into project configuration — while keeping selectors a closed, code-backed menu rather than a query-DSL-in-JSON.
 1. `signals[].detail` is specified in the chameleon matching design but was never implemented — `SignalContribution` has no such field. It was to carry human-readable evidence per signal (e.g. `"shared tokens: SM0, TRKN"`). `matched_on` covers the main triage path in the meantime.
-1. `parallel_bulk`'s 8-thread concurrency can exhaust Elasticsearch's enrich-coordinator queue (1024 slots) on large enriched loads, losing ~0.04–0.44% of documents. Not a correctness bug — failures are logged and idempotent reruns fill the gap — but a real throughput ceiling. Tune `thread_count`, add retry/backoff, or raise the queue capacity.
+1. `parallel_bulk` still cannot retry a 429. Raising `enrich.coordinator_proxy.queue_capacity` removed the observed loss, but the client has no `max_retries` (only `streaming_bulk` does), so back-pressure remains permanent data loss rather than a delay. Any future dataset with more enrich processors, or a smaller VM, reopens this. A real fix is switching the populate phase to `streaming_bulk` with retry/backoff and accepting the lower throughput, or chunking the load so retries are cheap.
 1. Support multiple steps for the `--step` command line argument
 1. Support multiple phases for the `--phase` command line argument
 1. Add support for multiple pipelines in the pipeline phase
@@ -318,6 +376,11 @@ Framework-level. Dataset-specific items live in each project's README.
 1. Warn if no step executed
 1. Implemented compound/composite `id_field` support: `phase_index_populate.py`'s `id_field` config value can now be a JSON list, not just a single column name — `compute_id()` joins the listed fields' values with `|` to build a deterministic `_id`, falling back to the existing single-column behavior when `id_field` is a string, and to ES auto-generated IDs when unset. Both reference projects now use it; see their READMEs for the per-dataset uniqueness analysis.
 1. Added the `entity-match` phase — configuration-driven pair scoring over a fixed menu of signal types, with weight renormalization over evaluable signals and guards against thin evidence. Proven out in DOT-Commercial's `chameleon-detection` step.
+1. Enrichment policies are now always executed, and verified. `delete_policy`/`put_policy`/`execute_policy` shared a `try`, so on a reused cluster the execute was skipped entirely and the previous — often empty — enrich index stayed live, producing carriers with no enrichment and a chameleon sweep that reported zero pairs without erroring. Execution is unconditional, the resulting enrich index is compared against its source, and a bound policy whose definition has drifted from config is refused rather than executed.
+1. Sized the enrich coordinator queue. A full load silently dropped 91,439 of 2,085,534 carriers (4.4%) to `enrich coordination queue at capacity [1024/1024]`; the pre-existing `thread_pool.write.queue_size` setting addressed a different queue and never affected it. See the Docker section for the sizing arithmetic.
+1. Candidate retrieval is no longer domain-aware. `candidates.py` held a hard-coded whitelist of seedable signal types plus a clause-builder per type, so teaching the sweep a new kind of evidence meant editing retrieval code that had no business knowing about phone numbers or vehicle identifiers. Signals now answer `seed_clauses()` and `token_subfields()` about themselves and `CandidateFinder` just asks; the dataset-specific part is confined to configuration.
+1. Shared unique identifiers can seed retrieval, closing a real blind spot: a carrier that re-registers under a new name, address and phone but keeps its vehicles was unreachable at **any** `max_candidates` value, because the seed query never returned it. `vin-overlap` is generalized to `SharedTokenSignal` (alias `shared-token`) since nothing about the logic is vehicular. Placeholder values are suppressed from the corpus and from operator-declared `ignore_values` — without that, 94% of the apparent recall gain was junk like the literal VIN `GGGG` on 158 carriers.
+1. A signal can declare itself `conclusive`, reporting a pair even when the blended total falls under `min_total_score`. Averaging cannot express "this one fact settles it".
 
 ## Government Datasets
 
