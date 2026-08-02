@@ -19,6 +19,10 @@ from matching.signals import parse_flexible_date
 from utils import elasticsearch_utils, file_utils, id_utils
 
 AGENT_TERMS_SIZE = 500
+# Placeholder values are a short head of a long tail -- a handful of literals
+# ("UNKNOWN", "GGGG", runs of 9s) cover essentially all of them, so a small
+# bucket count catches them without paying for a full cardinality sweep.
+SUPPRESSION_TERMS_SIZE = 200
 BULK_THREAD_COUNT = 2
 
 
@@ -171,11 +175,65 @@ class PhaseEntityMatch:
             return False
         return True
 
+    def _suppressed_tokens(self, source_index, signal_configs):
+        """Find "unique" token values that the corpus proves are not unique.
+
+        SharedTokenSignal scores a shared value 1.0 on the premise that it
+        identifies one physical thing worldwide. FMCSA crash reports violate
+        that premise constantly: the literal VIN "GGGG" appears on 158
+        carriers, "UNKNOWN" on 79, "99999999999999999" on 51. Left alone,
+        every pair of carriers that both filed a placeholder scores a perfect
+        identity match, and seeding on one retrieves all 158 at once.
+
+        Derived from the data rather than a hard-coded list of known junk
+        values, because which placeholders a dataset uses is a property of
+        that dataset. Any value attached to more than max_shared_carriers
+        carriers is treated as non-identifying, which is the signal's own
+        premise applied as a test.
+        """
+        suppressed = set()
+        for config in signal_configs:
+            if config.type not in ("vin-overlap", "shared-token"):
+                continue
+            limit = int(getattr(config, "max_shared_carriers", 5))
+            for field_name in config.fields:
+                try:
+                    response = self.es.search(
+                        index=source_index,
+                        size=0,
+                        aggs={
+                            "vals": {
+                                "terms": {
+                                    "field": field_name,
+                                    "size": SUPPRESSION_TERMS_SIZE,
+                                    "min_doc_count": limit + 1,
+                                }
+                            }
+                        },
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        "Could not gather token frequencies for {} ({}); placeholder "
+                        "values like the literal VIN 'UNKNOWN' will score as identity "
+                        "matches".format(field_name, e)
+                    )
+                    continue
+                for bucket in response["aggregations"]["vals"]["buckets"]:
+                    suppressed.add(str(bucket["key"]).strip().lower())
+        if suppressed:
+            self.logger.info(
+                "Suppressing {} non-unique token values (e.g. {})".format(
+                    len(suppressed), sorted(suppressed)[:5]
+                )
+            )
+        return suppressed
+
     def _build_context(self, source_index, signal_configs):
         """Gather BOC-3 agent frequencies once for IDF weighting."""
+        suppressed = self._suppressed_tokens(source_index, signal_configs)
         agent_config = next((c for c in signal_configs if c.type == "agent"), None)
         if agent_config is None:
-            return ScoringContext()
+            return ScoringContext(suppressed_tokens=suppressed)
 
         keyword_field = "{}.keyword".format(agent_config.name_field)
         try:
@@ -192,7 +250,7 @@ class PhaseEntityMatch:
                 "to weight against and will score every shared agent at 0.0 (no "
                 "discriminating power) rather than fabricate a rarity value".format(e)
             )
-            return ScoringContext()
+            return ScoringContext(suppressed_tokens=suppressed)
 
         buckets = response["aggregations"]["agents"]["buckets"]
         counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
@@ -211,7 +269,11 @@ class PhaseEntityMatch:
                     len(counts), total
                 )
             )
-        return ScoringContext(agent_counts=counts, total_agent_carriers=total)
+        return ScoringContext(
+            agent_counts=counts,
+            total_agent_carriers=total,
+            suppressed_tokens=suppressed,
+        )
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,
@@ -228,7 +290,7 @@ class PhaseEntityMatch:
         for pred_hit in selector.iterate():
             stats["predecessors"] += 1
             try:
-                pred_doc, cand_docs, truncated = finder.find(pred_hit)
+                pred_doc, cand_docs, truncated = finder.find(pred_hit, ctx)
             except Exception as e:
                 stats["errors"] += 1
                 self.logger.error(

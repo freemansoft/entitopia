@@ -12,7 +12,7 @@ neutrally.
 import datetime
 import logging
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import CarrierDoc, ScoringContext, read_path
 from matching.tokens import (
     blended_overlap,
     containment,
@@ -90,6 +90,36 @@ class Signal:
         """
         raise NotImplementedError
 
+    def seed_clauses(self, source: dict, ctx=None) -> list[dict]:
+        """Elasticsearch bool.should clauses that retrieve candidates for this predecessor.
+
+        Returning [] means "this signal cannot retrieve, only corroborate" —
+        it will still score a pair that some other signal pulled in, but it
+        will never widen the candidate set. That is the right answer for a
+        signal with no discriminating power to retrieve on: AgentSignal
+        deliberately declines, because 87 BOC-3 agents cover 519,139 filings
+        and seeding on one returns essentially random carriers.
+
+        This lives on the signal rather than in CandidateFinder because a
+        signal is the only thing that knows what evidence it reads. The
+        retrieval engine previously carried a hard-coded whitelist of which
+        signal types could seed plus a per-type if/elif to build their
+        clauses, which meant adding a signal meant editing retrieval code
+        that has no business knowing about phone numbers or vehicle
+        identifiers. Now retrieval just asks.
+        """
+        return []
+
+    def token_subfields(self) -> set[str]:
+        """"field.subfield" pairs whose analyzed tokens this signal needs fetched.
+
+        Empty for signals that read raw _source instead of analyzed tokens.
+        Same rationale as seed_clauses: the signal knows what it reads, so
+        CandidateFinder can batch exactly those fields into one
+        _mtermvectors call without enumerating signal types itself.
+        """
+        return set()
+
 
 class NameOverlapSignal(Signal):
     """Token-set overlap over name fields.
@@ -121,6 +151,24 @@ class NameOverlapSignal(Signal):
             if score is not None and (best is None or score > best):
                 best = score
         return best
+
+    def seed_clauses(self, source, ctx=None):
+        """match on the phonetic/token subfield of each configured name field."""
+        clauses = []
+        for field_name in self.config.fields:
+            text = read_path(source, field_name)
+            if text:
+                clauses.append(
+                    {
+                        "match": {
+                            "{}.{}".format(field_name, self.config.subfield): {"query": text}
+                        }
+                    }
+                )
+        return clauses
+
+    def token_subfields(self):
+        return {"{}.{}".format(f, self.config.subfield) for f in self.config.fields}
 
 
 CROSS_STATE_FUZZY_PENALTY = 0.5
@@ -174,6 +222,35 @@ class AddressSignal(Signal):
 
         return best if saw_any_data else None
 
+    def seed_clauses(self, source, ctx=None):
+        """match on the exact (keyword-tokenized) subfield of each address field.
+
+        Seeding on the exact subfield rather than the fuzzy one keeps candidate
+        generation precise; the fuzzy/synonym comparison still happens later
+        during scoring, once tokens are fetched.
+        """
+        clauses = []
+        for field_name in self.config.fields:
+            text = read_path(source, field_name)
+            if text:
+                clauses.append(
+                    {
+                        "match": {
+                            "{}.{}".format(field_name, self.config.exact_subfield): {
+                                "query": text
+                            }
+                        }
+                    }
+                )
+        return clauses
+
+    def token_subfields(self):
+        wanted = set()
+        for field_name in self.config.fields:
+            wanted.add("{}.{}".format(field_name, self.config.exact_subfield))
+            wanted.add("{}.{}".format(field_name, self.config.fuzzy_subfield))
+        return wanted
+
 
 class ExactIdentifierSignal(Signal):
     """Shared phone, fax, or email. Binary.
@@ -199,6 +276,24 @@ class ExactIdentifierSignal(Signal):
         if not pred_values or not cand_values:
             return None
         return 1.0 if pred_values & cand_values else 0.0
+
+    def seed_clauses(self, source, ctx=None):
+        """match/term clauses on shared phone and text identifiers.
+
+        Phones go through the normalized `.clean` subfield (a match, since ES
+        did the normalizing at index time); text identifiers like email use
+        `.keyword` term equality since they need no normalization pass.
+        """
+        clauses = []
+        for field_name in getattr(self.config, "phone_fields", []):
+            value = read_path(source, field_name)
+            if value:
+                clauses.append({"match": {"{}.clean".format(field_name): {"query": value}}})
+        for field_name in getattr(self.config, "text_fields", []):
+            value = read_path(source, field_name)
+            if value:
+                clauses.append({"term": {"{}.keyword".format(field_name): value}})
+        return clauses
 
 
 def _collect(target: set, raw, normalize) -> None:
@@ -334,21 +429,114 @@ class TemporalSignal(Signal):
         return max(0.0, (1.0 - backward) * BACKWARD_SCALE)
 
 
-class VinOverlapSignal(Signal):
-    """Any shared VIN. Binary — VINs are globally unique, so one is damning."""
+# A carrier's enriched history can carry thousands of vehicle identifiers, and
+# every one becomes a term in the seed query. Capping keeps a large fleet from
+# building a terms clause big enough to slow the whole sweep; the values are
+# sorted first so the same carrier always contributes the same subset rather
+# than whichever ones enrichment happened to order first that run.
+MAX_SEED_TOKENS = 512
 
-    type_names = ("vin-overlap",)
+
+class SharedTokenSignal(Signal):
+    """Any shared globally-unique token. Binary — one match is damning.
+
+    Registered as both "vin-overlap" and "shared-token" because the logic is
+    not about vehicles: it is "these two records name the same physical thing,
+    and that name is unique worldwide". A VIN is one instance; a container
+    number, aircraft tail number, serial number or NPI behaves identically.
+    Only the `fields` config is domain-specific, which is where domain
+    knowledge belongs. The "vin-overlap" name is retained so existing
+    DOT-Commercial configuration keeps working.
+
+    Unlike the name and address signals, this one is worth seeding on: a token
+    that is unique worldwide has no false-positive rate to speak of, so a
+    terms clause on it retrieves the right carrier or nothing at all.
+    """
+
+    type_names = ("vin-overlap", "shared-token")
 
     def score(self, pred, cand, ctx):
-        pred_vins = set()
-        cand_vins = set()
-        for path in self.config.fields:
-            _collect(pred_vins, pred.value(path), normalize_text_identifier)
-            _collect(cand_vins, cand.value(path), normalize_text_identifier)
+        pred_tokens = self._tokens(pred.value, ctx)
+        cand_tokens = self._tokens(cand.value, ctx)
 
-        if not pred_vins or not cand_vins:
+        if not pred_tokens or not cand_tokens:
             return None
-        return 1.0 if pred_vins & cand_vins else 0.0
+        return 1.0 if pred_tokens & cand_tokens else 0.0
+
+    def _tokens(self, reader, ctx) -> set[str]:
+        """Normalized, non-suppressed tokens from every configured field.
+
+        Takes the reader rather than the document so scoring (CarrierDoc.value)
+        and seeding (read_path over a raw hit) collect tokens identically —
+        seeding on values that scoring would normalize differently would
+        retrieve candidates that then score 0.0.
+
+        Dropping suppressed values here rather than scoring them 0.0 is what
+        makes a carrier whose only VIN is "UNKNOWN" come back None (no usable
+        evidence) instead of "evaluated, no match" — the same
+        None-versus-0.0 distinction the module docstring describes, applied to
+        a value that cannot support the signal's premise.
+        """
+        tokens: set[str] = set()
+        for path in self.config.fields:
+            _collect(tokens, reader(path), normalize_text_identifier)
+        if ctx is not None:
+            tokens = {t for t in tokens if not ctx.is_suppressed(t)}
+        return tokens
+
+    def seed_clauses(self, source, ctx=None):
+        """terms clauses that retrieve any carrier sharing one of these tokens.
+
+        This is the only signal that can retrieve a successor which shares
+        nothing else. A carrier that re-registers under a new name, at a new
+        address, with a new phone, but keeps driving the same trucks is
+        invisible to name/address/phone seeding at any max_candidates value —
+        the seed query never returns it, so no amount of scoring can find it.
+        That is the most deliberate chameleon profile there is, which is why
+        this signal seeds despite the others' domain fields staying inert.
+
+        Seeds on RAW values, not the normalized ones score() compares. The
+        fields are mapped `keyword`, so Elasticsearch stores each value
+        verbatim — FMCSA writes VINs uppercase, while normalize_text_identifier
+        casefolds. Querying a keyword field with the normalized form matches
+        nothing at all, which would make this signal appear to seed while
+        contributing zero candidates: a silent recall failure indistinguishable
+        from "no carrier shares a VIN". Normalizing is still correct inside
+        score(), where both sides get the same treatment.
+
+        Uses the raw field rather than a subfield for the same reason: for a
+        keyword mapping the indexed term IS the literal value.
+        """
+        values = self._raw_values(source, ctx)
+        if not values:
+            return []
+        return [
+            {"terms": {field_name: values}} for field_name in self.config.fields
+        ]
+
+    def _raw_values(self, source, ctx=None) -> list[str]:
+        """Deduplicated, sorted, capped raw token values for the seed query.
+
+        Sorted so a given carrier always contributes the same subset when the
+        cap bites, rather than whichever values enrichment happened to order
+        first on that run — an unstable subset would make the sweep's recall
+        vary between identical runs.
+        """
+        values: set[str] = set()
+        for path in self.config.fields:
+            raw = read_path(source, path)
+            if raw is None:
+                continue
+            for item in raw if isinstance(raw, list) else [raw]:
+                text = str(item).strip()
+                if not text:
+                    continue
+                # Seeding on a placeholder retrieves every carrier that also
+                # recorded it -- 158 of them for the literal VIN "GGGG".
+                if ctx is not None and ctx.is_suppressed(text):
+                    continue
+                values.add(text)
+        return sorted(values)[:MAX_SEED_TOKENS]
 
 
 def _latest_date(raw) -> datetime.date | None:
@@ -385,7 +573,7 @@ _register(AddressSignal)
 _register(ExactIdentifierSignal)
 _register(AgentSignal)
 _register(TemporalSignal)
-_register(VinOverlapSignal)
+_register(SharedTokenSignal)
 
 
 def build_signal(config) -> Signal:

@@ -8,7 +8,7 @@
   },
   "candidates": {
     "max_candidates": 500,
-    "seed_signals": ["name-phonetic", "address", "exact-identifier"]
+    "seed_signals": ["name-phonetic", "address", "exact-identifier", "vin-overlap"]
   },
   "signals": [
     {
@@ -61,6 +61,7 @@
     {
       "type": "vin-overlap",
       "weight": 0.08,
+      "max_shared_carriers": 5,
       "fields": [
         "crashes.vehicle_identification_number",
         "inspections.units.insp_unit_vehicle_id_number"

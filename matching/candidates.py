@@ -12,13 +12,9 @@ double-metaphone implementation drifting from the plugin's.
 import logging
 
 from matching.documents import CarrierDoc
+from matching.signals import build_signal
 
 logger = logging.getLogger(__name__)
-
-# Signal types that can seed candidate generation, mapped to how their clauses
-# are built. agent is deliberately absent: only 89 distinct BOC-3 agents cover
-# 1.43M filings, so seeding on it returns essentially random carriers.
-SEEDABLE = {"name-phonetic", "name-token", "address", "exact-identifier"}
 
 
 class CandidateFinder:
@@ -34,55 +30,50 @@ class CandidateFinder:
     def __init__(self, es, source_index, candidates_config, signal_configs):
         """Bind to the ES client/index and the configured signals.
 
-        signal_configs drives both which fields seed the candidate search
-        (via SEEDABLE) and which "field.subfield" pairs get fetched by
-        _mtermvectors, so this class stays in sync with scorer.py's signal
-        list without duplicating it.
+        signal_configs drives both which fields seed the candidate search and
+        which "field.subfield" pairs get fetched by _mtermvectors, so this
+        class stays in sync with scorer.py's signal list without duplicating
+        it. Both are answered by the signals themselves rather than by type
+        checks here.
         """
         self.es = es
         self.source_index = source_index
         self.max_candidates = int(getattr(candidates_config, "max_candidates", 100))
         self.seed_signals = set(getattr(candidates_config, "seed_signals", []) or [])
         self.signal_configs = list(signal_configs)
+        # Built from the same configs scorer.py uses, so retrieval and scoring
+        # can never disagree about what a signal reads.
+        self.signals = [build_signal(c) for c in self.signal_configs]
 
     def scored_subfields(self) -> set[str]:
         """Every "field.subfield" the configured signals read tokens from."""
         wanted = set()
-        for config in self.signal_configs:
-            if config.type in ("name-phonetic", "name-token"):
-                for field_name in config.fields:
-                    wanted.add("{}.{}".format(field_name, config.subfield))
-            elif config.type == "address":
-                for field_name in config.fields:
-                    wanted.add("{}.{}".format(field_name, config.exact_subfield))
-                    wanted.add("{}.{}".format(field_name, config.fuzzy_subfield))
+        for signal in self.signals:
+            wanted |= signal.token_subfields()
         return wanted
 
-    def _seed_clauses(self, source):
+    def _seed_clauses(self, source, ctx=None):
         """Build the bool.should clauses that pull candidates for one predecessor.
 
-        Restricted to SEEDABLE ∩ seed_signals so an operator's config choice
-        (which signals count as evidence) and the candidate-generation query
-        stay consistent: a signal that isn't trusted to seed candidates can't
-        silently narrow the search anyway, and one that is configured but not
-        seedable (agent) is skipped rather than raising. Dispatched to one
-        helper per signal type (rather than one large if/elif chain) purely
-        to keep this under ruff's branch-count limit; the query shape below
-        is unchanged from a single-method version.
+        Restricted to seed_signals so an operator's config choice stays
+        authoritative: a signal not trusted to seed cannot silently widen the
+        search. A signal that is listed but declines to seed (returning no
+        clauses, as AgentSignal does) is simply skipped rather than raising.
+
+        This method used to hold a whitelist of seedable types plus one helper
+        per type, which meant candidate retrieval knew about phone numbers and
+        vehicle identifiers. Asking each signal for its own clauses moves that
+        knowledge to where it belongs and makes seeding on a new kind of
+        evidence a signal-level change, not an edit here.
         """
         clauses = []
-        for config in self.signal_configs:
-            if config.type not in self.seed_signals or config.type not in SEEDABLE:
+        for signal in self.signals:
+            if signal.signal_type not in self.seed_signals:
                 continue
-            if config.type in ("name-phonetic", "name-token"):
-                clauses.extend(_name_clauses(config, source))
-            elif config.type == "address":
-                clauses.extend(_address_clauses(config, source))
-            elif config.type == "exact-identifier":
-                clauses.extend(_exact_identifier_clauses(config, source))
+            clauses.extend(signal.seed_clauses(source, ctx))
         return clauses
 
-    def find(self, pred_hit):
+    def find(self, pred_hit, ctx=None):
         """Retrieve successor candidates for one predecessor hit and their tokens.
 
         Returns (predecessor_doc, candidate_docs, truncated). Excludes the
@@ -97,7 +88,7 @@ class CandidateFinder:
         pred_id = pred_hit["_id"]
         pred_source = pred_hit["_source"]
 
-        clauses = self._seed_clauses(pred_source)
+        clauses = self._seed_clauses(pred_source, ctx)
         if not clauses:
             logger.debug("No seed clauses for predecessor %s", pred_id)
             return None, [], False
@@ -157,57 +148,6 @@ class CandidateFinder:
             tokens_by_id[doc["_id"]] = doc_tokens
         return tokens_by_id
 
-
-def _name_clauses(config, source):
-    """match clauses on the phonetic/token subfield of each configured name field."""
-    clauses = []
-    for field_name in config.fields:
-        text = source.get(field_name)
-        if text:
-            clauses.append(
-                {"match": {"{}.{}".format(field_name, config.subfield): {"query": text}}}
-            )
-    return clauses
-
-
-def _address_clauses(config, source):
-    """match clauses on the exact (keyword-tokenized) subfield of each address field.
-
-    Seeding on the exact subfield rather than the fuzzy one keeps candidate
-    generation precise; the fuzzy/synonym comparison still happens later
-    during scoring, once tokens are fetched.
-    """
-    clauses = []
-    for field_name in config.fields:
-        text = source.get(field_name)
-        if text:
-            clauses.append(
-                {
-                    "match": {
-                        "{}.{}".format(field_name, config.exact_subfield): {"query": text}
-                    }
-                }
-            )
-    return clauses
-
-
-def _exact_identifier_clauses(config, source):
-    """match/term clauses on shared phone and text identifiers.
-
-    Phones go through the normalized `.clean` subfield (a match, since ES did
-    the normalizing at index time); text identifiers like email use `.keyword`
-    term equality since they need no normalization pass.
-    """
-    clauses = []
-    for field_name in getattr(config, "phone_fields", []):
-        value = source.get(field_name)
-        if value:
-            clauses.append({"match": {"{}.clean".format(field_name): {"query": value}}})
-    for field_name in getattr(config, "text_fields", []):
-        value = source.get(field_name)
-        if value:
-            clauses.append({"term": {"{}.keyword".format(field_name): value}})
-    return clauses
 
 
 def _to_carrier_doc(hit, tokens):

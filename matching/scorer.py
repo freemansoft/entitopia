@@ -10,8 +10,23 @@ logger = logging.getLogger(__name__)
 
 # A pair must be tied together by at least one of these. Temporal proximity and
 # a shared process agent corroborate; they cannot carry a match on their own.
+#
+# A shared globally-unique token belongs here rather than among the
+# corroborating signals: two carriers reporting the same VIN are operating the
+# same physical vehicle, which is a stronger claim of shared identity than a
+# similar name. Excluding it made the identity guard reject exactly the pairs
+# this signal exists to catch — a carrier that changes its name, address and
+# phone but keeps its trucks fires no other identity signal, so the guard
+# threw the pair away no matter how the score came out.
 IDENTITY_SIGNAL_TYPES = frozenset(
-    {"name-phonetic", "name-token", "address", "exact-identifier"}
+    {
+        "name-phonetic",
+        "name-token",
+        "address",
+        "exact-identifier",
+        "vin-overlap",
+        "shared-token",
+    }
 )
 
 
