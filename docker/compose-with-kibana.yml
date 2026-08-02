@@ -1,0 +1,75 @@
+# Single-node Elasticsearch for local entitopia development.
+#
+#   docker compose -f docker/compose.yml up -d --build
+#   docker compose -f docker/compose.yml down          # keeps the volume
+#   docker compose -f docker/compose.yml down -v       # discards indexed data
+#
+# Security is disabled so the cluster matches es_config.json's http/no-auth
+# settings. This is a development cluster on localhost only — never expose it.
+services:
+  elasticsearch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: entitopia-elasticsearch:9.4.1
+    container_name: entitopia-es
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      # entitopia loads millions of documents through parallel_bulk; the 1GB
+      # default heap causes circuit-breaker failures partway through a full
+      # DOT-Commercial run.
+      #
+      # This must fit inside the container runtime's VM, which on macOS is
+      # smaller than the host. Colima defaults to a 2GB VM, where a 4g heap
+      # fails at startup with "Native memory allocation (mmap) failed" and the
+      # container exits 70 before Elasticsearch logs anything useful. Size the
+      # VM first: `colima start --cpu 6 --memory 12`.
+      - ES_JAVA_OPTS=-Xms6g -Xmx6g
+      # The carriers enrich coordinator queues one slot per in-flight lookup.
+      # README documents parallel_bulk's 8 threads exhausting the 1024 default
+      # and silently dropping a fraction of a percent of documents.
+      - thread_pool.write.queue_size=4000
+      # The write queue above is NOT the queue that overflows. Enrichment has
+      # its own coordinator queue, and raising the write pool never touched it:
+      # a full DOT-Commercial load rejected 91,439 of 2,085,534 carriers (4.4%)
+      # with "Could not perform enrichment, enrich coordination queue at
+      # capacity [1024/1024]", plus 2,197 inspections. The rejected documents
+      # are dropped, not retried — parallel_bulk exposes no max_retries — so
+      # the carriers index silently came up 4.4% short and the chameleon sweep
+      # scored against a corpus missing tens of thousands of carriers.
+      #
+      # Sizing: carriers runs 5 enrich processors, and parallel_bulk's 8
+      # threads x 500-doc chunks put up to 4,000 documents in flight, so a
+      # burst can demand ~20,000 lookup slots against a default of 1,024.
+      # 16,384 slots plus double the concurrency to drain them holds that
+      # burst. If a future dataset adds enrich processors, expect to raise
+      # this again — the symptom is a 429 with "enrich coordination queue".
+      - enrich.coordinator_proxy.queue_capacity=16384
+      - enrich.coordinator_proxy.max_concurrent_requests=16
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.4.1
+    container_name: entitopia-kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+volumes:
+  esdata:
