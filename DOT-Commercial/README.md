@@ -6,6 +6,14 @@ Its goal is detecting **chameleon carriers** — trucking companies shut down fo
 
 Framework concepts (steps, phases, configuration layout) and the data-loading hazards common to any dataset are in the [top-level README](../README.md). This README covers what is specific to the FMCSA data.
 
+> **Counts here are point-in-time**, measured against the **July 2026** FMCSA
+> extract unless stated otherwise. FMCSA republishes continuously: carriers are
+> added and shut down daily, so row counts, the predecessor population, the
+> placeholder values in `ignore_values`, and every match count below will differ
+> on your own download. Sweep results depend on the extract twice over — once
+> through the data and once through thresholds tuned against it. Treat these as
+> evidence of magnitude and shape, not as figures to reproduce.
+
 On the DOT Site <https://data.transportation.gov/Trucking-and-Motorcoaches/>
 
 ## Open items
@@ -13,7 +21,14 @@ On the DOT Site <https://data.transportation.gov/Trucking-and-Motorcoaches/>
 Dataset-specific. Framework-level items are in the [top-level README](../README.md).
 
 1. **`insp_carrier_state_id` is not pinned in `inspections/index-mappings.json`**, so inspections ingestion silently drops ~0.65% of documents (36,788 of 5,647,567 on a full run). Elasticsearch dynamically infers `float` from whichever value it sees first under `parallel_bulk`'s concurrency, but the source column mixes numeric and non-numeric strings (`'NONE'`, `'S00000030887'`), so every non-conforming row fails with `document_parsing_exception`. Deterministic and lossy on every full run; which rows drop varies with thread ordering. Fix by pinning it to `keyword`, mirroring `dot_number` / `inspection_id`.
-1. **`entity-match` has never run against production data, and its thresholds are uncalibrated.** Everything shipped so far was verified with synthetic documents. `min_total_score: 0.35` and all eight signal weights in `chameleon-detection/entity-match.json` are informed guesses, so the first full sweep is also the calibration run. Load the real data and tune against actual output before trusting a result.
+1. **`entity-match` thresholds are still uncalibrated, though it has now run against production data.** A full sweep over the July 2026 extract (2,085,536 carriers, 48,540 predecessors, 500 candidates each) emitted **429,505 pairs**, of which 81% score below 0.50 — that band is noise. The reviewable set is roughly **195 pairs**: re-registered within a year of shutdown, scoring ≥ 0.70, and sharing a VIN or phone/email. 106 of those reuse the _identical_ legal name.
+
+   The scores remain **uncalibrated confidence, not probability.** `total_score` is a weighted mean of evaluable signals renormalized over their weights; nothing has been fitted against known outcomes, so 0.9 does not mean 90% likely. Turning it into a probability needs labelled FMCSA enforcement results, which the project does not have. Until then, treat the ranking as triage order and the per-signal `matched_on` / contributions as the reason to act.
+
+   Separately reviewable: **625 pairs share a vehicle and nothing else** — no name, address, or phone overlap. These are unreachable without VIN seeding and score ~0.11, so they surface only because `vin-overlap` is marked `conclusive`; they will never appear in a score-ranked list. Triage them by `gap_days`, not by score. Shape of the strongest example measured: `<CARRIER-A>` → `<CARRIER-B>`, unrelated legal names, same city, re-registered 14 days after shutdown, operating a truck with the same VIN.
+
+   Sanity anchors from that run, useful when re-tuning: the top of the list is dominated by carriers re-registering under a **byte-identical legal name** at the same address and phone within days of shutdown — the strongest measured pair reused its name exactly and re-registered **one day** after being placed out of service. If a config change stops surfacing that shape, the change is wrong.
+
 1. **Name similarity is effectively triple-weighted, which currently ranks the wrong pairs highest.** `entity-match.json` lists three name signals over the same two fields (`name-phonetic` twice plus `name-token`, together 0.45 of the 0.94 total). Because `carrier_suffix_stop` strips `TRUCKING`/`LOGISTICS`/`LLC`/`INC`, most carrier names reduce to a single token, so the blended overlap becomes effectively binary. Measured: a pair with a byte-identical street, same state, and registration 45 days after the shutdown scored **0.3483 and was dropped** by the 0.35 floor, while `ABC TRUCKING LLC` vs `ABC LOGISTICS INC` in different states — sharing nothing but the token `ABC` — scored **0.5113 and was emitted**. A complete name change is the defining chameleon move, so this is backwards.
 
    The `min_signals` half of this is **fixed**: `PairScorer` now counts distinct evidence sources rather than signal instances, so the three name arms collapse into one and a name-only pair no longer clears a floor written to demand corroboration from a second, independent source. Against the shipped config, 8 signals resolve to 6 sources. What remains is the weighting itself — 0.45 of 0.94 still sits on one field — and that is a calibration decision rather than a structural one, so it should be made against real sweep output rather than guessed at a second time.
@@ -91,6 +106,25 @@ This data set is loaded and configured in 11 steps.
 
 We could have combined some of the setup and indexing steps and used the phase boundaries but this seemed to be an easier partitioning scheme to use just needing the `--step` parameter for partial work
 
+The first ten steps **load data**; `chameleon-detection` **looks for fraud**. They are independent: the sweep reads only `carriers-000001` and touches no CSV, so retuning thresholds, weights, or seeding means rerunning that one step — no reload. Conversely, a defect in the load is invisible to the sweep, which will happily score whatever is in the index and report a confident result.
+
+**Refresh before every `*-ingestion-setup` step.** Enrich policy execution only sees _searchable_ documents, and Elasticsearch's 1-second default refresh interval means documents indexed moments earlier are invisible. Running the whole project in one `--project=DOT-Commercial` call reproduces this as a timing-dependent silent failure: every phase logs success and the carriers come out with no enrichment at all.
+
+### Chameleon detection tuning
+
+`configuration/chameleon-detection/entity-match.json` holds the knobs. Measured against the full July 2026 extract (2,085,534 carriers; 46,529 predecessors matching the configured selector):
+
+| Setting                           | Value                  | Why                                                                                                                                                                                                                                                       |
+| --------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `predecessors.selector`           | `out-of-service`       | `revoked-authority` covers roughly half of every carrier ever registered — involuntary revocation for lapsed insurance is routine and is not evidence of a chameleon.                                                                                     |
+| `candidates.max_candidates`       | `500`                  | Raised from 100. Cost 4× the runtime and produced **no new top-tier findings** — relevance ranking already had those near the top — but recovered mid-tier recall (+13% shared-VIN pairs). 89% of predecessors still truncate; going higher has poor ROI. |
+| `candidates.seed_signals`         | includes `vin-overlap` | Without it a carrier that changes name, address and phone but keeps its trucks is unreachable at any `max_candidates`. Measured: 257 carriers per 400 predecessors reachable only this way.                                                               |
+| `vin-overlap.conclusive`          | `true`                 | A shared VIN at weight 0.08 totals ~0.11 for a pair sharing nothing else, under the 0.35 floor, so every such pair was discarded. Clearing the floor by weight alone would need ~0.46 and would swamp every other pair.                                   |
+| `vin-overlap.max_shared_carriers` | `5`                    | Any VIN on more than 5 carriers is not identifying. Without this, 94% of the apparent VIN recall gain was placeholder noise.                                                                                                                              |
+| `scoring.min_signals`             | `2`                    | Counts distinct **evidence sources**, not signal instances — the three name signals read the same two fields and collapse to one.                                                                                                                         |
+
+**`ignore_values` records the placeholder VINs this dataset actually contains.** FMCSA crash reports carry `GGGG` on 158 carriers, `UNKNOWN` on 79, `99999999999999999` on 51, plus runs of zeros, `-`, `.` and `*****************`. A binary shared-identifier signal scores 1.0 on those, so two carriers that both filed "UNKNOWN" read as a perfect identity match. The declared list covers what is known; the `max_shared_carriers` frequency scan catches the rest (203 values on the current extract). Both feed the same suppression set.
+
 ## Processing Phases
 
 Each step can contain one or more phases as described by json configuration files. Phases represent the type of work that can be done in one or more steps. Each step can contain zero or more phases.
@@ -142,23 +176,30 @@ flowchart LR
         direction LR
         crashes-ingestion-setup-step[crashes ingestion setup]
         crashes-step[crashes]
+        per-unit-step[inspections-per-unit]
+        inspections-ingestion-setup-step[inspections ingestion setup]
         inspections-step[inspections]
         auth-history-step[auth-history]
         oos-step[out-of-service-orders]
         boc3-step[boc3-agents]
         carriers-step[carriers]
         carriers-ingestion-setup-step[carriers ingestion setup]
+        chameleon-step[chameleon-detection]
     end
 
     subgraph indexes
         direction LR
         crashes-index["crashes-{day}-000001"] -..- crashes-alias[alias]
+        per-unit-index["inspections-per-unit-{day}-000001"] -..- per-unit-alias[alias]
         inspections-index["inspections-{day}-000001"] -..- inspections-alias[alias]
         auth-history-index["auth-history-{day}-000001"] -..- auth-history-alias[alias]
         oos-index["out-of-service-orders-{day}-000001"] -..- oos-alias[alias]
         boc3-index["boc3-agents-{day}-000001"] -..- boc3-alias[alias]
         carriers-index["carriers-{day}-000001"] -..-> carriers-alias[alias]
 
+        chameleon-index["chameleon-candidates-{day}-000001"] -..- chameleon-alias[alias]
+
+        per-unit-enrichment-index[inspections-per-unit enrichment]
         crashes-enrichment-index[crashes enrichment]
         inspections-enrichment-index[inspections enrichment]
         auth-history-enrichment-index[auth-history enrichment]
@@ -169,6 +210,7 @@ flowchart LR
     subgraph datasets
         direction LR
         crashes-csv[crashes csv]
+        per-unit-csv[inspections-per-unit csv]
         inspections-csv[inspections csv]
         auth-history-csv[auth-history csv]
         oos-csv[out-of-service-orders csv]
@@ -181,6 +223,11 @@ flowchart LR
         crashes-pipeline
     end
 
+    subgraph inspections-pipelines[ inspections pipelines]
+        direction LR
+        inspections-pipeline
+    end
+
     subgraph carriers-pipelines[ carriers pipelines]
         direction LR
         enriching-pipeline
@@ -188,8 +235,10 @@ flowchart LR
 
     crashes-step -->|index-populate| crashes-pipeline
     crashes-step -->|index-map| crashes-index
+    per-unit-step -->|index-map| per-unit-index
+    per-unit-step -->|index-populate| per-unit-index
     inspections-step -->|index-map| inspections-index
-    inspections-step -->|index-populate | inspections-index
+    inspections-step -->|index-populate| inspections-pipeline
     auth-history-step -->|index-map| auth-history-index
     auth-history-step -->|index-populate| auth-history-index
     oos-step -->|index-map| oos-index
@@ -200,6 +249,7 @@ flowchart LR
     carriers-step --> | index-populate| enriching-pipeline
 
     crashes-csv-->|import| crashes-step
+    per-unit-csv -->|import| per-unit-step
     inspections-csv -->|import| inspections-step
     auth-history-csv -->|import| auth-history-step
     oos-csv -->|import| oos-step
@@ -207,6 +257,11 @@ flowchart LR
     carriers-csv -->|import| carriers-step
 
     crashes-pipeline -->|populate| crashes-index
+    inspections-pipeline -->|populate| inspections-index
+
+    per-unit-enrichment-index -.->|enrich-policies| inspections-pipeline
+    inspections-ingestion-setup-step -.->|enrichment-policies| per-unit-enrichment-index
+    inspections-ingestion-setup-step -.->|"pipelines (create)"| inspections-pipeline
 
     crashes-enrichment-index -.->|enrich-policies| enriching-pipeline
     inspections-enrichment-index -.->|enrich-policies| enriching-pipeline
@@ -223,6 +278,11 @@ flowchart LR
     carriers-ingestion-setup-step -.->|enrichment-policies| oos-enrichment-index
     carriers-ingestion-setup-step -.->|enrichment-policies| boc3-enrichment-index
     carriers-ingestion-setup-step -.->|"pipelines (create)"| enriching-pipeline
+
+    carriers-index -->|"source_index — read only"| chameleon-step
+    chameleon-step -->|"index-create, index-map, entity-match"| chameleon-index
+    entity-match-config["entity-match.json<br/>selector · seed_signals · weights<br/>ignore_values · max_shared_records"] -.-> chameleon-step
+    carriers-index -.->|"corpus frequency scan<br/>finds non-identifying values"| chameleon-step
 
 
 ```

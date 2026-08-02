@@ -52,6 +52,58 @@ Things worth capturing, when they apply:
 Inline comments follow the same rule: reserve them for the non-obvious. A
 comment restating the line below it is noise.
 
+## Never name a real entity that the matcher flagged
+
+This project reads public data about real companies and scores them for
+suspected fraud. A score is **an analysis, not a finding** — the thresholds are
+uncalibrated, the sweep truncates, and a high score routinely reflects a shared
+filing agent, a corporate parent, or a placeholder value rather than wrongdoing.
+Writing a real company's name next to the phrase "chameleon carrier" in a repo
+publishes an unverified accusation about an identifiable business.
+
+So in committed code, comments, docstrings, config, documentation, commit
+messages, and PR text: **do not name a flagged entity**. That covers company
+names, DOT numbers, addresses, phone numbers, and email addresses belonging to
+records the sweep matched.
+
+Replace them with an obviously synthetic placeholder that preserves whatever
+made the example worth writing down:
+
+```markdown
+Bad: ACME HAULING LLC -> ACME HAULING LLC, +1 day
+Good: <CARRIER-A> -> <CARRIER-A> (identical legal name), +1 day
+```
+
+The "bad" line above uses an invented name for the same reason — an example of
+the rule must not violate it.
+
+The pattern is the reusable part — identical name, same address, one day after
+shutdown — and it survives anonymization intact. If an example stops being
+useful once the name is removed, the name was doing argumentative work it
+should not have been doing.
+
+Three things this does **not** forbid, because none of them accuses anyone:
+
+- Data-quality values that are junk by nature: the literal VIN `GGGG`, the
+  phone `(000) 000-0000`, `UNKNOWN`. Record these freely — they are exactly
+  what an `ignore_values` list has to name to work.
+- Aggregate counts: "an email address shared by 206 carriers" describes a
+  distribution, not a company.
+- **Entities named because they are being _excluded_.** A filing service, an
+  insurance agency, a permit broker, or a corporate parent whose contact
+  details sit on hundreds of unrelated carriers is documented as a **source of
+  false positives being filtered out** — the opposite of an allegation, and
+  unavoidable if an operator is to maintain the ignore list at all. Name the
+  shared value and say why it is not identifying.
+
+The test is which side of the filter the name sits on. An entity the matcher
+**flagged** must be anonymized; an entity whose identifier the matcher
+**ignores** should be named, because the next person maintaining that list
+needs to recognize it.
+
+Verified examples against live data are still expected; run them, keep the
+measured numbers, and anonymize the identifiers on the way into the repo.
+
 ## Python must be free of linter warnings
 
 `ruff` is the linter, configured in `pyproject.toml`. Code is not done until

@@ -15,10 +15,22 @@ from matching.candidates import CandidateFinder
 from matching.documents import ScoringContext
 from matching.predecessors import PredecessorSelector
 from matching.scorer import PairScorer
-from matching.signals import parse_flexible_date
+from matching.signals import build_signal, parse_flexible_date
 from utils import elasticsearch_utils, file_utils, id_utils
 
 AGENT_TERMS_SIZE = 500
+# Fallback for how many records may share a value before it stops identifying
+# anything, when neither config nor the signal says. Deliberately small: this
+# only applies to fields a signal scores as exact identity, where sharing is
+# the exception.
+DEFAULT_SHARED_LIMIT = 5
+# Buckets to pull per field when scanning for non-identifying values. Sized
+# against the measurement rather than guessed: on the July 2026 extract exactly
+# 200 email addresses sit on more than 20 carriers, so the previous value of 200
+# was precisely at its own ceiling and one more shared address would have been
+# missed silently. Contact fields have a much longer tail than VIN placeholders
+# because every filing service and corporate parent contributes one.
+SUPPRESSION_TERMS_SIZE = 2000
 BULK_THREAD_COUNT = 2
 
 
@@ -78,7 +90,7 @@ class PhaseEntityMatch:
         if not self._preflight(source_index, finder.scored_subfields()):
             return
 
-        ctx = self._build_context(source_index, config.signals)
+        ctx = self._build_context(source_index, config.signals, config)
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
         run_id = uuid.uuid4().hex
         generated_at = datetime.datetime.now(datetime.UTC).isoformat()
@@ -171,11 +183,149 @@ class PhaseEntityMatch:
             return False
         return True
 
-    def _build_context(self, source_index, signal_configs):
-        """Gather BOC-3 agent frequencies once for IDF weighting."""
+    def _declared_ignored_values(self, config):
+        """Read entity-match.json's ignore_values into a field -> values map.
+
+        Exists so an operator can name a placeholder outright instead of
+        relying on it being common enough for the frequency scan to catch.
+        The two mechanisms cover different failures: frequency catches junk
+        nobody knew about, while a declaration catches a value that is
+        obviously meaningless but rare enough to slip under the threshold, and
+        documents the intent for the next reader.
+
+        Keyed by field path, with "*" applying to every field, because a value
+        that is junk in one attribute can be legitimate in another — "0" is
+        not a VIN but is a fine street number.
+        """
+        declared = getattr(config, "ignore_values", None)
+        if declared is None:
+            return {}
+        # Config loads through SimpleNamespace, so the field paths are
+        # attribute names on that namespace rather than dict keys.
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        ignored = {}
+        for field_path, values in as_dict.items():
+            if not values:
+                continue
+            ignored[field_path] = {str(v).strip().lower() for v in values}
+        if ignored:
+            self.logger.info(
+                "Config declares ignored values on {} field(s): {}".format(
+                    len(ignored), ", ".join(sorted(ignored))
+                )
+            )
+        return ignored
+
+    def _shared_limits(self, config):
+        """Read max_shared_records from config into a field -> limit map.
+
+        Separate from ignore_values because the two answer different questions:
+        that list names values already known to be meaningless, while this sets
+        how many records may share an *unknown* value before the sweep decides
+        it cannot be identifying. A dataset needs both — nobody can enumerate
+        every filing service in advance.
+        """
+        declared = getattr(config, "max_shared_records", None)
+        if declared is None:
+            return {}
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        limits = {k: int(v) for k, v in as_dict.items()}
+        if limits:
+            self.logger.info(
+                "Shared-value limits from config: {}".format(
+                    ", ".join("{}={}".format(k, v) for k, v in sorted(limits.items()))
+                )
+            )
+        return limits
+
+    def _suppressed_values(self, source_index, signals, limits):
+        """Find values the corpus proves are not identifying, per field.
+
+        Every signal that scores a shared value 1.0 is asserting that the value
+        picks out one thing in the world. Real data violates that constantly,
+        in two different ways that need the same treatment:
+
+        - Outright placeholders. FMCSA crash reports carry the literal VIN
+          "GGGG" on 158 carriers, "UNKNOWN" on 79, "99999999999999999" on 51,
+          and the phone "(000) 000-0000" on 664.
+        - Values that are entirely correct but shared. A permit-filing service,
+          an insurance agency or a corporate parent puts its own phone or email
+          on every carrier it files for, so one address can legitimately cover
+          hundreds of unrelated carriers. These cannot be "cleaned" — the data
+          is right; it just is not identity evidence.
+
+        Both are found the same way and neither can be enumerated in advance,
+        which is why this is derived from the corpus rather than hard-coded.
+        The declared ignore_values list in config covers the remainder: values
+        an operator knows are meaningless but which are too rare to trip the
+        threshold.
+        """
+        suppressed = {}
+        for signal in signals:
+            for source_path, agg_field in signal.exact_evidence_fields():
+                limit = self._shared_limit(source_path, limits, signal)
+                try:
+                    response = self.es.search(
+                        index=source_index,
+                        size=0,
+                        aggs={
+                            "vals": {
+                                "terms": {
+                                    "field": agg_field,
+                                    "size": SUPPRESSION_TERMS_SIZE,
+                                    "min_doc_count": limit + 1,
+                                }
+                            }
+                        },
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        "Could not gather value frequencies for {} ({}); values shared by "
+                        "unrelated records - placeholders, filing services, corporate "
+                        "parents - will score as identity matches".format(agg_field, e)
+                    )
+                    continue
+                found = {
+                    str(b["key"]).strip().lower()
+                    for b in response["aggregations"]["vals"]["buckets"]
+                }
+                if found:
+                    suppressed.setdefault(source_path, set()).update(found)
+                    self.logger.info(
+                        "{}: {} value(s) on more than {} records are not identifying "
+                        "(e.g. {})".format(
+                            source_path, len(found), limit, sorted(found)[:3]
+                        )
+                    )
+        return suppressed
+
+    def _shared_limit(self, source_path, limits, signal):
+        """How many records may share a value before it stops being identifying.
+
+        Resolved most specific first - per-field, then the "*" default, then the
+        signal's own setting - because the right number is a property of the
+        attribute, not of the sweep. Two sibling carriers legitimately share a
+        phone, so a phone tolerates a handful; a VIN identifies one vehicle, so
+        even a few is already suspicious.
+        """
+        if source_path in limits:
+            return int(limits[source_path])
+        if "*" in limits:
+            return int(limits["*"])
+        return int(getattr(signal.config, "max_shared_carriers", DEFAULT_SHARED_LIMIT))
+
+
+    def _build_context(self, source_index, signal_configs, config=None):
+        """Gather corpus statistics once per sweep: agent rarity and ignored values."""
+        signals = [build_signal(c) for c in signal_configs]
+        declared_ignored = self._declared_ignored_values(config) if config else {}
+        limits = self._shared_limits(config) if config else {}
+        suppressed = self._suppressed_values(source_index, signals, limits)
+        for field_path, values in declared_ignored.items():
+            suppressed.setdefault(field_path, set()).update(values)
         agent_config = next((c for c in signal_configs if c.type == "agent"), None)
         if agent_config is None:
-            return ScoringContext()
+            return ScoringContext(ignored_values=suppressed)
 
         keyword_field = "{}.keyword".format(agent_config.name_field)
         try:
@@ -192,7 +342,7 @@ class PhaseEntityMatch:
                 "to weight against and will score every shared agent at 0.0 (no "
                 "discriminating power) rather than fabricate a rarity value".format(e)
             )
-            return ScoringContext()
+            return ScoringContext(ignored_values=suppressed)
 
         buckets = response["aggregations"]["agents"]["buckets"]
         counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
@@ -211,7 +361,11 @@ class PhaseEntityMatch:
                     len(counts), total
                 )
             )
-        return ScoringContext(agent_counts=counts, total_agent_carriers=total)
+        return ScoringContext(
+            agent_counts=counts,
+            total_agent_carriers=total,
+            ignored_values=suppressed,
+        )
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,
@@ -228,7 +382,7 @@ class PhaseEntityMatch:
         for pred_hit in selector.iterate():
             stats["predecessors"] += 1
             try:
-                pred_doc, cand_docs, truncated = finder.find(pred_hit)
+                pred_doc, cand_docs, truncated = finder.find(pred_hit, ctx)
             except Exception as e:
                 stats["errors"] += 1
                 self.logger.error(

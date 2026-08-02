@@ -1,3 +1,10 @@
+"""Pair scoring: weight renormalization and the guards that reject a pair.
+
+The guards are the whole point of this module -- a pair can fire several
+signals and still be worth rejecting -- so most of these tests assert that
+something is NOT reported, and why.
+"""
+
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +39,7 @@ NAME_SIGNAL = cfg(
 VIN_SIGNAL = cfg(
     type="vin-overlap", weight=0.5, fields=["crashes.vehicle_identification_number"]
 )
+AGENT_SIGNAL = cfg(type="agent", weight=0.5, name_field="boc3_agents.co_name")
 
 
 def strong_pair():
@@ -122,6 +130,31 @@ def test_require_identity_signal_rejects_vin_only_match():
 
 
 def test_identity_signal_must_actually_fire_not_merely_be_evaluable():
+    # Pairs the name signal with a purely corroborating one (agent), so the only
+    # identity signal present is evaluable but scores 0.0. Previously this used
+    # vin-overlap as the corroborating signal; a shared VIN now counts as
+    # identity evidence in its own right, which would make this pair legitimately
+    # pass and stop testing the guard.
+    scorer = PairScorer([NAME_SIGNAL, AGENT_SIGNAL], scoring(min_signals=1, min_total_score=0.0))
+    pred = doc(
+        "1",
+        source={"boc3_agents": {"co_name": "ACME"}},
+        tokens={"legal_name.phonetic": {"AAA"}},
+    )
+    cand = doc(
+        "2",
+        source={"boc3_agents": {"co_name": "ACME"}},
+        tokens={"legal_name.phonetic": {"BBB"}},
+    )
+    # The name signal is evaluable but scores 0.0, so no identity signal fired.
+    assert scorer.score_pair(pred, cand, ScoringContext()) is None
+
+
+def test_shared_vin_alone_satisfies_the_identity_guard():
+    # The converse of the test above, and the reason vin-overlap was moved into
+    # IDENTITY_SIGNAL_TYPES: a carrier that changes its name, address and phone
+    # but keeps its trucks fires no other identity signal. Rejecting that pair
+    # discarded exactly the profile the VIN signal exists to catch.
     scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL], scoring(min_signals=1, min_total_score=0.0))
     pred = doc(
         "1",
@@ -133,8 +166,9 @@ def test_identity_signal_must_actually_fire_not_merely_be_evaluable():
         source={"crashes": [{"vehicle_identification_number": "1ABC"}]},
         tokens={"legal_name.phonetic": {"BBB"}},
     )
-    # The name signal is evaluable but scores 0.0, so no identity signal fired.
-    assert scorer.score_pair(pred, cand, ScoringContext()) is None
+    pair = scorer.score_pair(pred, cand, ScoringContext())
+    assert pair is not None
+    assert pair.matched_on == ["vin-overlap"]
 
 
 def test_returns_none_when_no_signal_is_evaluable():
@@ -206,3 +240,59 @@ def test_name_plus_a_second_source_clears_the_floor():
     result = scorer.score_pair(pred, cand, ScoringContext())
     assert result is not None
     assert result.signals_present == 4
+
+
+def test_conclusive_signal_overrides_the_score_floor():
+    # A shared non-placeholder VIN scores 1.0 at weight 0.08, so a pair sharing
+    # nothing else totals ~0.11 against a 0.35 floor and used to be discarded --
+    # exactly the carrier that changed name, address and phone but kept its
+    # trucks. Raising the weight enough to clear the floor (~0.46) would make
+    # the signal dominate every pair, so the override is a guard, not a weight.
+    conclusive_vin = cfg(
+        type="vin-overlap",
+        weight=0.08,
+        fields=["crashes.vehicle_identification_number"],
+        conclusive=True,
+    )
+    scorer = PairScorer([NAME_SIGNAL, conclusive_vin], scoring(min_signals=1))
+    pred = doc(
+        "1",
+        source={"crashes": [{"vehicle_identification_number": "1ABC"}]},
+        tokens={"legal_name.phonetic": {"AAA"}},
+    )
+    cand = doc(
+        "2",
+        source={"crashes": [{"vehicle_identification_number": "1ABC"}]},
+        tokens={"legal_name.phonetic": {"BBB"}},
+    )
+    pair = scorer.score_pair(pred, cand, ScoringContext())
+    assert pair is not None
+    assert pair.total_score < 0.35
+    assert pair.matched_on == ["vin-overlap"]
+
+
+def test_conclusive_signal_that_did_not_fire_does_not_override():
+    conclusive_vin = cfg(
+        type="vin-overlap",
+        weight=0.08,
+        fields=["crashes.vehicle_identification_number"],
+        conclusive=True,
+    )
+    scorer = PairScorer([NAME_SIGNAL, conclusive_vin], scoring(min_signals=1))
+    pred = doc(
+        "1",
+        source={"crashes": [{"vehicle_identification_number": "1ABC"}]},
+        tokens={"legal_name.phonetic": {"AAA"}},
+    )
+    cand = doc(
+        "2",
+        source={"crashes": [{"vehicle_identification_number": "9ZZZ"}]},
+        tokens={"legal_name.phonetic": {"BBB"}},
+    )
+    # Different VINs: evaluable but scores 0.0, so nothing conclusive fired.
+    assert scorer.score_pair(pred, cand, ScoringContext()) is None
+
+
+def test_signals_are_not_conclusive_by_default():
+    scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL], scoring())
+    assert scorer.conclusive_types == set()

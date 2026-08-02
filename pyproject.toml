@@ -74,4 +74,18 @@ max-positional-args = 10
 # top of the module. That ordering is the point of the check.
 "execute_project.py" = ["E402"]
 # Magic values in assertions are what a test asserts.
-"tests/*" = ["PLR2004"]
+#
+# D103 (undocumented public function) is exempted for test functions
+# specifically. Test names here are full sentences —
+# `test_suppressed_token_is_not_evaluable_rather_than_zero` — so a docstring
+# could only restate the name, which is exactly the "narrates what the code
+# does" comment CLAUDE.md forbids. Where a test needs justifying, it carries an
+# inline comment giving the measured reason it exists, which is the part a
+# reader cannot recover. Module docstrings are still expected and present:
+# D100 is NOT exempted, because "what does this file cover" is real information.
+#
+# Note that pydocstyle rules are not in this file's `select` list, so this
+# exemption is inert for a default run. It is here because editors and CI
+# frequently enable `D` on their own, and without it the suggested fix is to
+# add eighty docstrings that would each make the file worse.
+"tests/*" = ["PLR2004", "D103"]

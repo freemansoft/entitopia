@@ -33,34 +33,47 @@ class CarrierDoc:
         return self.tokens.get("{}.{}".format(field_name, subfield), set())
 
     def value(self, path: str):
-        """Read a dotted path out of _source.
+        """Read a dotted path out of this document's _source."""
+        return read_path(self.source, path)
 
-        Enriched fields arrive as lists (max_matches > 1), so walking a path
-        through a list collects the value from every element. Collected values
-        are flattened at each step because enrichment nests two levels deep:
-        a carrier's inspections[] each carry their own units[], so
-        "inspections.units.insp_unit_vehicle_id_number" would otherwise produce
-        a list of lists and find no dicts at the final step.
 
-        Returns None when any part of the path is missing.
-        """
-        current = self.source
-        for part in path.split("."):
-            if isinstance(current, list):
-                collected = []
-                for item in _flatten(current):
-                    if isinstance(item, dict) and part in item:
-                        collected.append(item[part])
-                if not collected:
-                    return None
-                current = _flatten(collected)
-            elif isinstance(current, dict):
-                if part not in current:
-                    return None
-                current = current[part]
-            else:
+def read_path(source: dict, path: str):
+    """Read a dotted path out of a raw _source dict.
+
+    Lives outside CarrierDoc because candidate *retrieval* needs it too, and
+    at that point there is no CarrierDoc yet — seed clauses are built from a
+    predecessor's raw search hit, before tokens have been fetched. Keeping one
+    implementation means a signal reads the same values when seeding the
+    candidate query as it does later when scoring the pair; two copies would
+    let those drift, and a signal that seeds on values it cannot then score is
+    a silent recall bug.
+
+    Enriched fields arrive as lists (max_matches > 1), so walking a path
+    through a list collects the value from every element. Collected values
+    are flattened at each step because enrichment nests two levels deep:
+    a carrier's inspections[] each carry their own units[], so
+    "inspections.units.insp_unit_vehicle_id_number" would otherwise produce
+    a list of lists and find no dicts at the final step.
+
+    Returns None when any part of the path is missing.
+    """
+    current = source
+    for part in path.split("."):
+        if isinstance(current, list):
+            collected = []
+            for item in _flatten(current):
+                if isinstance(item, dict) and part in item:
+                    collected.append(item[part])
+            if not collected:
                 return None
-        return current
+            current = _flatten(collected)
+        elif isinstance(current, dict):
+            if part not in current:
+                return None
+            current = current[part]
+        else:
+            return None
+    return current
 
 
 def _flatten(values):
@@ -100,12 +113,42 @@ class ScoringContext:
 
     agent_counts: dict[str, int] = field(default_factory=dict)
     total_agent_carriers: int = 0
+    # Field path -> normalized values that must not be treated as evidence on
+    # that field. The key "*" applies to every field. Two sources merge here:
+    # values an operator declared in entity-match.json's ignore_values, and
+    # values the corpus itself exposed as non-unique (the literal VINs
+    # "UNKNOWN" on 79 carriers and "GGGG" on 158). Keyed by field rather than
+    # global because a value that is meaningless in one attribute can be
+    # perfectly valid in another — "0" is a junk VIN but a real street number.
+    ignored_values: dict[str, set[str]] = field(default_factory=dict)
+
+    def is_ignored(self, field_path: str, value: str) -> bool:
+        """Whether a value carries no evidence on this particular field.
+
+        A signal whose premise is "this value is unique worldwide" has no
+        defensible score when the premise is false: two carriers both
+        reporting "UNKNOWN" share nothing. Callers drop the value entirely
+        rather than scoring it 0.0, so the signal reports None (no usable
+        evidence) instead of "evaluated, matched" — the difference between no
+        evidence and damning evidence.
+        """
+        normalized = _normalize_agent_key(value)
+        if normalized in self.ignored_values.get("*", ()):
+            return True
+        return normalized in self.ignored_values.get(field_path, ())
 
     def __post_init__(self):
         # Normalize keys on the way in so callers cannot introduce a silent
         # case mismatch, regardless of how they built the dict.
         self.agent_counts = {
             _normalize_agent_key(k): v for k, v in self.agent_counts.items()
+        }
+        # Same reason, applied to the values rather than the keys: an operator
+        # writing "Unknown" in config must match a record carrying "UNKNOWN",
+        # or the ignore list silently does nothing.
+        self.ignored_values = {
+            path: {_normalize_agent_key(v) for v in values}
+            for path, values in self.ignored_values.items()
         }
 
     def agent_rarity(self, agent_name: str) -> float:

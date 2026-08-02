@@ -8,6 +8,13 @@ This project is deliberately the **simple** case: three independent datasets, no
 
 Framework concepts (steps, phases, configuration layout) and the data-loading hazards common to any dataset are documented in the [top-level README](../README.md). This README covers what is specific to the CMS data.
 
+> **Counts here are point-in-time.** Every row count, distinct-value count and
+> percentage below was measured against one CMS download. CMS republishes on its
+> own schedule — and has renamed columns mid-flight before, which is how this
+> project shipped three inert analyzers — so expect your own download to differ.
+> The magnitudes are what the arguments rest on, not the exact figures. If your
+> measurement disagrees, trust it and update this file.
+
 ## Index Data
 
 Three independent indexes, each loaded straight from its own CSV. Nothing enriches anything else — the relationships between these datasets exist in the data (shared `Ind_PAC_ID` / `NPI` values) but are not materialized in Elasticsearch.

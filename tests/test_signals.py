@@ -1,10 +1,28 @@
+"""Signal behaviour: what each kind of evidence scores, seeds, and ignores.
+
+Covers the three contracts signals must honour, because breaking any of them
+fails silently rather than loudly:
+
+- None (not evaluable) is distinct from 0.0 (evaluated, no similarity).
+- A signal seeds retrieval on the same values it later scores, so the sweep
+  never retrieves candidates it then refuses to credit.
+- Values the corpus shows are non-identifying are excluded from both.
+
+These run without a cluster; the logic is pure functions over token sets.
+"""
+
 import datetime
 from types import SimpleNamespace
 
 import pytest
 
 from matching.documents import CarrierDoc, ScoringContext
-from matching.signals import SIGNAL_TYPES, build_signal, parse_flexible_date
+from matching.signals import (
+    MAX_SEED_TOKENS,
+    SIGNAL_TYPES,
+    build_signal,
+    parse_flexible_date,
+)
 
 
 def make_doc(dot_number="1", source=None, tokens=None):
@@ -451,3 +469,257 @@ def test_vin_overlap_no_shared_vin_scores_zero():
 def test_vin_overlap_returns_none_without_vins():
     signal = build_signal(vin_cfg())
     assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+# --- seed_clauses: candidate retrieval driven by the signals themselves ---
+
+
+def test_agent_signal_declines_to_seed():
+    # 87 BOC-3 agents cover 519,139 filings, so seeding on one would return
+    # essentially random carriers. Declining is what keeps it corroboration-only.
+    signal = build_signal(
+        SimpleNamespace(type="agent", weight=0.04, name_field="boc3_agents.co_name")
+    )
+    assert signal.seed_clauses({"boc3_agents": {"co_name": "ACME"}}) == []
+
+
+def test_shared_token_signal_seeds_a_terms_clause_per_field():
+    signal = build_signal(
+        SimpleNamespace(
+            type="vin-overlap",
+            weight=0.08,
+            fields=["crashes.vin", "inspections.units.vin"],
+        )
+    )
+    source = {
+        "crashes": [{"vin": "1FUJGLDR0CSBP9784"}],
+        "inspections": [{"units": [{"vin": "56EA75C28KA000073"}]}],
+    }
+    clauses = signal.seed_clauses(source)
+    assert len(clauses) == 2
+    # Every field is queried with the union of tokens, so a VIN seen only in
+    # crashes still retrieves a carrier that saw it only in inspections.
+    # Values keep their original case: the fields are keyword-mapped, so a
+    # casefolded term would match nothing and seed zero candidates.
+    for clause in clauses:
+        terms = next(iter(clause["terms"].values()))
+        assert terms == ["1FUJGLDR0CSBP9784", "56EA75C28KA000073"]
+
+
+def test_shared_token_signal_seeds_nothing_without_tokens():
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    assert signal.seed_clauses({}) == []
+
+
+def test_shared_token_seed_tokens_are_capped_and_sorted():
+    # An unbounded terms clause on a large fleet would slow the whole sweep.
+    vins = ["VIN{:05d}".format(i) for i in range(MAX_SEED_TOKENS + 50)]
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    clauses = signal.seed_clauses({"crashes": [{"vin": v} for v in vins]})
+    terms = clauses[0]["terms"]["crashes.vin"]
+    assert len(terms) == MAX_SEED_TOKENS
+    assert terms == sorted(terms)
+
+
+def test_shared_token_registered_under_neutral_alias():
+    # The logic is "same globally-unique token", not anything about vehicles.
+    assert SIGNAL_TYPES["shared-token"] is SIGNAL_TYPES["vin-overlap"]
+
+
+def test_name_signal_seeds_and_declares_its_token_subfields():
+    signal = build_signal(
+        SimpleNamespace(
+            type="name-phonetic",
+            weight=0.22,
+            fields=["legal_name", "dba_name"],
+            subfield="phonetic",
+            cross_field=True,
+        )
+    )
+    clauses = signal.seed_clauses({"legal_name": "ACME TRUCKING"})
+    assert clauses == [{"match": {"legal_name.phonetic": {"query": "ACME TRUCKING"}}}]
+    assert signal.token_subfields() == {"legal_name.phonetic", "dba_name.phonetic"}
+
+
+def test_address_signal_seeds_on_exact_subfield_only():
+    # Seeding on the fuzzy subfield would drag in every street with a shared
+    # token; the fuzzy comparison still happens later during scoring.
+    signal = build_signal(
+        SimpleNamespace(
+            type="address",
+            weight=0.2,
+            fields=["phy_street"],
+            exact_subfield="clean",
+            fuzzy_subfield="tokens",
+            fuzzy_scale=0.7,
+        )
+    )
+    clauses = signal.seed_clauses({"phy_street": "100 MAIN ST"})
+    assert clauses == [{"match": {"phy_street.clean": {"query": "100 MAIN ST"}}}]
+    assert signal.token_subfields() == {"phy_street.clean", "phy_street.tokens"}
+
+
+def test_shared_token_seeds_preserve_case_for_keyword_fields():
+    # Regression: seeding with normalize_text_identifier's casefolded output
+    # matched nothing against a keyword mapping, so the signal silently
+    # retrieved no candidates at all.
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    clauses = signal.seed_clauses({"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
+    assert clauses[0]["terms"]["crashes.vin"] == ["1FUJGLDR0CSBP9784"]
+
+
+def test_shared_token_score_still_normalizes_case():
+    # Seeding uses raw values; scoring compares normalized ones, so a
+    # case difference between two records still scores as a match.
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    pred = make_doc(source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
+    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
+    assert signal.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_suppressed_token_is_not_evaluable_rather_than_zero():
+    # FMCSA crash reports carry the literal VIN "UNKNOWN" on 79 carriers. Two
+    # carriers both filing it share nothing, so the signal must report "no
+    # usable evidence" (None), not "evaluated, matched" (1.0).
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
+    pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}]})
+    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "UNKNOWN"}]})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_suppression_leaves_real_tokens_alone():
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
+    pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}, {"vin": "1FUJGLDR0CSBP9784"}]})
+    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
+    assert signal.score(pred, cand, ctx) == 1.0
+
+
+def test_suppressed_tokens_are_not_seeded():
+    # Seeding on "GGGG" would retrieve all 158 carriers that recorded it.
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"gggg"}})
+    clauses = signal.seed_clauses({"crashes": [{"vin": "GGGG"}]}, ctx)
+    assert clauses == []
+
+
+def test_ignored_values_are_scoped_to_their_field():
+    # "0" is not a VIN but is a fine street number, so an ignore list keyed by
+    # field must not leak across attributes.
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"0"}})
+    assert ctx.is_ignored("crashes.vin", "0")
+    assert not ctx.is_ignored("phy_street", "0")
+
+
+def test_wildcard_ignore_applies_to_every_field():
+    ctx = ScoringContext(ignored_values={"*": {"n/a"}})
+    assert ctx.is_ignored("crashes.vin", "N/A")
+    assert ctx.is_ignored("anything.else", "n/a")
+
+
+def test_declared_ignore_values_are_case_insensitive():
+    # An operator writing "Unknown" in config must match a record's "UNKNOWN",
+    # or the ignore list silently does nothing.
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"Unknown"}})
+    assert ctx.is_ignored("crashes.vin", "UNKNOWN")
+
+
+# --- exact identifiers: shared values that are correct but not identifying ---
+
+
+def exact_identifier_signal():
+    return build_signal(
+        SimpleNamespace(
+            type="exact-identifier",
+            weight=0.12,
+            phone_fields=["telephone"],
+            text_fields=["email_address"],
+        )
+    )
+
+
+def test_ignored_phone_is_not_evaluable():
+    # "(000) 000-0000" sits on 664 carriers. Two of them share nothing.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"(000) 000-0000"}})
+    pred = make_doc(source={"telephone": "(000) 000-0000"})
+    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_ignore_matches_the_normalized_phone_form_too():
+    # The frequency scan contributes what ES indexed, "(000) 000-0000", while
+    # an operator may write the normalized digits. Both must work.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
+    pred = make_doc(source={"telephone": "(000) 000-0000"})
+    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_ignored_shared_service_email_is_not_identity_evidence():
+    # A permit filing service's address is correct data on hundreds of
+    # unrelated carriers, so it cannot establish that two of them are one.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
+    pred = make_doc(source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    cand = make_doc(dot_number="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_real_shared_phone_still_scores():
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
+    pred = make_doc(source={"telephone": "(555) 867-5309"})
+    cand = make_doc(dot_number="2", source={"telephone": "(555) 867-5309"})
+    assert signal.score(pred, cand, ctx) == 1.0
+
+
+def test_ignored_identifier_does_not_seed():
+    # Seeding on a filing service's email retrieves every carrier it ever
+    # filed for, crowding out real candidates under max_candidates.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
+    assert signal.seed_clauses({"email_address": "PERMITS@EXAMPLE-SERVICE.COM"}, ctx) == []
+
+
+def test_exact_identifier_declares_keyword_agg_fields():
+    # These are text-mapped, so the frequency scan must aggregate the subfield.
+    signal = exact_identifier_signal()
+    assert signal.exact_evidence_fields() == [
+        ("telephone", "telephone.keyword"),
+        ("email_address", "email_address.keyword"),
+    ]
+
+
+def test_shared_token_aggregates_on_the_field_itself():
+    # VIN fields are keyword-mapped, so there is no subfield to aggregate.
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    assert signal.exact_evidence_fields() == [("crashes.vin", "crashes.vin")]
+
+
+def test_similarity_signals_declare_no_exact_evidence():
+    # A common name token is handled by weighting, not by exclusion.
+    signal = build_signal(
+        SimpleNamespace(
+            type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic"
+        )
+    )
+    assert signal.exact_evidence_fields() == []

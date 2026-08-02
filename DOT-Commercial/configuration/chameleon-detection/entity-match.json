@@ -4,11 +4,11 @@
     "selector": "out-of-service",
     "oos_status": ["ACTIVE"],
     "oos_date_from": "2020-01-01",
-    "max_predecessors": 2000
+    "max_predecessors": null
   },
   "candidates": {
-    "max_candidates": 100,
-    "seed_signals": ["name-phonetic", "address", "exact-identifier"]
+    "max_candidates": 500,
+    "seed_signals": ["name-phonetic", "address", "exact-identifier", "vin-overlap"]
   },
   "signals": [
     {
@@ -61,12 +61,32 @@
     {
       "type": "vin-overlap",
       "weight": 0.08,
+      "conclusive": true,
+      "max_shared_carriers": 5,
       "fields": [
         "crashes.vehicle_identification_number",
         "inspections.units.insp_unit_vehicle_id_number"
       ]
     }
   ],
+  "ignore_values": {
+    "crashes.vehicle_identification_number": [
+      "UNKNOWN", "UNKNOWN-REPAIR", "UNK", "NONE", "N/A", "NA", "GGGG",
+      "XXXXXXXXXXXXXXXXX"
+    ],
+    "inspections.units.insp_unit_vehicle_id_number": [
+      "UNKNOWN", "UNK", "NONE", "N/A", "NA"
+    ],
+    "telephone": ["(000) 000-0000", "0000000000", "(999) 999-9999"],
+    "fax": ["(000) 000-0000", "0000000000", "(999) 999-9999"]
+  },
+  "max_shared_records": {
+    "crashes.vehicle_identification_number": 5,
+    "inspections.units.insp_unit_vehicle_id_number": 5,
+    "telephone": 20,
+    "fax": 20,
+    "email_address": 20
+  },
   "scoring": {
     "min_total_score": 0.35,
     "min_signals": 2,
