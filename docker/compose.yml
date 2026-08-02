@@ -31,6 +31,23 @@ services:
       # README documents parallel_bulk's 8 threads exhausting the 1024 default
       # and silently dropping a fraction of a percent of documents.
       - thread_pool.write.queue_size=4000
+      # The write queue above is NOT the queue that overflows. Enrichment has
+      # its own coordinator queue, and raising the write pool never touched it:
+      # a full DOT-Commercial load rejected 91,439 of 2,085,534 carriers (4.4%)
+      # with "Could not perform enrichment, enrich coordination queue at
+      # capacity [1024/1024]", plus 2,197 inspections. The rejected documents
+      # are dropped, not retried — parallel_bulk exposes no max_retries — so
+      # the carriers index silently came up 4.4% short and the chameleon sweep
+      # scored against a corpus missing tens of thousands of carriers.
+      #
+      # Sizing: carriers runs 5 enrich processors, and parallel_bulk's 8
+      # threads x 500-doc chunks put up to 4,000 documents in flight, so a
+      # burst can demand ~20,000 lookup slots against a default of 1,024.
+      # 16,384 slots plus double the concurrency to drain them holds that
+      # burst. If a future dataset adds enrich processors, expect to raise
+      # this again — the symptom is a 429 with "enrich coordination queue".
+      - enrich.coordinator_proxy.queue_capacity=16384
+      - enrich.coordinator_proxy.max_concurrent_requests=16
     ports:
       - "9200:9200"
     volumes:

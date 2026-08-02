@@ -4,10 +4,10 @@
     "selector": "out-of-service",
     "oos_status": ["ACTIVE"],
     "oos_date_from": "2020-01-01",
-    "max_predecessors": 2000
+    "max_predecessors": null
   },
   "candidates": {
-    "max_candidates": 100,
+    "max_candidates": 500,
     "seed_signals": ["name-phonetic", "address", "exact-identifier"]
   },
   "signals": [

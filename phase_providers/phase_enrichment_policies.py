@@ -5,8 +5,31 @@ from elasticsearch import BadRequestError, ConflictError, NotFoundError, client
 
 from utils import elasticsearch_utils, file_utils
 
+# Fields of a policy's `match` block that decide what the enrich index contains.
+# Compared when a policy could not be deleted, to tell "the existing policy is
+# the one config asks for" apart from "a stale policy is squatting on the name".
+POLICY_IDENTITY_KEYS = ("indices", "match_field", "enrich_fields")
+
 
 class PhaseEnrichmentPolicies:
+    """Rebuilds each configured enrich policy's backing index from current source data.
+
+    An enrich policy is a point-in-time snapshot: `execute_policy` copies the
+    source index into a hidden `.enrich-*` index, and documents indexed later
+    are invisible to enrichment until the policy is executed again. So this
+    phase must execute every policy on every run, not merely ensure one exists
+    — a policy left un-executed enriches against whatever the source held the
+    last time someone ran it, which for a reused cluster is routinely nothing.
+
+    That distinction was previously lost: delete/put/execute shared one `try`,
+    so a policy that already existed (its `put` failing with
+    `resource_already_exists_exception`) skipped `execute` entirely and left
+    the previous run's empty `.enrich-*` index in place. Every phase logged
+    success, carriers came out with no `out_of_service_orders`, and the
+    chameleon sweep reported zero predecessors — a clean-looking run with a
+    fabricated negative result. Execution is now unconditional and verified.
+    """
+
     def __init__(self, es, project, one_step, project_configs):
         self.es = es
         self.project = project
@@ -29,43 +52,152 @@ class PhaseEnrichmentPolicies:
         )
         self.logger.debug("loaded config {}".format(all_phase_config))
 
-        if all_phase_config:
-            for phase_config in all_phase_config:
-                elasticsearch_utils.replace_match_indicies_with_now_version(
-                    phase_config
+        if not all_phase_config:
+            return
+
+        for phase_config in all_phase_config:
+            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
+            enrich_client = client.EnrichClient(self.es)
+
+            match_json = json.dumps(phase_config.match, default=vars)
+            match_dicts = json.loads(match_json)
+
+            self.logger.info(
+                "Processing policy name {} match {}".format(
+                    phase_config.name, phase_config.match
                 )
-                enrichClient = client.EnrichClient(self.es)
+            )
 
-                try:
-                    # TODO check if pipeline is bound to existing policy
-                    # can't be dleeted if pipeline bound to it
-                    enrichClient.delete_policy(name=phase_config.name)
-                except ConflictError as e:
-                    self.logger.warning(
-                        "Failed to delete enrichment policy due to conflict {}".format(
-                            e
-                        )
-                    )
-                except NotFoundError:
-                    pass
+            if not self._ensure_policy(enrich_client, phase_config.name, match_dicts):
+                continue
+            self._execute_policy(enrich_client, phase_config.name, match_dicts)
 
-                self.logger.info(
-                    "Processing policy name {} match {}".format(
-                        phase_config.name, phase_config.match
+    def _ensure_policy(self, enrich_client, name, match_dicts) -> bool:
+        """Make the named policy match config, returning whether it is safe to execute.
+
+        Enrich policies are immutable, so changing one means deleting and
+        recreating it — but a policy cannot be deleted while an ingest pipeline
+        references it, which is the normal state on any cluster that has been
+        loaded before. When deletion is blocked, the existing policy is only
+        acceptable if it already targets what config asks for; executing a
+        policy whose definition has drifted (typically pointing at an earlier
+        day's index) would enrich from the wrong source while looking healthy.
+        """
+        try:
+            enrich_client.delete_policy(name=name)
+        except ConflictError as e:
+            self.logger.warning(
+                "Could not delete enrichment policy {} ({}); an ingest pipeline is "
+                "still bound to it. Falling back to verifying the existing "
+                "definition.".format(name, e)
+            )
+        except NotFoundError:
+            pass
+
+        try:
+            r = enrich_client.put_policy(name=name, match=match_dicts)
+            self.logger.info("Updated policy {} returned {}".format(name, r))
+            return True
+        except BadRequestError as e:
+            if getattr(e, "error", "") != "resource_already_exists_exception":
+                self.logger.error("Failed to update policy {}: {}".format(name, e))
+                return False
+
+        return self._existing_policy_matches(enrich_client, name, match_dicts)
+
+    def _existing_policy_matches(self, enrich_client, name, match_dicts) -> bool:
+        """Whether the undeletable policy already targets what config asks for.
+
+        Only the fields that determine the enrich index's contents are
+        compared; Elasticsearch echoes back a normalized form of the policy, so
+        comparing whole documents would report differences that do not matter.
+        """
+        try:
+            response = enrich_client.get_policy(name=name)
+        except NotFoundError:
+            self.logger.error(
+                "Policy {} could neither be created nor read back".format(name)
+            )
+            return False
+
+        policies = response.get("policies") or []
+        if not policies:
+            self.logger.error("Policy {} read back empty".format(name))
+            return False
+        existing = policies[0].get("config", {}).get("match", {})
+
+        for key in POLICY_IDENTITY_KEYS:
+            wanted = match_dicts.get(key)
+            found = existing.get(key)
+            # `indices` accepts a bare string in config but always reads back as
+            # a list, so both sides are normalized before comparing.
+            if isinstance(wanted, str):
+                wanted = [wanted]
+            if isinstance(found, str):
+                found = [found]
+            if wanted != found:
+                self.logger.error(
+                    "Existing policy {} disagrees with config on {}: has {!r}, config "
+                    "wants {!r}. It is bound to a pipeline and cannot be replaced. "
+                    "Delete the bound pipeline (or the index it writes to) and rerun; "
+                    "executing it as-is would enrich from the wrong source.".format(
+                        name, key, found, wanted
                     )
                 )
-                try:
-                    match_json = json.dumps(phase_config.match, default=vars)
-                    match_dicts = json.loads(match_json)
-                    r = enrichClient.put_policy(
-                        name=phase_config.name, match=match_dicts
-                    )
-                    self.logger.info(
-                        "Updated policy {} returned {}".format(phase_config.name, r)
-                    )
-                    r = enrichClient.execute_policy(
-                        name=phase_config.name, wait_for_completion=True
-                    )
+                return False
 
-                except BadRequestError as e:
-                    self.logger.info("Failed to update policy: {}".format(e))
+        self.logger.info(
+            "Reusing existing policy {} — its definition already matches config".format(name)
+        )
+        return True
+
+    def _execute_policy(self, enrich_client, name, match_dicts) -> None:
+        """Rebuild the policy's enrich index and confirm it actually received data.
+
+        The verification is the point: an enrich policy executed against a
+        source index whose documents are not yet searchable succeeds, reports
+        `acknowledged`, and produces an empty enrich index. Nothing downstream
+        errors — the enriched documents simply come out missing the fields, and
+        a sweep over them returns a plausible-looking zero. Comparing the
+        resulting count against the source's turns that into a loud failure.
+        """
+        try:
+            enrich_client.execute_policy(name=name, wait_for_completion=True)
+        except Exception as e:
+            self.logger.error("Failed to execute policy {}: {}".format(name, e))
+            return
+
+        source_count = self._count(match_dicts.get("indices"))
+        enrich_count = self._count(".enrich-{}".format(name))
+
+        if source_count > 0 and enrich_count == 0:
+            self.logger.error(
+                "Policy {} executed but its enrich index is EMPTY while source {} holds "
+                "{} documents. Enrichment reads only searchable documents, so the source "
+                "was almost certainly not refreshed before this ran. Anything enriched "
+                "from this policy will silently lack its fields.".format(
+                    name, match_dicts.get("indices"), source_count
+                )
+            )
+            return
+
+        self.logger.info(
+            "Policy {} executed: {} documents in enrich index (source {})".format(
+                name, enrich_count, source_count
+            )
+        )
+
+    def _count(self, index) -> int:
+        """Document count for an index, or 0 when it cannot be counted.
+
+        Used only to compare source against enrich output, so an unreadable
+        index is reported as 0 rather than raising — the caller's job is to
+        flag a suspicious result, not to fail the run on a count call.
+        """
+        if not index:
+            return 0
+        try:
+            return self.es.count(index=index)["count"]
+        except Exception as e:
+            self.logger.debug("Could not count {}: {}".format(index, e))
+            return 0
