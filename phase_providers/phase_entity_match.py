@@ -15,14 +15,22 @@ from matching.candidates import CandidateFinder
 from matching.documents import ScoringContext
 from matching.predecessors import PredecessorSelector
 from matching.scorer import PairScorer
-from matching.signals import parse_flexible_date
+from matching.signals import build_signal, parse_flexible_date
 from utils import elasticsearch_utils, file_utils, id_utils
 
 AGENT_TERMS_SIZE = 500
-# Placeholder values are a short head of a long tail -- a handful of literals
-# ("UNKNOWN", "GGGG", runs of 9s) cover essentially all of them, so a small
-# bucket count catches them without paying for a full cardinality sweep.
-SUPPRESSION_TERMS_SIZE = 200
+# Fallback for how many records may share a value before it stops identifying
+# anything, when neither config nor the signal says. Deliberately small: this
+# only applies to fields a signal scores as exact identity, where sharing is
+# the exception.
+DEFAULT_SHARED_LIMIT = 5
+# Buckets to pull per field when scanning for non-identifying values. Sized
+# against the measurement rather than guessed: on the July 2026 extract exactly
+# 200 email addresses sit on more than 20 carriers, so the previous value of 200
+# was precisely at its own ceiling and one more shared address would have been
+# missed silently. Contact fields have a much longer tail than VIN placeholders
+# because every filing service and corporate parent contributes one.
+SUPPRESSION_TERMS_SIZE = 2000
 BULK_THREAD_COUNT = 2
 
 
@@ -82,11 +90,7 @@ class PhaseEntityMatch:
         if not self._preflight(source_index, finder.scored_subfields()):
             return
 
-        ctx = self._build_context(
-            source_index,
-            config.signals,
-            self._declared_ignored_values(config),
-        )
+        ctx = self._build_context(source_index, config.signals, config)
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
         run_id = uuid.uuid4().hex
         generated_at = datetime.datetime.now(datetime.UTC).isoformat()
@@ -212,28 +216,54 @@ class PhaseEntityMatch:
             )
         return ignored
 
-    def _suppressed_tokens(self, source_index, signal_configs):
-        """Find "unique" token values that the corpus proves are not unique.
+    def _shared_limits(self, config):
+        """Read max_shared_records from config into a field -> limit map.
 
-        SharedTokenSignal scores a shared value 1.0 on the premise that it
-        identifies one physical thing worldwide. FMCSA crash reports violate
-        that premise constantly: the literal VIN "GGGG" appears on 158
-        carriers, "UNKNOWN" on 79, "99999999999999999" on 51. Left alone,
-        every pair of carriers that both filed a placeholder scores a perfect
-        identity match, and seeding on one retrieves all 158 at once.
+        Separate from ignore_values because the two answer different questions:
+        that list names values already known to be meaningless, while this sets
+        how many records may share an *unknown* value before the sweep decides
+        it cannot be identifying. A dataset needs both — nobody can enumerate
+        every filing service in advance.
+        """
+        declared = getattr(config, "max_shared_records", None)
+        if declared is None:
+            return {}
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        limits = {k: int(v) for k, v in as_dict.items()}
+        if limits:
+            self.logger.info(
+                "Shared-value limits from config: {}".format(
+                    ", ".join("{}={}".format(k, v) for k, v in sorted(limits.items()))
+                )
+            )
+        return limits
 
-        Derived from the data rather than a hard-coded list of known junk
-        values, because which placeholders a dataset uses is a property of
-        that dataset. Any value attached to more than max_shared_carriers
-        carriers is treated as non-identifying, which is the signal's own
-        premise applied as a test.
+    def _suppressed_values(self, source_index, signals, limits):
+        """Find values the corpus proves are not identifying, per field.
+
+        Every signal that scores a shared value 1.0 is asserting that the value
+        picks out one thing in the world. Real data violates that constantly,
+        in two different ways that need the same treatment:
+
+        - Outright placeholders. FMCSA crash reports carry the literal VIN
+          "GGGG" on 158 carriers, "UNKNOWN" on 79, "99999999999999999" on 51,
+          and the phone "(000) 000-0000" on 664.
+        - Values that are entirely correct but shared. A permit-filing service,
+          an insurance agency or a corporate parent puts its own phone or email
+          on every carrier it files for, so one address can legitimately cover
+          hundreds of unrelated carriers. These cannot be "cleaned" — the data
+          is right; it just is not identity evidence.
+
+        Both are found the same way and neither can be enumerated in advance,
+        which is why this is derived from the corpus rather than hard-coded.
+        The declared ignore_values list in config covers the remainder: values
+        an operator knows are meaningless but which are too rare to trip the
+        threshold.
         """
         suppressed = {}
-        for config in signal_configs:
-            if config.type not in ("vin-overlap", "shared-token"):
-                continue
-            limit = int(getattr(config, "max_shared_carriers", 5))
-            for field_name in config.fields:
+        for signal in signals:
+            for source_path, agg_field in signal.exact_evidence_fields():
+                limit = self._shared_limit(source_path, limits, signal)
                 try:
                     response = self.es.search(
                         index=source_index,
@@ -241,7 +271,7 @@ class PhaseEntityMatch:
                         aggs={
                             "vals": {
                                 "terms": {
-                                    "field": field_name,
+                                    "field": agg_field,
                                     "size": SUPPRESSION_TERMS_SIZE,
                                     "min_doc_count": limit + 1,
                                 }
@@ -250,9 +280,9 @@ class PhaseEntityMatch:
                     )
                 except Exception as e:
                     self.logger.warning(
-                        "Could not gather token frequencies for {} ({}); placeholder "
-                        "values like the literal VIN 'UNKNOWN' will score as identity "
-                        "matches".format(field_name, e)
+                        "Could not gather value frequencies for {} ({}); values shared by "
+                        "unrelated records - placeholders, filing services, corporate "
+                        "parents - will score as identity matches".format(agg_field, e)
                     )
                     continue
                 found = {
@@ -260,21 +290,37 @@ class PhaseEntityMatch:
                     for b in response["aggregations"]["vals"]["buckets"]
                 }
                 if found:
-                    suppressed.setdefault(field_name, set()).update(found)
-        total = sum(len(v) for v in suppressed.values())
-        if total:
-            sample = sorted(next(iter(suppressed.values())))[:5]
-            self.logger.info(
-                "Suppressing {} non-unique token values across {} field(s) (e.g. {})".format(
-                    total, len(suppressed), sample
-                )
-            )
+                    suppressed.setdefault(source_path, set()).update(found)
+                    self.logger.info(
+                        "{}: {} value(s) on more than {} records are not identifying "
+                        "(e.g. {})".format(
+                            source_path, len(found), limit, sorted(found)[:3]
+                        )
+                    )
         return suppressed
 
-    def _build_context(self, source_index, signal_configs, declared_ignored=None):
+    def _shared_limit(self, source_path, limits, signal):
+        """How many records may share a value before it stops being identifying.
+
+        Resolved most specific first - per-field, then the "*" default, then the
+        signal's own setting - because the right number is a property of the
+        attribute, not of the sweep. Two sibling carriers legitimately share a
+        phone, so a phone tolerates a handful; a VIN identifies one vehicle, so
+        even a few is already suspicious.
+        """
+        if source_path in limits:
+            return int(limits[source_path])
+        if "*" in limits:
+            return int(limits["*"])
+        return int(getattr(signal.config, "max_shared_carriers", DEFAULT_SHARED_LIMIT))
+
+
+    def _build_context(self, source_index, signal_configs, config=None):
         """Gather corpus statistics once per sweep: agent rarity and ignored values."""
-        declared_ignored = declared_ignored or {}
-        suppressed = self._suppressed_tokens(source_index, signal_configs)
+        signals = [build_signal(c) for c in signal_configs]
+        declared_ignored = self._declared_ignored_values(config) if config else {}
+        limits = self._shared_limits(config) if config else {}
+        suppressed = self._suppressed_values(source_index, signals, limits)
         for field_path, values in declared_ignored.items():
             suppressed.setdefault(field_path, set()).update(values)
         agent_config = next((c for c in signal_configs if c.type == "agent"), None)

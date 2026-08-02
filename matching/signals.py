@@ -129,6 +129,23 @@ class Signal:
         """
         return set()
 
+    def exact_evidence_fields(self) -> list[tuple[str, str]]:
+        """(source path, aggregatable field) for values this signal treats as identity.
+
+        A signal that scores a shared value 1.0 is asserting that the value
+        identifies one thing in the world. That assertion is routinely false in
+        real data, and the corpus is the only thing that can say so — hence a
+        frequency scan, which needs to know both where to read the value and
+        which Elasticsearch field to aggregate. The two differ: a VIN is mapped
+        `keyword` and aggregates on itself, while `telephone` is `text` and
+        aggregates on `telephone.keyword`.
+
+        Empty for signals that score similarity rather than equality. A
+        graded name overlap has no single value to suppress — a common token
+        is handled by weighting, not exclusion.
+        """
+        return []
+
 
 class NameOverlapSignal(Signal):
     """Token-set overlap over name fields.
@@ -266,25 +283,51 @@ class ExactIdentifierSignal(Signal):
 
     Reads raw _source rather than analyzed tokens, so placeholder rejection
     happens here rather than relying on the analyzer.
+
+    Contact details are shared far more often than they look. Besides outright
+    placeholders like `(000) 000-0000`, whole populations of unrelated carriers
+    legitimately share one value: a permit-filing service, an insurance agency,
+    or a corporate parent puts its own address on every carrier it files for.
+    Those values are perfectly correct data and completely non-identifying, so
+    they are excluded via ScoringContext rather than repaired in the source.
+    Scoring one 1.0 is worse here than in most signals: this is an *identity*
+    signal, so it also satisfies require_identity_signal and can carry a pair
+    on its own.
     """
 
     type_names = ("exact-identifier",)
 
+    def _phone_fields(self):
+        return list(getattr(self.config, "phone_fields", []))
+
+    def _text_fields(self):
+        return list(getattr(self.config, "text_fields", []))
+
     def score(self, pred, cand, ctx):
-        pred_values = set()
-        cand_values = set()
-
-        for field_name in getattr(self.config, "phone_fields", []):
-            _collect(pred_values, pred.value(field_name), normalize_phone)
-            _collect(cand_values, cand.value(field_name), normalize_phone)
-
-        for field_name in getattr(self.config, "text_fields", []):
-            _collect(pred_values, pred.value(field_name), normalize_text_identifier)
-            _collect(cand_values, cand.value(field_name), normalize_text_identifier)
+        pred_values = self._values(pred.value, ctx)
+        cand_values = self._values(cand.value, ctx)
 
         if not pred_values or not cand_values:
             return None
         return 1.0 if pred_values & cand_values else 0.0
+
+    def _values(self, reader, ctx) -> set[str]:
+        """Normalized, non-ignored identifiers from every configured field.
+
+        Tests the ignore list against both the raw value and its normalized
+        form. The frequency scan reports what Elasticsearch indexed —
+        `(000) 000-0000` — while `normalize_phone` reduces that to digits, so
+        checking only one form would let the other slip through depending on
+        whether a value was discovered by the scan or typed into config.
+        """
+        values: set[str] = set()
+        for field_name in self._phone_fields():
+            _collect_unignored(values, reader(field_name), normalize_phone, field_name, ctx)
+        for field_name in self._text_fields():
+            _collect_unignored(
+                values, reader(field_name), normalize_text_identifier, field_name, ctx
+            )
+        return values
 
     def seed_clauses(self, source, ctx=None):
         """match/term clauses on shared phone and text identifiers.
@@ -292,17 +335,56 @@ class ExactIdentifierSignal(Signal):
         Phones go through the normalized `.clean` subfield (a match, since ES
         did the normalizing at index time); text identifiers like email use
         `.keyword` term equality since they need no normalization pass.
+
+        Ignored values are skipped, otherwise a carrier carrying a filing
+        service's email seeds on it and retrieves every other carrier that
+        service ever filed for — hundreds of unrelated candidates that then
+        crowd out real ones under max_candidates.
         """
         clauses = []
-        for field_name in getattr(self.config, "phone_fields", []):
+        for field_name in self._phone_fields():
             value = read_path(source, field_name)
-            if value:
+            if value and not _is_ignored(ctx, field_name, value, normalize_phone):
                 clauses.append({"match": {"{}.clean".format(field_name): {"query": value}}})
-        for field_name in getattr(self.config, "text_fields", []):
+        for field_name in self._text_fields():
             value = read_path(source, field_name)
-            if value:
+            if value and not _is_ignored(ctx, field_name, value, normalize_text_identifier):
                 clauses.append({"term": {"{}.keyword".format(field_name): value}})
         return clauses
+
+    def exact_evidence_fields(self):
+        """Aggregate on `.keyword`: these fields are `text`, unlike a keyword VIN."""
+        return [
+            (f, "{}.keyword".format(f)) for f in self._phone_fields() + self._text_fields()
+        ]
+
+
+def _is_ignored(ctx, field_name: str, value, normalize) -> bool:
+    """Whether a value is excluded on this field, testing raw and normalized forms.
+
+    Both forms matter because the ignore list has two sources that disagree on
+    shape: the corpus frequency scan contributes what Elasticsearch indexed
+    (`(000) 000-0000`), while an operator may reasonably write either that or
+    the normalized `0000000000` into config.
+    """
+    if ctx is None:
+        return False
+    if ctx.is_ignored(field_name, str(value)):
+        return True
+    normalized = normalize(value)
+    return normalized is not None and ctx.is_ignored(field_name, normalized)
+
+
+def _collect_unignored(target: set, raw, normalize, field_name: str, ctx) -> None:
+    """_collect, minus any value excluded for this field."""
+    if raw is None:
+        return
+    for item in raw if isinstance(raw, list) else [raw]:
+        if _is_ignored(ctx, field_name, item, normalize):
+            continue
+        normalized = normalize(item)
+        if normalized is not None:
+            target.add(normalized)
 
 
 def _collect(target: set, raw, normalize) -> None:
@@ -524,6 +606,10 @@ class SharedTokenSignal(Signal):
         return [
             {"terms": {field_name: values}} for field_name in self.config.fields
         ]
+
+    def exact_evidence_fields(self):
+        """These are mapped `keyword`, so the field aggregates on itself."""
+        return [(f, f) for f in self.config.fields]
 
     def _raw_values(self, source, ctx=None) -> list[str]:
         """Deduplicated, sorted, capped raw token values for the seed query.

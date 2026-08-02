@@ -624,3 +624,89 @@ def test_declared_ignore_values_are_case_insensitive():
     # or the ignore list silently does nothing.
     ctx = ScoringContext(ignored_values={"crashes.vin": {"Unknown"}})
     assert ctx.is_ignored("crashes.vin", "UNKNOWN")
+
+
+# --- exact identifiers: shared values that are correct but not identifying ---
+
+
+def exact_identifier_signal():
+    return build_signal(
+        SimpleNamespace(
+            type="exact-identifier",
+            weight=0.12,
+            phone_fields=["telephone"],
+            text_fields=["email_address"],
+        )
+    )
+
+
+def test_ignored_phone_is_not_evaluable():
+    # "(000) 000-0000" sits on 664 carriers. Two of them share nothing.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"(000) 000-0000"}})
+    pred = make_doc(source={"telephone": "(000) 000-0000"})
+    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_ignore_matches_the_normalized_phone_form_too():
+    # The frequency scan contributes what ES indexed, "(000) 000-0000", while
+    # an operator may write the normalized digits. Both must work.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
+    pred = make_doc(source={"telephone": "(000) 000-0000"})
+    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_ignored_shared_service_email_is_not_identity_evidence():
+    # A permit filing service's address is correct data on hundreds of
+    # unrelated carriers, so it cannot establish that two of them are one.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
+    pred = make_doc(source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    cand = make_doc(dot_number="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    assert signal.score(pred, cand, ctx) is None
+
+
+def test_real_shared_phone_still_scores():
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
+    pred = make_doc(source={"telephone": "(555) 867-5309"})
+    cand = make_doc(dot_number="2", source={"telephone": "(555) 867-5309"})
+    assert signal.score(pred, cand, ctx) == 1.0
+
+
+def test_ignored_identifier_does_not_seed():
+    # Seeding on a filing service's email retrieves every carrier it ever
+    # filed for, crowding out real candidates under max_candidates.
+    signal = exact_identifier_signal()
+    ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
+    assert signal.seed_clauses({"email_address": "PERMITS@EXAMPLE-SERVICE.COM"}, ctx) == []
+
+
+def test_exact_identifier_declares_keyword_agg_fields():
+    # These are text-mapped, so the frequency scan must aggregate the subfield.
+    signal = exact_identifier_signal()
+    assert signal.exact_evidence_fields() == [
+        ("telephone", "telephone.keyword"),
+        ("email_address", "email_address.keyword"),
+    ]
+
+
+def test_shared_token_aggregates_on_the_field_itself():
+    # VIN fields are keyword-mapped, so there is no subfield to aggregate.
+    signal = build_signal(
+        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+    )
+    assert signal.exact_evidence_fields() == [("crashes.vin", "crashes.vin")]
+
+
+def test_similarity_signals_declare_no_exact_evidence():
+    # A common name token is handled by weighting, not by exclusion.
+    signal = build_signal(
+        SimpleNamespace(
+            type="name-phonetic", weight=0.22, fields=["legal_name"], subfield="phonetic"
+        )
+    )
+    assert signal.exact_evidence_fields() == []
