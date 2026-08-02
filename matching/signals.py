@@ -54,6 +54,15 @@ class Signal:
         self.config = config
         self.signal_type = config.type
         self.weight = float(config.weight)
+        # A conclusive signal carries a match on its own: when it fires, the
+        # pair is reported even if the blended total lands under
+        # min_total_score. Reserved for evidence that is decisive rather than
+        # merely strong -- a shared, non-placeholder VIN means two carriers
+        # operated the same physical vehicle, which a weighted average of
+        # eight signals will always dilute below a floor tuned for name and
+        # address similarity. Defaults False, so this is opt-in per config
+        # entry rather than a property of any particular signal class.
+        self.conclusive = bool(getattr(config, "conclusive", False))
 
     @property
     def evidence_key(self) -> frozenset[str]:
@@ -479,9 +488,11 @@ class SharedTokenSignal(Signal):
         """
         tokens: set[str] = set()
         for path in self.config.fields:
-            _collect(tokens, reader(path), normalize_text_identifier)
-        if ctx is not None:
-            tokens = {t for t in tokens if not ctx.is_suppressed(t)}
+            found: set[str] = set()
+            _collect(found, reader(path), normalize_text_identifier)
+            if ctx is not None:
+                found = {t for t in found if not ctx.is_ignored(path, t)}
+            tokens |= found
         return tokens
 
     def seed_clauses(self, source, ctx=None):
@@ -533,7 +544,7 @@ class SharedTokenSignal(Signal):
                     continue
                 # Seeding on a placeholder retrieves every carrier that also
                 # recorded it -- 158 of them for the literal VIN "GGGG".
-                if ctx is not None and ctx.is_suppressed(text):
+                if ctx is not None and ctx.is_ignored(path, text):
                     continue
                 values.add(text)
         return sorted(values)[:MAX_SEED_TOKENS]

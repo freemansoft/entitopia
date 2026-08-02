@@ -113,29 +113,42 @@ class ScoringContext:
 
     agent_counts: dict[str, int] = field(default_factory=dict)
     total_agent_carriers: int = 0
-    # Normalized "unique" token values that turned out not to be unique, e.g.
-    # the literal VINs "UNKNOWN" (79 carriers) and "GGGG" (158 carriers) that
-    # FMCSA crash reports carry in place of a real one. Populated per sweep
-    # from the corpus rather than hard-coded, because the placeholders a
-    # dataset uses are a property of that dataset, not of the signal.
-    suppressed_tokens: set[str] = field(default_factory=set)
+    # Field path -> normalized values that must not be treated as evidence on
+    # that field. The key "*" applies to every field. Two sources merge here:
+    # values an operator declared in entity-match.json's ignore_values, and
+    # values the corpus itself exposed as non-unique (the literal VINs
+    # "UNKNOWN" on 79 carriers and "GGGG" on 158). Keyed by field rather than
+    # global because a value that is meaningless in one attribute can be
+    # perfectly valid in another — "0" is a junk VIN but a real street number.
+    ignored_values: dict[str, set[str]] = field(default_factory=dict)
 
-    def is_suppressed(self, value: str) -> bool:
-        """Whether a token is too common to be treated as identifying.
+    def is_ignored(self, field_path: str, value: str) -> bool:
+        """Whether a value carries no evidence on this particular field.
 
         A signal whose premise is "this value is unique worldwide" has no
         defensible score when the premise is false: two carriers both
-        reporting "UNKNOWN" share nothing. Dropping the token entirely makes
-        the signal return None (not evaluable) rather than 1.0, which is the
-        difference between "no evidence" and "damning evidence".
+        reporting "UNKNOWN" share nothing. Callers drop the value entirely
+        rather than scoring it 0.0, so the signal reports None (no usable
+        evidence) instead of "evaluated, matched" — the difference between no
+        evidence and damning evidence.
         """
-        return _normalize_agent_key(value) in self.suppressed_tokens
+        normalized = _normalize_agent_key(value)
+        if normalized in self.ignored_values.get("*", ()):
+            return True
+        return normalized in self.ignored_values.get(field_path, ())
 
     def __post_init__(self):
         # Normalize keys on the way in so callers cannot introduce a silent
         # case mismatch, regardless of how they built the dict.
         self.agent_counts = {
             _normalize_agent_key(k): v for k, v in self.agent_counts.items()
+        }
+        # Same reason, applied to the values rather than the keys: an operator
+        # writing "Unknown" in config must match a record carrying "UNKNOWN",
+        # or the ignore list silently does nothing.
+        self.ignored_values = {
+            path: {_normalize_agent_key(v) for v in values}
+            for path, values in self.ignored_values.items()
         }
 
     def agent_rarity(self, agent_name: str) -> float:

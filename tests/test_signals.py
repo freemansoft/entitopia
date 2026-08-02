@@ -579,7 +579,7 @@ def test_suppressed_token_is_not_evaluable_rather_than_zero():
     signal = build_signal(
         SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
     )
-    ctx = ScoringContext(suppressed_tokens={"unknown"})
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}]})
     cand = make_doc(dot_number="2", source={"crashes": [{"vin": "UNKNOWN"}]})
     assert signal.score(pred, cand, ctx) is None
@@ -589,7 +589,7 @@ def test_suppression_leaves_real_tokens_alone():
     signal = build_signal(
         SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
     )
-    ctx = ScoringContext(suppressed_tokens={"unknown"})
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}, {"vin": "1FUJGLDR0CSBP9784"}]})
     cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     assert signal.score(pred, cand, ctx) == 1.0
@@ -600,6 +600,27 @@ def test_suppressed_tokens_are_not_seeded():
     signal = build_signal(
         SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
     )
-    ctx = ScoringContext(suppressed_tokens={"gggg"})
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"gggg"}})
     clauses = signal.seed_clauses({"crashes": [{"vin": "GGGG"}]}, ctx)
     assert clauses == []
+
+
+def test_ignored_values_are_scoped_to_their_field():
+    # "0" is not a VIN but is a fine street number, so an ignore list keyed by
+    # field must not leak across attributes.
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"0"}})
+    assert ctx.is_ignored("crashes.vin", "0")
+    assert not ctx.is_ignored("phy_street", "0")
+
+
+def test_wildcard_ignore_applies_to_every_field():
+    ctx = ScoringContext(ignored_values={"*": {"n/a"}})
+    assert ctx.is_ignored("crashes.vin", "N/A")
+    assert ctx.is_ignored("anything.else", "n/a")
+
+
+def test_declared_ignore_values_are_case_insensitive():
+    # An operator writing "Unknown" in config must match a record's "UNKNOWN",
+    # or the ignore list silently does nothing.
+    ctx = ScoringContext(ignored_values={"crashes.vin": {"Unknown"}})
+    assert ctx.is_ignored("crashes.vin", "UNKNOWN")

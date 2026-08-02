@@ -82,7 +82,11 @@ class PhaseEntityMatch:
         if not self._preflight(source_index, finder.scored_subfields()):
             return
 
-        ctx = self._build_context(source_index, config.signals)
+        ctx = self._build_context(
+            source_index,
+            config.signals,
+            self._declared_ignored_values(config),
+        )
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
         run_id = uuid.uuid4().hex
         generated_at = datetime.datetime.now(datetime.UTC).isoformat()
@@ -175,6 +179,39 @@ class PhaseEntityMatch:
             return False
         return True
 
+    def _declared_ignored_values(self, config):
+        """Read entity-match.json's ignore_values into a field -> values map.
+
+        Exists so an operator can name a placeholder outright instead of
+        relying on it being common enough for the frequency scan to catch.
+        The two mechanisms cover different failures: frequency catches junk
+        nobody knew about, while a declaration catches a value that is
+        obviously meaningless but rare enough to slip under the threshold, and
+        documents the intent for the next reader.
+
+        Keyed by field path, with "*" applying to every field, because a value
+        that is junk in one attribute can be legitimate in another — "0" is
+        not a VIN but is a fine street number.
+        """
+        declared = getattr(config, "ignore_values", None)
+        if declared is None:
+            return {}
+        # Config loads through SimpleNamespace, so the field paths are
+        # attribute names on that namespace rather than dict keys.
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        ignored = {}
+        for field_path, values in as_dict.items():
+            if not values:
+                continue
+            ignored[field_path] = {str(v).strip().lower() for v in values}
+        if ignored:
+            self.logger.info(
+                "Config declares ignored values on {} field(s): {}".format(
+                    len(ignored), ", ".join(sorted(ignored))
+                )
+            )
+        return ignored
+
     def _suppressed_tokens(self, source_index, signal_configs):
         """Find "unique" token values that the corpus proves are not unique.
 
@@ -191,7 +228,7 @@ class PhaseEntityMatch:
         carriers is treated as non-identifying, which is the signal's own
         premise applied as a test.
         """
-        suppressed = set()
+        suppressed = {}
         for config in signal_configs:
             if config.type not in ("vin-overlap", "shared-token"):
                 continue
@@ -218,22 +255,31 @@ class PhaseEntityMatch:
                         "matches".format(field_name, e)
                     )
                     continue
-                for bucket in response["aggregations"]["vals"]["buckets"]:
-                    suppressed.add(str(bucket["key"]).strip().lower())
-        if suppressed:
+                found = {
+                    str(b["key"]).strip().lower()
+                    for b in response["aggregations"]["vals"]["buckets"]
+                }
+                if found:
+                    suppressed.setdefault(field_name, set()).update(found)
+        total = sum(len(v) for v in suppressed.values())
+        if total:
+            sample = sorted(next(iter(suppressed.values())))[:5]
             self.logger.info(
-                "Suppressing {} non-unique token values (e.g. {})".format(
-                    len(suppressed), sorted(suppressed)[:5]
+                "Suppressing {} non-unique token values across {} field(s) (e.g. {})".format(
+                    total, len(suppressed), sample
                 )
             )
         return suppressed
 
-    def _build_context(self, source_index, signal_configs):
-        """Gather BOC-3 agent frequencies once for IDF weighting."""
+    def _build_context(self, source_index, signal_configs, declared_ignored=None):
+        """Gather corpus statistics once per sweep: agent rarity and ignored values."""
+        declared_ignored = declared_ignored or {}
         suppressed = self._suppressed_tokens(source_index, signal_configs)
+        for field_path, values in declared_ignored.items():
+            suppressed.setdefault(field_path, set()).update(values)
         agent_config = next((c for c in signal_configs if c.type == "agent"), None)
         if agent_config is None:
-            return ScoringContext(suppressed_tokens=suppressed)
+            return ScoringContext(ignored_values=suppressed)
 
         keyword_field = "{}.keyword".format(agent_config.name_field)
         try:
@@ -250,7 +296,7 @@ class PhaseEntityMatch:
                 "to weight against and will score every shared agent at 0.0 (no "
                 "discriminating power) rather than fabricate a rarity value".format(e)
             )
-            return ScoringContext(suppressed_tokens=suppressed)
+            return ScoringContext(ignored_values=suppressed)
 
         buckets = response["aggregations"]["agents"]["buckets"]
         counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
@@ -272,7 +318,7 @@ class PhaseEntityMatch:
         return ScoringContext(
             agent_counts=counts,
             total_agent_carriers=total,
-            suppressed_tokens=suppressed,
+            ignored_values=suppressed,
         )
 
     def _generate_actions(

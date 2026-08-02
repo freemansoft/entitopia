@@ -61,6 +61,7 @@
     {
       "type": "vin-overlap",
       "weight": 0.08,
+      "conclusive": true,
       "max_shared_carriers": 5,
       "fields": [
         "crashes.vehicle_identification_number",
@@ -68,6 +69,15 @@
       ]
     }
   ],
+  "ignore_values": {
+    "crashes.vehicle_identification_number": [
+      "UNKNOWN", "UNKNOWN-REPAIR", "UNK", "NONE", "N/A", "NA", "GGGG",
+      "XXXXXXXXXXXXXXXXX"
+    ],
+    "inspections.units.insp_unit_vehicle_id_number": [
+      "UNKNOWN", "UNK", "NONE", "N/A", "NA"
+    ]
+  },
   "scoring": {
     "min_total_score": 0.35,
     "min_signals": 2,

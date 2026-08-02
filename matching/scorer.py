@@ -95,6 +95,10 @@ class PairScorer:
         if sum(s.weight for s in self.signals) <= 0:
             raise ValueError("signal weights sum to zero; nothing can be scored")
 
+        # Signal types whose firing alone clears min_total_score. Collected
+        # here rather than consulted per pair so the guard below stays a set
+        # membership test in the hot loop.
+        self.conclusive_types = {s.signal_type for s in self.signals if s.conclusive}
         self.min_total_score = float(getattr(scoring_config, "min_total_score", 0.0))
         self.min_signals = int(getattr(scoring_config, "min_signals", 1))
         self.require_identity_signal = bool(
@@ -158,7 +162,22 @@ class PairScorer:
             return None
         total_score = sum(c.contribution for c in contributions) / total_weight
 
-        if total_score < self.min_total_score:
+        # A conclusive signal that fired overrides the score floor. Averaging
+        # cannot represent "this one fact settles it": a shared non-placeholder
+        # VIN scores 1.0 at weight 0.08, so a pair sharing nothing else totals
+        # about 0.11 against a floor of 0.35 and was discarded — exactly the
+        # carrier that changed its name, address and phone but kept its trucks.
+        # Raising the weight enough to clear the floor on its own (~0.46) would
+        # make that signal dominate every other pair it touches, so the
+        # override is expressed as a guard rather than as weight.
+        #
+        # Only this floor is bypassed. min_signals and require_identity_signal
+        # still apply, so a conclusive signal cannot manufacture a match out of
+        # a pair with no other evaluable evidence.
+        if total_score < self.min_total_score and not any(
+            c.signal_type in self.conclusive_types and c.score > 0.0
+            for c in contributions
+        ):
             return None
 
         return ScoredPair(
