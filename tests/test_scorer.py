@@ -1,3 +1,10 @@
+"""Pair scoring: weight renormalization and the guards that reject a pair.
+
+The guards are the whole point of this module -- a pair can fire several
+signals and still be worth rejecting -- so most of these tests assert that
+something is NOT reported, and why.
+"""
+
 from types import SimpleNamespace
 
 import pytest

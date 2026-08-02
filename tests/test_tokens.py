@@ -1,3 +1,9 @@
+"""Token helpers: overlap measures and identifier normalization.
+
+Small pure functions, tested directly because every signal's score depends on
+them and a subtle change here shifts every result in a sweep without erroring.
+"""
+
 import pytest
 
 from matching.tokens import (

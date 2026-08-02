@@ -1,3 +1,16 @@
+"""Signal behaviour: what each kind of evidence scores, seeds, and ignores.
+
+Covers the three contracts signals must honour, because breaking any of them
+fails silently rather than loudly:
+
+- None (not evaluable) is distinct from 0.0 (evaluated, no similarity).
+- A signal seeds retrieval on the same values it later scores, so the sweep
+  never retrieves candidates it then refuses to credit.
+- Values the corpus shows are non-identifying are excluded from both.
+
+These run without a cluster; the logic is pure functions over token sets.
+"""
+
 import datetime
 from types import SimpleNamespace
 
