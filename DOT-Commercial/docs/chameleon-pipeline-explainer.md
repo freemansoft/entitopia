@@ -154,9 +154,89 @@ Query the `chameleon-candidates` index/alias directly — there's no separate su
 - `total_score >= 0.70` for high-confidence pairs (the README's own reviewed threshold — explicitly called "uncalibrated confidence, not probability")
 - `gap_days` for how soon after shutdown the successor appeared
 - `matched_on` to filter by which evidence types fired (e.g. VIN + address + phone together is much stronger than VIN alone)
-- `signals.*` nested fields if you want the per-signal explanation, not just the total
+- `signals.*` fields if you want the per-signal explanation, not just the total — note these are mapped as a plain `object`, not `nested`, so a query that filters on `signals.signal_type` **and** `signals.score` together can match a document where those values came from two _different_ array entries. Fine for the queries below, which only ever filter one `signals.*` field at a time; if you need to correlate two signal fields in the same query, pull the array client-side and filter in code instead.
 
-One quirk: VIN-only matches score low (~0.11) because of how the weighted average renormalizes, so they never rise to the top of a score-sorted view — the README says to find those by filtering `matched_on` for VIN overlap and sorting by `gap_days` instead.
+One quirk: VIN-only matches score low (~0.11) because of how the weighted average renormalizes, so they never rise to the top of a score-sorted view — the query below finds those by filtering `matched_on` for VIN overlap and sorting by `gap_days` instead.
+
+### Sample: high-confidence pairs, corroborated by more than a shared vehicle
+
+REST (e.g. Kibana Dev Tools, or `curl -X GET`):
+
+```
+GET chameleon-candidates-000001/_search
+{
+  "size": 50,
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "total_score": { "gte": 0.70 } } },
+        { "terms": { "matched_on": ["vin-overlap", "exact-identifier"] } }
+      ]
+    }
+  },
+  "sort": [ { "total_score": "desc" } ]
+}
+```
+
+Python, using this project's own client helper (`utils/elasticsearch_utils.py`) and the same explicit-keyword-argument style as `matching/candidates.py` — never `body=`, per this repo's Elasticsearch convention:
+
+```python
+from utils import elasticsearch_utils, file_utils
+
+es_config = file_utils.load_from_file("es_config.json")
+es = elasticsearch_utils.connect_to_es(es_config)
+
+response = es.search(
+    index="chameleon-candidates-000001",
+    size=50,
+    query={
+        "bool": {
+            "filter": [
+                {"range": {"total_score": {"gte": 0.70}}},
+                {"terms": {"matched_on": ["vin-overlap", "exact-identifier"]}},
+            ]
+        }
+    },
+    sort=[{"total_score": "desc"}],
+)
+
+for hit in response["hits"]["hits"]:
+    pair = hit["_source"]
+    print(
+        pair["predecessor"]["dot_number"],
+        "->",
+        pair["successor"]["dot_number"],
+        pair["total_score"],
+    )
+```
+
+### Sample: VIN-only pairs, triaged by gap instead of score
+
+These score low (~0.11) by design, so sort by `gap_days` rather than `total_score`:
+
+```
+GET chameleon-candidates-000001/_search
+{
+  "size": 50,
+  "query": {
+    "bool": {
+      "filter": [
+        { "term": { "matched_on": "vin-overlap" } }
+      ],
+      "must_not": [
+        {
+          "terms": {
+            "matched_on": ["name-phonetic", "name-token", "address", "exact-identifier"]
+          }
+        }
+      ]
+    }
+  },
+  "sort": [ { "gap_days": "asc" } ]
+}
+```
+
+The Python form is the same shape as the sample above — swap the `query` and `sort` arguments passed to `es.search(...)`.
 
 ## 7. Optional: using an LLM to help build the declared ignore list
 
