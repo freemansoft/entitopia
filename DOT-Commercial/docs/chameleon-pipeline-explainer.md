@@ -1,6 +1,8 @@
 # How DOT chameleon-carrier detection works — simple version
 
-_entitopia_ looks for carriers that shut down under one DOT registration and
+_entitopia_ is a proof of concept for using semantic matching and multi-property
+similarity as part of probabilistic entity resolution.  It llooks for carriers
+that shut down under one DOT registration and
 re-registered as a "new" carrier shortly after — a chameleon carrier. No
 single data point proves that happened: a shared address could be a filing
 agent, a shared name could be coincidence. But several weak signals pointing
@@ -9,8 +11,8 @@ _how much_ a shut-down carrier and a newly-registered one resemble each other
 across name, address, contact info, shared vehicles, and timing, then keeps
 the pairs with enough independent corroboration.
 
-Raw DOT registration data is noisy in ways that wreck that scoring:
-placeholder values ("UNKNOWN" VINs, (000) 000-0000 phone numbers),
+Raw DOT registration data is noisy and requires analysis.
+There are placeholder values ("UNKNOWN" VINs, (000) 000-0000 phone numbers),
 inconsistent date formats, and identifiers genuinely shared by hundreds of
 unrelated carriers (filing agents, insurance agencies). Left in, that noise
 hides real matches under formatting differences and manufactures fake ones
@@ -19,11 +21,14 @@ the data — some once at load time (date normalization, phonetic and
 fuzzy-searchable versions of names and addresses), some fresh at the start
 of every run (suppressing values too common to mean anything).
 
-Elasticsearch is used for two different jobs. First, as the engine that makes
+Elasticsearch is used for two different jobs.
+
+1. First, as the engine that makes
 fuzzy and phonetic search possible at all: its ingest pipelines and field
 mappings do the one-time cleanup and indexing, so sound-alike name and fuzzy
 address queries are fast instead of something Python computes pairwise over
-the whole dataset. Second, as a query and aggregation service the matching
+the whole dataset.
+2. Second, as a query and aggregation service the matching
 code calls during a run — finding candidate successors, counting how common a
 value is, fetching analyzed tokens. The scoring decisions (which weights,
 which thresholds, which pairs survive) stay in Python.
@@ -36,6 +41,8 @@ filtering on score, on days between shutdown and re-registration, or on which
 signals fired — without re-running the matching logic.
 
 ## Process Flow: who does the work at each step
+
+Diagram colors:
 
 - Blue = Python logic.
 - Amber = Elasticsearch working internally, no Python decision-making.
@@ -106,7 +113,7 @@ Counts are point-in-time against the July 2026 FMCSA extract used throughout thi
 | `out-of-service-orders` | `p2mt-9ige` | 394,963   | Carriers ordered out of service for safety, with reason/date/rescind date — flags who was shut down, a prime candidate for "who reappeared nearby afterward."                                                                                             |
 | `boc3-agents`           | `2emp-mxtb` | 1,860,604 | Each carrier's legal process agent (name + address). **Weak signal:** only 89 distinct agents cover all 1.43M filings, so two unrelated carriers share an agent roughly 7% of the time by chance. Used only as IDF-weighted corroboration at weight 0.04. |
 
-## 2. Problems in the raw data
+## 2. Problemsidentified in the raw data
 
 - **Placeholder values that look like real data**: VINs like `"UNKNOWN"`,
   `"GGGG"`, `"XXXXXXXXXXXXXXXXX"`; phone `(000) 000-0000` shows up on 664
@@ -120,7 +127,7 @@ Counts are point-in-time against the July 2026 FMCSA extract used throughout thi
   records, over-eager predecessor matching from a mapping issue, mixed
   date formats).
 
-## 3. How "ignore" values get identified — and whether that's persisted
+## 3. How "ignore" values get identified — and handled
 
 Two layers, both **Python** logic in `phase_entity_match.py`, running
 _before scoring starts_:
@@ -309,15 +316,13 @@ and `sort` arguments to `es.search(...)`.
 
 ## 8. Optional: using an LLM to help build the declared ignore list
 
-This works as a suggestion generator feeding a human-reviewed list, not as
-something that writes `entity-match.json` directly. It complements the two
-mechanisms in
-[§3](#3-how-ignore-values-get-identified--and-whether-thats-persisted)
+Claude LLM acted as a suggestion generator feeding a human-reviewed list, not as
+something that writes `entity-match.json` directly. It complements other mechanisms
 rather than replacing either:
 
 - The **frequency scan** only catches common values (shared by
   more than N carriers). A malformed VIN appearing on 3 carriers still
-  isn't identified — it's garbage — and the frequency scan has no way to
+  isn't identified as garbage — and the frequency scan has no way to
   notice.
 - An **LLM pass** covers that gap: it recognizes placeholders and
   formatting problems (obviously fake VINs, `dd-MMM-yy` and ISO dates
@@ -342,6 +347,6 @@ How it fits into the flow (the dotted path in the chart above):
 4. Once merged and committed, the addition is picked up the next time
    `_declared_ignored_values` reads the file. No code change needed.
 
-Run this when reviewing a new data extract or when the declared list seems
+Run this LLM flow when reviewing a new data extract or when the declared list seems
 stale, not as part of every sweep. It grows the hand-maintained list and
 leaves the per-run frequency scan untouched.
