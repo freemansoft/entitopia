@@ -160,7 +160,7 @@ held in memory in `ScoringContext`, used to score that run's pairs, then
 discarded. Every run recomputes it from scratch against current data, so
 there's no record of what a past run suppressed.
 
-## 4. Preprocessing before load into Elasticsearch — who does what
+## 4. Preprocessing before loading into Elasticsearch
 
 There are two different methods for preprocessing before the data lands in Elasticsearch:
 
@@ -332,9 +332,10 @@ and `sort` arguments to `es.search(...)`.
 
 ## 8. Optional: using an LLM to help build the declared ignore list
 
-Claude LLM acted as a suggestion generator feeding a human-reviewed list, not as
-something that writes `entity-match.json` directly. It complements other mechanisms
-rather than replacing either:
+Claude LLM acted as a suggestion generator feeding a human-reviewed list of invalid
+and placeholder values. It did not write `entity-match.json` directly.
+It did not generate the results.
+The LLM complements other mechanisms rather than replacing either:
 
 - The **frequency scan** only catches common values (shared by
   more than N carriers). A malformed VIN appearing on 3 carriers still
@@ -363,6 +364,6 @@ How it fits into the flow (the "Growing `entity-match.json`" chart above):
 4. Once merged and committed, the addition is picked up the next time
    `_declared_ignored_values` reads the file. No code change needed.
 
-Run this LLM flow when reviewing a new data extract or when the declared list seems
-stale, not as part of every sweep. It grows the hand-maintained list and
+Run this LLM flow when reviewing a new data extract or when the declared exclusion list seems
+stale, not as part of every dataset reload. It drives the hand-maintained list and
 leaves the per-run frequency scan untouched.
