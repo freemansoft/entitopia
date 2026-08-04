@@ -341,7 +341,7 @@ Both files need a `collapse_whitespace` filter added alongside the existing ones
 }
 ```
 
-**This goes beyond the spec text, which only called for adding `po_box_canon` to `street_clean`.** It is included because `punct_white` turns each punctuation mark into a space without collapsing the run, so without `collapse_whitespace` two identical addresses differing only in punctuation become different single tokens — the failure `DOT-Commercial/README.md` records for `55 CEDAR ST, STE 4` against `55 CEDAR ST STE 4`. Flag it in review; drop the step if the reviewer wants the spec followed literally.
+**This goes beyond the spec text, which only called for adding `po_box_canon` to `street_clean`. It was raised with the project owner before execution and confirmed: it stays.** `punct_white` turns each punctuation mark into a space without collapsing the run, so without `collapse_whitespace` two identical addresses differing only in punctuation become different single tokens — the failure `DOT-Commercial/README.md` records for `55 CEDAR ST, STE 4` against `55 CEDAR ST STE 4`. CMS-Providers has the identical latent defect, and shipping the new analyzer without the fix would knowingly carry it forward.
 
 - [ ] **Step 4: Add the `.tokens` subfield to the address fields**
 
@@ -575,14 +575,32 @@ Leave the `except BadRequestError` handler and the `put_alias` block below it un
 
 - [ ] **Step 6: Verify the stamp lands on a real index**
 
+Exercise both branches of the `if fingerprint` guard without reloading 2M documents. The positive case uses the carriers settings; the negative case is `chameleon-detection`, which has no `index-settings.json` at all:
+
 ```bash
-.venv/bin/python execute_project.py --project=DOT-Commercial --step=chameleon-detection --phase=index-create
-curl -s "localhost:9200/chameleon-candidates-*/_mapping" | .venv/bin/python -m json.tool | grep -A 3 '_meta'
+.venv/bin/python - <<'PY'
+import json
+from elasticsearch import Elasticsearch
+from utils.analysis_fingerprint import fingerprint_analysis
+
+client = Elasticsearch(hosts=[{"host": "localhost", "port": 9200, "scheme": "http"}], request_timeout=30)
+settings = json.load(open("DOT-Commercial/configuration/carriers/index-settings.json"))["settings"]
+fingerprint = fingerprint_analysis(settings)
+print("carriers fingerprint:", fingerprint)
+
+index = "test-fingerprint-stamp"
+client.options(ignore_status=404).indices.delete(index=index)
+client.indices.create(index=index, settings=settings, mappings={"_meta": {"analysis_fingerprint": fingerprint}})
+client.indices.put_mapping(index=index, properties={"phy_street": {"type": "text"}})
+for value in client.indices.get_mapping(index=index).body.values():
+    print("readback after put_mapping:", value["mappings"].get("_meta"))
+client.options(ignore_status=404).indices.delete(index=index)
+
+print("chameleon-detection settings:", fingerprint_analysis(None), "(no index-settings.json exists)")
+PY
 ```
 
-Expected: an `analysis_fingerprint` with a 16-character hex value. `chameleon-detection` is used here rather than `carriers` because its index-create is cheap and creates no data.
-
-Note: `chameleon-detection/index-settings.json` does not exist, so `get_index_settings()` returns `None` and no fingerprint is stamped. That is the correct behavior and confirms the `if fingerprint` guard — to see a real fingerprint, check the carriers index after Task 7's reload instead.
+Expected: a 16-character hex fingerprint, the same value surviving `put_mapping` in the readback (this is why the stamp goes in `_meta` rather than in the settings), and `None` for the step that declares no analyzers — which is what makes the `if fingerprint` guard necessary.
 
 - [ ] **Step 7: Lint and commit**
 
@@ -1188,7 +1206,7 @@ If nothing moved, skip the commit and say so.
 
 **Two deviations from the spec, both flagged in place for the reviewer:**
 
-1. Task 2 Step 3 adds `collapse_whitespace` to CMS-Providers, which the spec did not call for. Justified by the failure `DOT-Commercial/README.md` records; the step says to drop it if the reviewer wants the spec followed literally.
+1. Task 2 Step 3 adds `collapse_whitespace` to CMS-Providers, which the spec did not call for. Raised with the project owner before execution and confirmed to stay: CMS has the identical latent defect `DOT-Commercial/README.md` records.
 2. Task 4 introduces a `source_settings_step` config key the spec did not name. The spec required the comparison without saying how `phase_entity_match` would find the source index's settings, and it has no existing pointer to them.
 
 **Type consistency.** `fingerprint_analysis(settings) -> str | None` is defined in Task 3 and called with the same shape in Task 4 Step 4. `_check_analysis_fingerprint(self, source_index, stored, expected) -> bool` has the same signature in the Task 4 test and implementation. `_preflight` gains a third parameter in Step 5 and its only call site is updated in the same step.
