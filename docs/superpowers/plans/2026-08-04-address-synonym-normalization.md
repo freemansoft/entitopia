@@ -383,7 +383,7 @@ PY
 
 Expected output, for both index configs:
 
-```
+```text
 ... 'P.O. BOX 1234'       ['1234', 'pobox']
 ... '100 MAIN ST STE 200' ['100', '200', 'main', 'street']
 ... '100 1ST AVE'         ['100', '1st', 'avenue']
@@ -1004,7 +1004,7 @@ BASE=$(git log --format=%H --all -1 -- docs/superpowers/specs/2026-08-04-address
 
 Expected, within a few pairs of these figures from the spec:
 
-```
+```text
 changed 797/2000 (39.9%)
   up   7 (mean +0.0294)
   down 790 (mean -0.0736)
