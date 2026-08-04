@@ -1,7 +1,7 @@
 # How DOT chameleon-carrier detection works — simple version
 
 _entitopia_ is a proof of concept for using semantic matching and multi-property
-similarity as part of probabilistic entity resolution.  It llooks for carriers
+similarity as part of probabilistic entity resolution. It llooks for carriers
 that shut down under one DOT registration and
 re-registered as a "new" carrier shortly after — a chameleon carrier. No
 single data point proves that happened: a shared address could be a filing
@@ -24,14 +24,14 @@ of every run (suppressing values too common to mean anything).
 Elasticsearch is used for two different jobs.
 
 1. First, as the engine that makes
-fuzzy and phonetic search possible at all: its ingest pipelines and field
-mappings do the one-time cleanup and indexing, so sound-alike name and fuzzy
-address queries are fast instead of something Python computes pairwise over
-the whole dataset.
+   fuzzy and phonetic search possible at all: its ingest pipelines and field
+   mappings do the one-time cleanup and indexing, so sound-alike name and fuzzy
+   address queries are fast instead of something Python computes pairwise over
+   the whole dataset.
 2. Second, as a query and aggregation service the matching
-code calls during a run — finding candidate successors, counting how common a
-value is, fetching analyzed tokens. The scoring decisions (which weights,
-which thresholds, which pairs survive) stay in Python.
+   code calls during a run — finding candidate successors, counting how common a
+   value is, fetching analyzed tokens. The scoring decisions (which weights,
+   which thresholds, which pairs survive) stay in Python.
 
 Results go into their own Elasticsearch index rather than a file or database
 table, one document per surviving predecessor/successor pair, carrying the
@@ -50,6 +50,8 @@ Diagram colors:
 - Gray = a data store.
 - Green = LLM analysis (offline, optional). Pink =
   human review (offline, optional).
+
+### The sweep: CSV in, scored pairs out
 
 ```mermaid
 flowchart TD
@@ -75,29 +77,43 @@ flowchart TD
     WRITE --> RESULTS_IDX[("chameleon-candidates index")]
     RESULTS_IDX --> QUERY["You / any client query Elasticsearch directly<br/>(total_score, gap_days, matched_on)"]
 
+    classDef py fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef es fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef hybrid fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    classDef data fill:#e5e7eb,stroke:#6b7280,color:#111827
+
+    class LOAD_PY,DECL,CTX,SCORE,FILTER py
+    class PIPE,MAP es
+    class BULK,AGG,PREDQ,CANDQ,MTV,WRITE,QUERY hybrid
+    class CSV,CARRIERS_IDX,RESULTS_IDX data
+```
+
+### Growing `entity-match.json` (offline, optional)
+
+This path is not part of a sweep. It runs on a maintenance cadence to grow
+the declared ignore list, reading the same carrier index the sweep reads and
+ending at the config file the sweep's `DECL` step loads. Dotted arrows mark
+it as out-of-band. See
+[§8](#8-optional-using-an-llm-to-help-build-the-declared-ignore-list) below.
+
+```mermaid
+flowchart TD
+    CARRIERS_IDX[("carriers-000001 index")]
     CARRIERS_IDX -.-> DIST["Python/ES: pull distinct values per field<br/>(VIN, phone, fax, email — same aggregation<br/>machinery as the frequency scan)"]
     DIST -.-> LLM["LLM: flags placeholder patterns,<br/>inconsistent date formats, and<br/>candidate too-common-to-be-identifying values"]
     LLM -.-> HUMAN["Human: reviews and approves<br/>suggestions before merging"]
-    HUMAN -.->|"edits"| DECL
+    HUMAN -.->|"edits"| ENTITY_JSON[("entity-match.json")]
 
-    classDef py fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
-    classDef es fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef hybrid fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
     classDef data fill:#e5e7eb,stroke:#6b7280,color:#111827
     classDef llm fill:#dcfce7,stroke:#16a34a,color:#14532d
     classDef human fill:#fce7f3,stroke:#db2777,color:#831843
 
-    class LOAD_PY,DECL,CTX,SCORE,FILTER py
-    class PIPE,MAP es
-    class BULK,AGG,PREDQ,CANDQ,MTV,WRITE,QUERY,DIST hybrid
-    class CSV,CARRIERS_IDX,RESULTS_IDX data
+    class DIST hybrid
+    class CARRIERS_IDX,ENTITY_JSON data
     class LLM llm
     class HUMAN human
 ```
-
-The dotted path is offline and optional — it runs on a maintenance cadence to
-grow `entity-match.json`, not on every sweep. See
-[§8](#8-optional-using-an-llm-to-help-build-the-declared-ignore-list) below.
 
 ## 1. Dataset sizes
 
@@ -329,7 +345,7 @@ rather than replacing either:
   mixed in one column, phone numbers like `(111) 111-1111`) without
   needing them to already be common.
 
-How it fits into the flow (the dotted path in the chart above):
+How it fits into the flow (the "Growing `entity-match.json`" chart above):
 
 1. Pull the **distinct values** per field, not full rows — reuse the
    aggregation machinery already behind the frequency scan (`terms` agg on
