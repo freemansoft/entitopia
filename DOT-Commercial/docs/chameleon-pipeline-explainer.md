@@ -1,15 +1,23 @@
 # How DOT chameleon-carrier detection works — simple version
 
 _entitopia_ is a proof of concept for using semantic matching and multi-property
-similarity as part of probabilistic entity resolution. It llooks for carriers
-that shut down under one DOT registration and
-re-registered as a "new" carrier shortly after — a chameleon carrier. No
-single data point proves that happened: a shared address could be a filing
-agent, a shared name could be coincidence. But several weak signals pointing
-at the same successor are hard to explain by chance. So the pipeline scores
-_how much_ a shut-down carrier and a newly-registered one resemble each other
-across name, address, contact info, shared vehicles, and timing, then keeps
-the pairs with enough independent corroboration.
+similarity as part of probabilistic entity resolution. It looks for an
+_indicator_: a carrier that shut down under one DOT registration while a
+closely-resembling "new" carrier registered shortly after. That pattern has
+plenty of legitimate explanations — a business restructuring, a sale, a
+partner buying out the other, a clerical re-filing — but it has also
+historically been how a chameleon carrier sheds a safety record. The pipeline
+surfaces pairs that fit the shape so a human can decide whether they are worth
+investigating further.
+
+Nothing here is a finding. No single data point proves anything: a shared
+address could be a filing agent, a shared name could be coincidence. But
+several weak signals pointing at the same successor are hard to explain by
+chance, and that is what makes a pair worth a closer look. So the pipeline
+scores _how much_ a shut-down carrier and a newly-registered one resemble each
+other across name, address, contact info, shared vehicles, and timing, then
+keeps the pairs with enough independent corroboration to justify the effort of
+investigating them.
 
 Raw DOT registration data is noisy and requires analysis.
 There are placeholder values ("UNKNOWN" VINs, (000) 000-0000 phone numbers),
