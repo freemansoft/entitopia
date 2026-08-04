@@ -8,11 +8,11 @@ The old FMCSA/Senture FTP and HTTPS zip-file download model (`FMCSA_CENSUS1_*.zi
 
 Verified live against the real API during design (not guessed):
 
-| Old file | New dataset | Dataset ID | Rows (as of design time) | Update freq |
-|---|---|---|---|---|
-| `FMCSA_CENSUS1_*.zip` | SMS Input - Motor Carrier Census Information | `kjg3-diqy` | 2,085,534 | Monthly |
-| `Crash_*.zip` | Crash File | `aayw-vxb3` | 4,970,017 (back to 1990) | Daily |
-| `Inspection_*.zip` | Vehicle Inspection File | `fx4q-ay7w` | 8,310,286 | Daily |
+| Old file              | New dataset                                  | Dataset ID  | Rows (as of design time) | Update freq |
+| --------------------- | -------------------------------------------- | ----------- | ------------------------ | ----------- |
+| `FMCSA_CENSUS1_*.zip` | SMS Input - Motor Carrier Census Information | `kjg3-diqy` | 2,085,534                | Monthly     |
+| `Crash_*.zip`         | Crash File                                   | `aayw-vxb3` | 4,970,017 (back to 1990) | Daily       |
+| `Inspection_*.zip`    | Vehicle Inspection File                      | `fx4q-ay7w` | 8,310,286                | Daily       |
 
 Census match confirmed by field name: `DOT_NUMBER` is the first column, matching the existing `carriers/index-config.json`'s `id_field`.
 
@@ -36,29 +36,29 @@ New file:
 
 ```json
 {
-    "base_url": "https://data.transportation.gov",
-    "app_token_env_var": "SOCRATA_APP_TOKEN",
-    "page_size": 50000,
-    "datasets": {
-        "carriers": {
-            "dataset_id": "kjg3-diqy",
-            "output": "data/carriers/carriers.csv",
-            "date_field": null,
-            "window_months": null
-        },
-        "crashes": {
-            "dataset_id": "aayw-vxb3",
-            "output": "data/crashes/crashes.csv",
-            "date_field": "report_date",
-            "window_months": 24
-        },
-        "inspections": {
-            "dataset_id": "fx4q-ay7w",
-            "output": "data/inspections/inspections.csv",
-            "date_field": "insp_date",
-            "window_months": 24
-        }
+  "base_url": "https://data.transportation.gov",
+  "app_token_env_var": "SOCRATA_APP_TOKEN",
+  "page_size": 50000,
+  "datasets": {
+    "carriers": {
+      "dataset_id": "kjg3-diqy",
+      "output": "data/carriers/carriers.csv",
+      "date_field": null,
+      "window_months": null
+    },
+    "crashes": {
+      "dataset_id": "aayw-vxb3",
+      "output": "data/crashes/crashes.csv",
+      "date_field": "report_date",
+      "window_months": 24
+    },
+    "inspections": {
+      "dataset_id": "fx4q-ay7w",
+      "output": "data/inspections/inspections.csv",
+      "date_field": "insp_date",
+      "window_months": 24
     }
+  }
 }
 ```
 

@@ -43,7 +43,7 @@ queries — filtering on score, on the number of days between shutdown and
 re-registration, or on which specific signals fired — without needing to
 re-run the matching logic.
 
-## Flow chart: who does the work at each step
+## Process Flow: who does the work at each step
 
 Blue = pure Python logic. Amber = Elasticsearch working internally (no Python
 decision-making involved). Purple = Python sends a query/request and
@@ -97,15 +97,29 @@ flowchart TD
 
 The dotted path is offline and optional — it runs on some maintenance
 cadence to help grow `entity-match.json`, not on every sweep. See
-[§7](#7-optional-using-an-llm-to-help-build-the-declared-ignore-list) below.
+[§8](#8-optional-using-an-llm-to-help-build-the-declared-ignore-list) below.
 
-## 1. Problems in the raw data
+## 1. Dataset sizes
+
+Copied from the `## Datasets` table in the [DOT-Commercial README](../README.md#datasets) — counts are point-in-time against the same July 2026 FMCSA extract used throughout this document, and will differ on a fresh download.
+
+| Step                    | Socrata ID  | Rows      | Purpose                                                                                                                                                                                                                                                   |
+| ----------------------- | ----------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `carriers`              | `kjg3-diqy` | 2,085,534 | Carrier census — the core entity each other dataset enriches.                                                                                                                                                                                             |
+| `crashes`               | `aayw-vxb3` | 333,300   | Crash history per carrier.                                                                                                                                                                                                                                |
+| `inspections`           | `fx4q-ay7w` | 5,647,567 | Vehicle inspection history per carrier.                                                                                                                                                                                                                   |
+| `inspections-per-unit`  | `wt8s-2hbx` | 9,620,293 | Per-unit VIN/vehicle detail, enriched onto `inspections`.                                                                                                                                                                                                 |
+| `auth-history`          | `9mw4-x3tu` | 4,941,925 | Every authority grant/revocation event per carrier — the reincarnation-timing signal for shadow/chameleon carriers (revoked → new DOT# granted soon after).                                                                                               |
+| `out-of-service-orders` | `p2mt-9ige` | 394,963   | Carriers ordered out of service for safety, with reason/date/rescind date — flags who was shut down, a prime candidate for "who reappeared nearby afterward."                                                                                             |
+| `boc3-agents`           | `2emp-mxtb` | 1,860,604 | Each carrier's legal process agent (name + address). **Weak signal:** only 89 distinct agents cover all 1.43M filings, so two unrelated carriers share an agent roughly 7% of the time by chance. Used only as IDF-weighted corroboration at weight 0.04. |
+
+## 2. Problems in the raw data
 
 - **Placeholder values that look like real data but aren't**: VINs like `"UNKNOWN"`, `"GGGG"`, `"XXXXXXXXXXXXXXXXX"`; phone `(000) 000-0000` shows up on 664 carriers in the current extract.
 - **Legitimately shared contact info**: BOC-3 filing agents, permit services, and insurance agencies sit on the paperwork for hundreds of unrelated carriers. Only 89 distinct filing agents cover 1.43M filings — two random carriers share an agent ~7% of the time by pure chance, so that alone proves nothing.
 - A few data-modeling bugs noted in the README (dropped inspection records, over-eager predecessor matching from a mapping issue, mixed date formats).
 
-## 2. How "ignore" values get identified — and whether that's persisted
+## 3. How "ignore" values get identified — and whether that's persisted
 
 Two layers, both plain **Python** logic in `phase_entity_match.py`, running _before scoring starts_ — not inside Elasticsearch:
 
@@ -114,7 +128,7 @@ Two layers, both plain **Python** logic in `phase_entity_match.py`, running _bef
 
 **Persistence: no.** The merged suppression set is computed once per sweep, held in memory in a `ScoringContext` object, used to score that run's pairs, then discarded. Nothing is written back to Elasticsearch or disk — every run recomputes it from scratch against current data, so there's no historical record of what got suppressed in a past run.
 
-## 3. Preprocessing before load into Elasticsearch — who does what
+## 4. Preprocessing before load into Elasticsearch — who does what
 
 Two genuinely different mechanisms:
 
@@ -124,9 +138,9 @@ Two genuinely different mechanisms:
   - "Enrich" processors that attach each carrier's related inspections, crashes, authority history, out-of-service orders, and BOC-3 agents by looking up `dot_number`.
 - **Field mappings** (also ES config, applied at index-creation time): auto-generate multiple searchable variants of each field. Names get an exact `.keyword`, a cleaned `.clean`, and two phonetic encodings (double-metaphone, Beider-Morse) — both strip suffixes like "LLC"/"trucking"/"logistics" first. Addresses get an exact form and a fuzzy token form with street-suffix synonyms (`st`→`street`).
 
-So: ingest pipelines and mappings are **Elasticsearch working internally**, driven by config Python wrote once at setup. The ignore-list/frequency-scan from question 2 is a **separate, later Python step** at matching time, using Elasticsearch only to fetch counts.
+So: ingest pipelines and mappings are **Elasticsearch working internally**, driven by config Python wrote once at setup. The ignore-list/frequency-scan from question 3 is a **separate, later Python step** at matching time, using Elasticsearch only to fetch counts.
 
-## 4. How Elasticsearch is queried, with what weights
+## 5. How Elasticsearch is queried, with what weights
 
 For each carrier that went out of service, the code finds up to 500 "candidate" successor carriers via a broad OR query on name-sound, address, exact-ID, and VIN overlap. Then each candidate is scored against 8 weighted signals:
 
@@ -143,11 +157,11 @@ For each carrier that went out of service, the code finds up to 500 "candidate" 
 
 A pair needs at least 2 independent evidence sources and at least one "identity" signal (not just timing/agent alone) to survive. Normally needs a combined score ≥0.35, **except** shared-VIN pairs bypass that floor since a shared vehicle is treated as conclusive on its own — even though the math gives it a low numeric score.
 
-## 5. What's returned, where it lands, weights included?
+## 6. What's returned, where it lands, weights included?
 
 Each surviving pair becomes a document in a `chameleon-candidates` index: predecessor summary, successor summary, `total_score`, `gap_days`, which signals fired (`matched_on`), and — yes — **a full per-signal breakdown** (`signal_type`, `weight`, `score`, `contribution` for each signal), so you can see exactly why a pair scored what it did, not just the final number.
 
-## 6. Querying the stored results afterward
+## 7. Querying the stored results afterward
 
 Query the `chameleon-candidates` index/alias directly — there's no separate summary report, the index _is_ the report. Useful fields:
 
@@ -238,11 +252,11 @@ GET chameleon-candidates-000001/_search
 
 The Python form is the same shape as the sample above — swap the `query` and `sort` arguments passed to `es.search(...)`.
 
-## 7. Optional: using an LLM to help build the declared ignore list
+## 8. Optional: using an LLM to help build the declared ignore list
 
 **Is this a valid strategy? Yes — as a suggestion generator feeding a human-reviewed list, not as something that writes `entity-match.json` directly.**
 
-It's a genuine complement to the two mechanisms in [§2](#2-how-ignore-values-get-identified--and-whether-thats-persisted), not a replacement for either:
+It's a genuine complement to the two mechanisms in [§3](#3-how-ignore-values-get-identified--and-whether-thats-persisted), not a replacement for either:
 
 - The **frequency scan** only catches values that are literally common (shared by more than N carriers). It can't catch a junk value that happens to be rare — a malformed VIN that only appears on 3 carriers still isn't identifying, it's just garbage, and the frequency scan has no way to notice that.
 - An **LLM pass** is good at exactly that gap: pattern-recognizing placeholders and formatting problems (obviously-fake VINs, `dd-MMM-yy` vs. ISO dates mixed in the same column, phone numbers like `(111) 111-1111`) without needing them to already be common.
