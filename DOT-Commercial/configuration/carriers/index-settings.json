@@ -5,6 +5,13 @@
       "number_of_shards": 1,
       "number_of_replicas": 1,
       "analysis": {
+        "char_filter": {
+          "po_box_canon": {
+            "type": "pattern_replace",
+            "pattern": "(?i)\\bp[.\\s]*o[.\\s]*(box|b\\b)",
+            "replacement": "pobox"
+          }
+        },
         "filter": {
           "phonetic_dm": {
             "type": "phonetic",
@@ -47,26 +54,57 @@
               "the"
             ]
           },
-          "street_suffix_synonyms": {
+          "street_suffix_canon": {
             "type": "synonym",
             "lenient": true,
             "synonyms": [
-              "st, street",
-              "ave, av, avenue",
-              "rd, road",
-              "blvd, boulevard",
-              "dr, drive",
-              "ln, lane",
-              "hwy, highway",
-              "pkwy, parkway",
-              "ct, court",
-              "cir, circle",
-              "ste, suite",
-              "apt, apartment",
-              "n, north",
-              "s, south",
-              "e, east",
-              "w, west"
+              "st, str, strt => street",
+              "ave, av, aven, avenu, avn => avenue",
+              "rd => road",
+              "blvd, boul, boulv => boulevard",
+              "dr, drv, driv => drive",
+              "ln => lane",
+              "hwy, hiway, highwy, hway => highway",
+              "pkwy, pky, parkwy, pkway => parkway",
+              "ct, crt => court",
+              "cir, circ, circl, crcl => circle",
+              "pl => place",
+              "ter, terr => terrace",
+              "sq, sqr, squ => square",
+              "trl, tr => trail",
+              "expy, expwy, expr => expressway",
+              "tpke, trnpk, turnpk => turnpike",
+              "frwy, fwy, freewy => freeway",
+              "rte, rt => route",
+              "byp, bypa, bypas => bypass",
+              "ext, extn => extension",
+              "lk => lake",
+              "mt, mnt => mount",
+              "pt => point",
+              "rdg, rdge => ridge",
+              "spg, spng, sprng => spring",
+              "vly, vlly => valley",
+              "xing, crssng => crossing",
+              "plz, plza => plaza",
+              "ctr, cen, cent, centre => center",
+              "n, no, nth => north",
+              "s, so, sth => south",
+              "e, ea => east",
+              "w, we => west",
+              "ne => northeast",
+              "nw => northwest",
+              "se => southeast",
+              "sw => southwest"
+            ]
+          },
+          "unit_designator_stop": {
+            "type": "stop",
+            "ignore_case": true,
+            "stopwords": [
+              "ste", "suite", "apt", "apartment", "unit", "rm", "room",
+              "bldg", "building", "fl", "floor", "trlr", "trailer", "lot",
+              "sp", "space", "pmb", "dept", "department", "hngr", "hangar",
+              "ofc", "office", "slip", "pier"
             ]
           },
           "punct_white": {
@@ -111,18 +149,14 @@
             "tokenizer": "standard"
           },
           "street_clean": {
-            "filter": [
-              "icu_normalizer",
-              "icu_folding",
-              "punct_white",
-              "collapse_whitespace",
-              "trim"
-            ],
-            "tokenizer": "keyword"
+            "char_filter": ["po_box_canon"],
+            "tokenizer": "keyword",
+            "filter": ["icu_normalizer", "icu_folding", "punct_white", "collapse_whitespace", "trim"]
           },
           "street_tokens": {
-            "filter": ["icu_normalizer", "icu_folding", "punct_white", "street_suffix_synonyms"],
-            "tokenizer": "standard"
+            "char_filter": ["po_box_canon"],
+            "tokenizer": "standard",
+            "filter": ["icu_normalizer", "icu_folding", "punct_white", "unit_designator_stop", "street_suffix_canon"]
           },
           "phone_clean": {
             "filter": ["remove_non_digits"],
