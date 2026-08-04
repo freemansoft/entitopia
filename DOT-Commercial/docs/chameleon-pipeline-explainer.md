@@ -313,7 +313,7 @@ for hit in response["hits"]["hits"]:
 These score low (~0.11) by design, so sort by `gap_days` rather than
 `total_score`:
 
-```
+```json
 GET chameleon-candidates-000001/_search
 {
   "size": 50,
