@@ -3,53 +3,47 @@
 ## Purpose and theory of operation
 
 This pipeline looks for carriers that shut down under one DOT registration and
-appear to have re-registered as a "new" carrier shortly after — a pattern
-sometimes called a chameleon carrier. The underlying theory is that no single
-data point proves this (a shared address could be a filing agent, a shared
-name could be a coincidence), but several weak, independently-noisy signals
-pointing at the same successor carrier are much harder to explain by chance
-than any one of them alone. So the pipeline doesn't look for an exact match —
-it scores _how much_ a shut-down carrier and a newly-registered carrier
-resemble each other across name, address, contact info, shared vehicles, and
-timing, then keeps only the pairs with enough independent corroboration.
+re-registered as a "new" carrier shortly after — a chameleon carrier. No
+single data point proves that happened: a shared address could be a filing
+agent, a shared name could be coincidence. But several weak signals pointing
+at the same successor are hard to explain by chance. So the pipeline scores
+_how much_ a shut-down carrier and a newly-registered one resemble each other
+across name, address, contact info, shared vehicles, and timing, then keeps
+the pairs with enough independent corroboration.
 
-Raw DOT registration data is noisy in ways that would otherwise wreck that
-scoring: placeholder values (`"UNKNOWN"` VINs, `(000) 000-0000` phone
-numbers), inconsistent date formats, and identifiers that are genuinely shared
-by hundreds of unrelated carriers (filing agents, insurance agencies). If left
-in, that noise would either hide real matches under formatting differences or
-manufacture fake ones out of coincidental shared junk. Preprocessing exists to
-strip that out before scoring ever sees the data — some of it once at load
-time (date normalization, building phonetic/fuzzy-searchable versions of names
-and addresses), some of it fresh at the start of every run (suppressing values
-too common to mean anything).
+Raw DOT registration data is noisy in ways that wreck that scoring:
+placeholder values (`"UNKNOWN"` VINs, `(000) 000-0000` phone numbers),
+inconsistent date formats, and identifiers genuinely shared by hundreds of
+unrelated carriers (filing agents, insurance agencies). Left in, that noise
+hides real matches under formatting differences and manufactures fake ones out
+of coincidental junk. Preprocessing strips it out before scoring sees the data
+— some once at load time (date normalization, phonetic and fuzzy-searchable
+versions of names and addresses), some fresh at the start of every run
+(suppressing values too common to mean anything).
 
-Elasticsearch is used for two different jobs, not one. First, as the engine
-that makes fuzzy/phonetic search possible at all — its ingest pipelines and
-field mappings do the one-time cleanup and indexing work, so name-sound-alike
-and address-fuzzy-match queries are fast rather than something Python would
-have to compute pairwise over the whole dataset. Second, as a query and
-aggregation service the matching code calls repeatedly during a run — to find
-candidate successor carriers, to count how common a value is, to fetch
-analyzed tokens — while the actual scoring decisions (which weights, which
-thresholds, which pairs survive) stay in Python, not in Elasticsearch.
+Elasticsearch is used for two different jobs. First, as the engine that makes
+fuzzy and phonetic search possible at all: its ingest pipelines and field
+mappings do the one-time cleanup and indexing, so sound-alike name and fuzzy
+address queries are fast instead of something Python computes pairwise over
+the whole dataset. Second, as a query and aggregation service the matching
+code calls during a run — finding candidate successors, counting how common a
+value is, fetching analyzed tokens. The scoring decisions (which weights,
+which thresholds, which pairs survive) stay in Python.
 
-Results are written back into their own Elasticsearch index rather than a
-file or database table, one document per surviving predecessor/successor
-pair, carrying both the total score and the full per-signal breakdown that
-produced it. That makes the index itself the report: anyone (an analyst, a
-dashboard, a script) can query it after the fact with ordinary Elasticsearch
-queries — filtering on score, on the number of days between shutdown and
-re-registration, or on which specific signals fired — without needing to
-re-run the matching logic.
+Results go into their own Elasticsearch index rather than a file or database
+table, one document per surviving predecessor/successor pair, carrying the
+total score and the full per-signal breakdown behind it. The index is the
+report: an analyst, a dashboard, or a script can query it afterward —
+filtering on score, on days between shutdown and re-registration, or on which
+signals fired — without re-running the matching logic.
 
 ## Process Flow: who does the work at each step
 
-Blue = pure Python logic. Amber = Elasticsearch working internally (no Python
-decision-making involved). Purple = Python sends a query/request and
-Elasticsearch does the actual computation (search, aggregation, term
-vectors) before Python acts on the answer. Gray = a data store. Green =
-LLM analysis (offline, optional). Pink = human review (offline, optional).
+Blue = Python logic. Amber = Elasticsearch working internally, no Python
+decision-making. Purple = Python sends a query and Elasticsearch does the
+computation (search, aggregation, term vectors) before Python acts on the
+answer. Gray = a data store. Green = LLM analysis (offline, optional). Pink =
+human review (offline, optional).
 
 ```mermaid
 flowchart TD
@@ -95,13 +89,13 @@ flowchart TD
     class HUMAN human
 ```
 
-The dotted path is offline and optional — it runs on some maintenance
-cadence to help grow `entity-match.json`, not on every sweep. See
+The dotted path is offline and optional — it runs on a maintenance cadence to
+grow `entity-match.json`, not on every sweep. See
 [§8](#8-optional-using-an-llm-to-help-build-the-declared-ignore-list) below.
 
 ## 1. Dataset sizes
 
-Copied from the `## Datasets` table in the [DOT-Commercial README](../README.md#datasets) — counts are point-in-time against the same July 2026 FMCSA extract used throughout this document, and will differ on a fresh download.
+Copied from the `## Datasets` table in the [DOT-Commercial README](../README.md#datasets). Counts are point-in-time against the July 2026 FMCSA extract used throughout this document, and will differ on a fresh download.
 
 | Step                    | Socrata ID  | Rows      | Purpose                                                                                                                                                                                                                                                   |
 | ----------------------- | ----------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -115,34 +109,34 @@ Copied from the `## Datasets` table in the [DOT-Commercial README](../README.md#
 
 ## 2. Problems in the raw data
 
-- **Placeholder values that look like real data but aren't**: VINs like `"UNKNOWN"`, `"GGGG"`, `"XXXXXXXXXXXXXXXXX"`; phone `(000) 000-0000` shows up on 664 carriers in the current extract.
-- **Legitimately shared contact info**: BOC-3 filing agents, permit services, and insurance agencies sit on the paperwork for hundreds of unrelated carriers. Only 89 distinct filing agents cover 1.43M filings — two random carriers share an agent ~7% of the time by pure chance, so that alone proves nothing.
+- **Placeholder values that look like real data**: VINs like `"UNKNOWN"`, `"GGGG"`, `"XXXXXXXXXXXXXXXXX"`; phone `(000) 000-0000` shows up on 664 carriers in the current extract.
+- **Legitimately shared contact info**: BOC-3 filing agents, permit services, and insurance agencies sit on the paperwork for hundreds of unrelated carriers. Only 89 distinct filing agents cover 1.43M filings — two random carriers share an agent ~7% of the time by chance, so that alone proves nothing.
 - A few data-modeling bugs noted in the README (dropped inspection records, over-eager predecessor matching from a mapping issue, mixed date formats).
 
 ## 3. How "ignore" values get identified — and whether that's persisted
 
-Two layers, both plain **Python** logic in `phase_entity_match.py`, running _before scoring starts_ — not inside Elasticsearch:
+Two layers, both **Python** logic in `phase_entity_match.py`, running _before scoring starts_:
 
 - **A declared list** in config (`entity-match.json`) — hand-maintained junk values like the ones above.
-- **An automatic frequency scan** — Python asks Elasticsearch (a `terms` aggregation query) "which values are shared by more than N carriers?" (N = 5 for VINs, 20 for phone/email/fax). Elasticsearch just answers the count; the _decision_ to treat those values as noise is Python's.
+- **An automatic frequency scan** — Python asks Elasticsearch (a `terms` aggregation) "which values are shared by more than N carriers?" (N = 5 for VINs, 20 for phone/email/fax). Elasticsearch answers the count; the _decision_ to treat those values as noise is Python's.
 
-**Persistence: no.** The merged suppression set is computed once per sweep, held in memory in a `ScoringContext` object, used to score that run's pairs, then discarded. Nothing is written back to Elasticsearch or disk — every run recomputes it from scratch against current data, so there's no historical record of what got suppressed in a past run.
+**Persistence: no.** The merged suppression set is computed once per sweep, held in memory in a `ScoringContext`, used to score that run's pairs, then discarded. Every run recomputes it from scratch against current data, so there's no record of what a past run suppressed.
 
 ## 4. Preprocessing before load into Elasticsearch — who does what
 
-Two genuinely different mechanisms:
+Two different mechanisms:
 
-- **Python (at load time)**: reads the CSV via pandas, converts blanks to `None`, bulk-indexes each row with a computed document ID (`dot_number`), tagging which ingest pipeline to route through. That's it — Python doesn't clean the data itself here.
-- **Elasticsearch ingest pipelines (at index time, inside the ES server)**: this is the real cleanup, and it runs _inside Elasticsearch_, not in Python. Pipelines are defined as JSON (`pipelines.json`); Python registers them once via the ES API, then Elasticsearch's own scripting (Painless) and processors transform every document that flows through:
-  - Reformat legacy Oracle dates (`dd-MMM-yy` → ISO, with a century-pivot rule, silently dropping the field rather than failing the whole document if unparseable).
-  - "Enrich" processors that attach each carrier's related inspections, crashes, authority history, out-of-service orders, and BOC-3 agents by looking up `dot_number`.
-- **Field mappings** (also ES config, applied at index-creation time): auto-generate multiple searchable variants of each field. Names get an exact `.keyword`, a cleaned `.clean`, and two phonetic encodings (double-metaphone, Beider-Morse) — both strip suffixes like "LLC"/"trucking"/"logistics" first. Addresses get an exact form and a fuzzy token form with street-suffix synonyms (`st`→`street`).
+- **Python (at load time)**: reads the CSV via pandas, converts blanks to `None`, bulk-indexes each row with a computed document ID (`dot_number`), tagging which ingest pipeline to route through. Python doesn't clean the data itself here.
+- **Elasticsearch ingest pipelines (at index time)**: the real cleanup. Pipelines are defined as JSON (`pipelines.json`); Python registers them once via the ES API, then Elasticsearch's own scripting (Painless) and processors transform every document that flows through:
+  - Reformat legacy Oracle dates (`dd-MMM-yy` → ISO, with a century-pivot rule, dropping the field rather than failing the whole document if unparseable).
+  - "Enrich" processors attach each carrier's inspections, crashes, authority history, out-of-service orders, and BOC-3 agents by looking up `dot_number`.
+- **Field mappings** (also ES config, applied at index creation): generate multiple searchable variants of each field. Names get an exact `.keyword`, a cleaned `.clean`, and two phonetic encodings (double-metaphone, Beider-Morse) — both strip suffixes like "LLC"/"trucking"/"logistics" first. Addresses get an exact form and a fuzzy token form with street-suffix synonyms (`st`→`street`).
 
-So: ingest pipelines and mappings are **Elasticsearch working internally**, driven by config Python wrote once at setup. The ignore-list/frequency-scan from question 3 is a **separate, later Python step** at matching time, using Elasticsearch only to fetch counts.
+Ingest pipelines and mappings are Elasticsearch working internally, driven by config Python wrote once at setup. The ignore list and frequency scan from §3 are a separate, later Python step at matching time, using Elasticsearch only to fetch counts.
 
 ## 5. How Elasticsearch is queried, with what weights
 
-For each carrier that went out of service, the code finds up to 500 "candidate" successor carriers via a broad OR query on name-sound, address, exact-ID, and VIN overlap. Then each candidate is scored against 8 weighted signals:
+For each carrier that went out of service, the code finds up to 500 candidate successors via a broad OR query on name-sound, address, exact-ID, and VIN overlap. Each candidate is then scored against 8 weighted signals:
 
 | Signal                                           | Weight                           |
 | ------------------------------------------------ | -------------------------------- |
@@ -155,22 +149,22 @@ For each carrier that went out of service, the code finds up to 500 "candidate" 
 | Temporal gap (shutdown → re-registration timing) | 0.05                             |
 | Filing agent overlap                             | 0.04 (rarity-weighted, not flat) |
 
-A pair needs at least 2 independent evidence sources and at least one "identity" signal (not just timing/agent alone) to survive. Normally needs a combined score ≥0.35, **except** shared-VIN pairs bypass that floor since a shared vehicle is treated as conclusive on its own — even though the math gives it a low numeric score.
+A pair needs at least 2 independent evidence sources, at least one "identity" signal (not just timing or agent), and a combined score ≥0.35 to survive. Shared-VIN pairs bypass the score floor — a shared vehicle is treated as conclusive on its own, even though the math gives it a low numeric score.
 
 ## 6. What's returned, where it lands, weights included?
 
-Each surviving pair becomes a document in a `chameleon-candidates` index: predecessor summary, successor summary, `total_score`, `gap_days`, which signals fired (`matched_on`), and — yes — **a full per-signal breakdown** (`signal_type`, `weight`, `score`, `contribution` for each signal), so you can see exactly why a pair scored what it did, not just the final number.
+Each surviving pair becomes a document in a `chameleon-candidates` index: predecessor summary, successor summary, `total_score`, `gap_days`, which signals fired (`matched_on`), and a full per-signal breakdown (`signal_type`, `weight`, `score`, `contribution`), so you can see why a pair scored what it did rather than just the final number.
 
 ## 7. Querying the stored results afterward
 
-Query the `chameleon-candidates` index/alias directly — there's no separate summary report, the index _is_ the report. Useful fields:
+Query the `chameleon-candidates` index/alias directly — there's no separate summary report. Useful fields:
 
-- `total_score >= 0.70` for high-confidence pairs (the README's own reviewed threshold — explicitly called "uncalibrated confidence, not probability")
+- `total_score >= 0.70` for high-confidence pairs (the README's reviewed threshold, and explicitly "uncalibrated confidence, not probability")
 - `gap_days` for how soon after shutdown the successor appeared
-- `matched_on` to filter by which evidence types fired (e.g. VIN + address + phone together is much stronger than VIN alone)
-- `signals.*` fields if you want the per-signal explanation, not just the total — note these are mapped as a plain `object`, not `nested`, so a query that filters on `signals.signal_type` **and** `signals.score` together can match a document where those values came from two _different_ array entries. Fine for the queries below, which only ever filter one `signals.*` field at a time; if you need to correlate two signal fields in the same query, pull the array client-side and filter in code instead.
+- `matched_on` to filter by which evidence types fired — VIN + address + phone together is much stronger than VIN alone
+- `signals.*` for the per-signal explanation. These are mapped as a plain `object`, not `nested`, so a query filtering on `signals.signal_type` **and** `signals.score` together can match a document where those values came from two _different_ array entries. Fine for the queries below, which filter one `signals.*` field at a time; to correlate two signal fields, pull the array client-side and filter in code.
 
-One quirk: VIN-only matches score low (~0.11) because of how the weighted average renormalizes, so they never rise to the top of a score-sorted view — the query below finds those by filtering `matched_on` for VIN overlap and sorting by `gap_days` instead.
+VIN-only matches score low (~0.11) because of how the weighted average renormalizes, so they never rise to the top of a score-sorted view. The second query below finds them by filtering `matched_on` and sorting by `gap_days` instead.
 
 ### Sample: high-confidence pairs, corroborated by more than a shared vehicle
 
@@ -192,7 +186,7 @@ GET chameleon-candidates-000001/_search
 }
 ```
 
-Python, using this project's own client helper (`utils/elasticsearch_utils.py`) and the same explicit-keyword-argument style as `matching/candidates.py` — never `body=`, per this repo's Elasticsearch convention:
+Python, using this project's client helper (`utils/elasticsearch_utils.py`) and the same explicit-keyword-argument style as `matching/candidates.py` — never `body=`, per this repo's Elasticsearch convention:
 
 ```python
 from utils import elasticsearch_utils, file_utils
@@ -250,22 +244,20 @@ GET chameleon-candidates-000001/_search
 }
 ```
 
-The Python form is the same shape as the sample above — swap the `query` and `sort` arguments passed to `es.search(...)`.
+The Python form is the same shape as the sample above — swap the `query` and `sort` arguments to `es.search(...)`.
 
 ## 8. Optional: using an LLM to help build the declared ignore list
 
-**Is this a valid strategy? Yes — as a suggestion generator feeding a human-reviewed list, not as something that writes `entity-match.json` directly.**
+This works as a suggestion generator feeding a human-reviewed list, not as something that writes `entity-match.json` directly. It complements the two mechanisms in [§3](#3-how-ignore-values-get-identified--and-whether-thats-persisted) rather than replacing either:
 
-It's a genuine complement to the two mechanisms in [§3](#3-how-ignore-values-get-identified--and-whether-thats-persisted), not a replacement for either:
+- The **frequency scan** only catches values that are common (shared by more than N carriers). A malformed VIN appearing on 3 carriers still isn't identifying — it's garbage — and the frequency scan has no way to notice.
+- An **LLM pass** covers that gap: it recognizes placeholders and formatting problems (obviously fake VINs, `dd-MMM-yy` and ISO dates mixed in one column, phone numbers like `(111) 111-1111`) without needing them to already be common.
 
-- The **frequency scan** only catches values that are literally common (shared by more than N carriers). It can't catch a junk value that happens to be rare — a malformed VIN that only appears on 3 carriers still isn't identifying, it's just garbage, and the frequency scan has no way to notice that.
-- An **LLM pass** is good at exactly that gap: pattern-recognizing placeholders and formatting problems (obviously-fake VINs, `dd-MMM-yy` vs. ISO dates mixed in the same column, phone numbers like `(111) 111-1111`) without needing them to already be common.
+How it fits into the flow (the dotted path in the chart above):
 
-How it fits into the flow (the dotted path in the flow chart above):
+1. Pull the **distinct values** per field, not full rows — reuse the aggregation machinery already behind the frequency scan (`terms` agg on `telephone.keyword`, VIN fields, and so on). The interesting object is the value, not the row, so this bounds what gets sent to the LLM no matter how many carrier records exist.
+2. Have the LLM classify each distinct value: placeholder/junk pattern, inconsistent-date-format artifact, or plausible real value. Output is a list of suggested additions to `ignore_values`, with reasoning for each.
+3. **A human reviews and approves before anything is merged into `entity-match.json`.** This step is not optional. `ignore_values` suppresses a signal outright, and a wrong addition throws no error and fails no test — it quietly removes evidence from every future run, the same silent-failure shape this project works to avoid elsewhere.
+4. Once merged and committed, the addition is picked up the next time `_declared_ignored_values` reads the file. No code change needed.
 
-1. Pull the **distinct values** per field, not full rows — reuse the same aggregation machinery already used for the frequency scan (`terms` agg on `telephone.keyword`, VIN fields, etc.). This bounds what gets sent to the LLM regardless of how many carrier records exist, since the interesting object is the value, not the row.
-2. Have the LLM classify each distinct value: placeholder/junk pattern, inconsistent-date-format artifact, or plausible real value. Output is a **list of suggested additions** to `ignore_values`, with the LLM's reasoning for each.
-3. **A human reviews and approves before anything is merged into `entity-match.json`.** This step is not optional. `ignore_values` suppresses a signal outright — an incorrect addition doesn't throw an error or show up as a test failure, it just quietly removes evidence from every future scoring run, which is the same silent-failure shape this project is generally careful to avoid elsewhere in the pipeline.
-4. Once merged and committed, the addition is picked up automatically the next time `_declared_ignored_values` reads the file — no code change needed.
-
-This is a slow-moving, periodic maintenance step — run it when reviewing a new data extract or when the declared list seems stale, not as part of every sweep. It grows the hand-maintained list; it doesn't touch the per-run frequency scan, which keeps working exactly as before regardless of whether this step is used.
+Run this when reviewing a new data extract or when the declared list seems stale, not as part of every sweep. It grows the hand-maintained list and leaves the per-run frequency scan untouched.
