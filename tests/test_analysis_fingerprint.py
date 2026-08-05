@@ -7,6 +7,9 @@ pin the two properties that make the guard work — insensitive to key order and
 formatting, sensitive to any change in analyzer behavior.
 """
 
+import logging
+
+from phase_providers.phase_entity_match import PhaseEntityMatch
 from utils.analysis_fingerprint import fingerprint_analysis
 
 
@@ -58,3 +61,33 @@ def test_present_but_empty_analysis_block_is_none_not_a_hash_of_empty_dict():
     # passed, silently starting to hash `{}` into a real fingerprint.
     assert fingerprint_analysis({"index": {"analysis": {}}}) is None
     assert fingerprint_analysis({"analysis": {}}) is None
+
+
+def match_phase():
+    return PhaseEntityMatch(es=None, project="DOT-Commercial", one_step="x", project_config=None)
+
+
+def test_mismatched_fingerprint_logs_an_error_and_returns_true(caplog):
+    # Returns True because the sweep must still run: an operator comparing
+    # against an older index is doing something legitimate. Only silence is
+    # unacceptable.
+    with caplog.at_level(logging.ERROR):
+        result = match_phase()._check_analysis_fingerprint("carriers-000001", "aaaa", "bbbb")
+    assert result is True
+    assert "aaaa" in caplog.text and "bbbb" in caplog.text
+
+
+def test_matching_fingerprint_logs_no_error(caplog):
+    with caplog.at_level(logging.ERROR):
+        match_phase()._check_analysis_fingerprint("carriers-000001", "aaaa", "aaaa")
+    assert caplog.text == ""
+
+
+def test_index_predating_the_stamp_warns_rather_than_claiming_a_mismatch(caplog):
+    # An index built before the fingerprint existed carries no _meta. That is
+    # unknown, not wrong — reporting it as a mismatch would train the operator
+    # to ignore the message.
+    with caplog.at_level(logging.WARNING):
+        match_phase()._check_analysis_fingerprint("carriers-000001", None, "bbbb")
+    assert "no analysis fingerprint" in caplog.text.lower()
+    assert "does not match" not in caplog.text.lower()

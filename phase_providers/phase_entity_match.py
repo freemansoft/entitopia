@@ -6,6 +6,7 @@ phase logs acknowledged/True, nothing errors, and the output is quietly wrong.
 """
 
 import datetime
+import json
 import logging
 import uuid
 
@@ -16,7 +17,7 @@ from matching.documents import ScoringContext
 from matching.predecessors import PredecessorSelector
 from matching.scorer import PairScorer
 from matching.signals import build_signal, parse_flexible_date
-from utils import elasticsearch_utils, file_utils, id_utils
+from utils import analysis_fingerprint, elasticsearch_utils, file_utils, id_utils
 
 AGENT_TERMS_SIZE = 500
 # Fallback for how many records may share a value before it stops identifying
@@ -87,7 +88,9 @@ class PhaseEntityMatch:
         )
         selector = PredecessorSelector(self.es, source_index, config.predecessors)
 
-        if not self._preflight(source_index, finder.scored_subfields()):
+        if not self._preflight(
+            source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
+        ):
             return
 
         ctx = self._build_context(source_index, config.signals, config)
@@ -142,7 +145,7 @@ class PhaseEntityMatch:
                 "may have been cut off".format(stats["truncated"])
             )
 
-    def _preflight(self, source_index, required_subfields):
+    def _preflight(self, source_index, required_subfields, expected_fingerprint):
         """Fail loudly before sweeping rather than emitting a silently empty result.
 
         Running against an older carriers index that lacks .phonetic_bm would
@@ -163,9 +166,15 @@ class PhaseEntityMatch:
 
         mapping = self.es.indices.get_mapping(index=source_index)
         properties = {}
+        stored_fingerprint = None
         for index_mapping in mapping.body.values():
             properties = index_mapping.get("mappings", {}).get("properties", {})
+            stored_fingerprint = (
+                index_mapping.get("mappings", {}).get("_meta", {}).get("analysis_fingerprint")
+            )
             break
+
+        self._check_analysis_fingerprint(source_index, stored_fingerprint, expected_fingerprint)
 
         missing = []
         for subfield_path in sorted(required_subfields):
@@ -182,6 +191,61 @@ class PhaseEntityMatch:
             )
             return False
         return True
+
+    def _check_analysis_fingerprint(self, source_index, stored, expected):
+        """Report, without blocking, that the index's tokens predate the analyzers.
+
+        Deliberately advisory and always returns True. Sweeping an older index on
+        purpose is legitimate — comparing two runs, reproducing a past result —
+        so refusing would block real work. What is unacceptable is doing it
+        unknowingly: every name and address score would be derived from tokens
+        the current configuration would no longer produce, and no other check in
+        _preflight can see that, because the subfields still exist and still
+        hold data.
+
+        A missing stored value means the index predates the stamp, which is
+        unknown rather than wrong. Reporting that as a mismatch would train the
+        operator to ignore the message that matters.
+        """
+        if expected is None:
+            return True
+        if stored is None:
+            self.logger.warning(
+                "Source index {} carries no analysis fingerprint, so it cannot be "
+                "checked against the analyzers on disk (expected {}). It predates "
+                "this check; recreate and reload it to enable the "
+                "comparison.".format(source_index, expected)
+            )
+            return True
+        if stored != expected:
+            self.logger.error(
+                "Source index {} was built with analysis fingerprint {} but the "
+                "configuration on disk is {}. Every token-based score in this "
+                "sweep comes from the OLDER analyzers. Recreate and reload the "
+                "index to score against current config; continuing "
+                "anyway.".format(source_index, stored, expected)
+            )
+        return True
+
+    def _expected_analysis_fingerprint(self, config):
+        """Fingerprint of the index-settings.json that should have built the source index.
+
+        entity-match.json runs in its own step, so it cannot find the source
+        index's settings without being told which step owns them — hence the
+        optional source_settings_step key. Absent, the check is skipped rather
+        than guessed at, so projects that never adopt the key are unaffected.
+        """
+        step = getattr(config, "source_settings_step", None)
+        if not step:
+            self.logger.debug("No source_settings_step configured; skipping fingerprint check")
+            return None
+        settings_config = file_utils.load_from_project_file(
+            self.project, self.project_config.configurationDir, step, "index-settings.json"
+        )
+        if not settings_config or not getattr(settings_config, "settings", None):
+            return None
+        settings = json.loads(json.dumps(settings_config.settings, default=vars))
+        return analysis_fingerprint.fingerprint_analysis(settings)
 
     def _declared_ignored_values(self, config):
         """Read entity-match.json's ignore_values into a field -> values map.
