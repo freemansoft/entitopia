@@ -3,7 +3,7 @@ import logging
 
 from elasticsearch import BadRequestError, client
 
-from utils import elasticsearch_utils, file_utils
+from utils import analysis_fingerprint, elasticsearch_utils, file_utils
 
 
 class PhaseindexCreate:
@@ -51,15 +51,25 @@ class PhaseindexCreate:
             indiciesClient = client.IndicesClient(self.es)
 
             self.logger.info("Creating index {} ".format(phase_config.index))
+            settings = self.get_index_settings()
+            # Recorded at creation because this is the only moment the settings
+            # that built the index and the index itself are both in hand. A
+            # later reader can compare it against the config on disk and find
+            # out whether the tokens it is about to score are current.
+            fingerprint = analysis_fingerprint.fingerprint_analysis(settings)
+            create_args = {"index": phase_config.index, "settings": settings}
+            if fingerprint:
+                create_args["mappings"] = {
+                    "_meta": {"analysis_fingerprint": fingerprint}
+                }
+
             try:
                 # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
-                r = indiciesClient.create(
-                    index=phase_config.index,
-                    settings=self.get_index_settings(),
-                    # ignore=400,
-                )
+                r = indiciesClient.create(**create_args)
                 self.logger.info(
-                    "Created index {} returned {}".format(phase_config.index, r)
+                    "Created index {} with analysis fingerprint {} returned {}".format(
+                        phase_config.index, fingerprint, r
+                    )
                 )
             except BadRequestError as e:
                 self.logger.warning("Failed to create or update index: {}".format(e))
