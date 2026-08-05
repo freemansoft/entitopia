@@ -21,6 +21,12 @@ import json
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+# Runs as `.venv/bin/python scripts/measure_address_analyzers.py`, matching the
+# invocation README.md documents for scripts/. That puts scripts/ on sys.path
+# rather than the repo root, so importing matching.tokens fails without this.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from elasticsearch import Elasticsearch
 
