@@ -33,6 +33,10 @@
           "clean": {
             "type": "text",
             "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
           }
         }
       },
