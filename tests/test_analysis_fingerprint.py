@@ -47,3 +47,14 @@ def test_analysis_at_the_top_level_is_accepted():
     nested = {"index": {"analysis": {"filter": {"x": {"type": "stop"}}}}}
     flat = {"analysis": {"filter": {"x": {"type": "stop"}}}}
     assert fingerprint_analysis(flat) == fingerprint_analysis(nested)
+
+
+def test_present_but_empty_analysis_block_is_none_not_a_hash_of_empty_dict():
+    # An `analysis` key that exists but is `{}` declares nothing to fingerprint,
+    # same as a missing key — Task 4 treats None from either shape as "no
+    # comparison to make." Pinned separately from the missing-key case because
+    # a truthiness-preserving refactor of the `or` chain (e.g. switching to an
+    # `in` check) could stop treating `{}` as absent while this test file still
+    # passed, silently starting to hash `{}` into a real fingerprint.
+    assert fingerprint_analysis({"index": {"analysis": {}}}) is None
+    assert fingerprint_analysis({"analysis": {}}) is None

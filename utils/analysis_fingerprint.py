@@ -22,10 +22,12 @@ def fingerprint_analysis(settings):
     the fingerprint without any analyzer changing, which is the one thing a
     staleness check must never do.
 
-    Returns None rather than a hash of an empty block so that "declares no
-    analyzers" stays distinguishable from "declares an empty analysis block".
-    Conflating them would make every analyzer-free index compare equal to every
-    other one and report a false match.
+    An absent analysis block and a present-but-empty one (`{}`) both return
+    None: neither declares anything to fingerprint, so there is nothing to
+    compare and no reason to distinguish them. The alternative — hashing `{}`
+    — would give every analyzer-free index across the whole cluster the same
+    non-None fingerprint, so two indices that share nothing but the absence of
+    analyzers would compare equal and report a false match.
     """
     if not settings:
         return None
