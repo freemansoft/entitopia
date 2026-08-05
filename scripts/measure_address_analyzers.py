@@ -34,8 +34,13 @@ from matching.tokens import containment
 
 # Mirrors AddressSignal's own arithmetic. Kept in sync by hand rather than
 # imported because the signal needs a CarrierDoc and a ScoringContext, neither
-# of which exists here; if AddressSignal's formula changes, this must follow.
-FUZZY_SCALE = 0.7
+# of which exists here. This one genuinely is a Python constant — it copies
+# CROSS_STATE_FUZZY_PENALTY in matching/signals.py — so it only drifts if that
+# code changes, and a code change is something a reader of this file's git
+# blame would surface. Contrast the address signal's fuzzy_scale, which is
+# NOT copied here: that value lives in entity-match.json and can be retuned
+# without touching any Python, so it is a --fuzzy-scale flag instead, with a
+# default matching the config's current value.
 CROSS_STATE_FUZZY_PENALTY = 0.5
 SETTINGS_PATH = "DOT-Commercial/configuration/carriers/index-settings.json"
 
@@ -75,10 +80,10 @@ def analyze_all(client, index, analyzer, texts):
         return dict(zip(texts, pool.map(one, texts), strict=True))
 
 
-def score(exact_a, exact_b, fuzzy_a, fuzzy_b, same_state):
+def score(exact_a, exact_b, fuzzy_a, fuzzy_b, same_state, fuzzy_scale):
     if exact_a and exact_a == exact_b:
         return 1.0
-    result = containment(fuzzy_a, fuzzy_b) * FUZZY_SCALE
+    result = containment(fuzzy_a, fuzzy_b) * fuzzy_scale
     if not same_state:
         result *= CROSS_STATE_FUZZY_PENALTY
     return result
@@ -122,6 +127,12 @@ def main():
     parser.add_argument("--floor", type=float, default=0.35, help="scoring.min_total_score")
     parser.add_argument("--weight", type=float, default=0.20, help="address signal weight")
     parser.add_argument("--total-weight", type=float, default=0.94, help="sum of all signal weights")
+    parser.add_argument(
+        "--fuzzy-scale",
+        type=float,
+        default=0.7,
+        help="address signal fuzzy_scale from entity-match.json",
+    )
     args = parser.parse_args()
 
     client = Elasticsearch(
@@ -156,6 +167,7 @@ def main():
                 cache[(label, "street_tokens")][a],
                 cache[(label, "street_tokens")][b],
                 same_state,
+                args.fuzzy_scale,
             )
             for label in ("old", "new")
         }
