@@ -191,7 +191,9 @@ There are two different methods for preprocessing before the data lands in Elast
   `.keyword`, a cleaned `.clean`, and two phonetic encodings
   (double-metaphone, Beider-Morse) — both strip suffixes like
   "LLC"/"trucking"/"logistics" first. Addresses get an exact form and a
-  fuzzy token form with street-suffix synonyms (`st`→`street`).
+  fuzzy token form that contracts street suffixes to a canonical token
+  (`st`→`street`), drops secondary-unit designators such as `STE`/`APT`
+  while keeping the unit number, and normalizes the `P.O. BOX` family.
 
 Ingest pipelines and field mappings both run inside Elasticsearch, not in
 Python. Python's only part in them is the config it wrote once at setup.

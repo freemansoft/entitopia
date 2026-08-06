@@ -73,6 +73,13 @@ max-positional-args = 10
 # anything that needs 3.11+ syntax, so the remaining imports cannot sit at the
 # top of the module. That ordering is the point of the check.
 "execute_project.py" = ["E402"]
+# README.md documents running scripts/ files directly
+# (`.venv/bin/python scripts/measure_address_analyzers.py`), which puts
+# scripts/ rather than the repo root on sys.path. This script imports
+# matching.tokens, so the repo root must be pushed onto sys.path before that
+# import runs — forcing the import below the sys.path fix-up and out of
+# top-of-file position.
+"scripts/measure_address_analyzers.py" = ["E402"]
 # Magic values in assertions are what a test asserts.
 #
 # D103 (undocumented public function) is exempted for test functions

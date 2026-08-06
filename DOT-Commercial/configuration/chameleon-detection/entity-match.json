@@ -1,5 +1,6 @@
 {
   "source_index": "carriers-000001",
+  "source_settings_step": "carriers",
   "predecessors": {
     "selector": "out-of-service",
     "oos_status": ["ACTIVE"],

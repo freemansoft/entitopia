@@ -6,11 +6,6 @@
       "number_of_replicas": 1,
       "analysis": {
         "filter": {
-          "street_suffix_map": {
-            "pattern": "(st)",
-            "type": "pattern_replace",
-            "replacement": "street"
-          },
           "phonetic": {
             "type": "phonetic",
             "encoder": "metaphone"
