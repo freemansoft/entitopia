@@ -13,26 +13,76 @@ import hashlib
 import json
 
 
-def fingerprint_analysis(settings):
-    """Hash the analysis block of an index-settings payload; None when absent.
+def _analyzer_bindings(properties, prefix=""):
+    """Collect {path: {analyzer, search_analyzer}} from a mappings `properties` tree.
 
-    Takes the plain dict handed to indices.create rather than the SimpleNamespace
-    config, because that dict is the exact structure that reached Elasticsearch —
-    hashing anything earlier in the pipeline would let a serialization change move
-    the fingerprint without any analyzer changing, which is the one thing a
-    staleness check must never do.
+    index-settings.json defines what analyzers exist; index-mappings.json's
+    `properties` decides which subfield actually uses which one (e.g.
+    `phy_street.tokens` binds to `street_tokens`). A fingerprint that only
+    hashed the settings block would stay unchanged if that binding were
+    repointed at a different analyzer — exactly the silent-wrong-output
+    failure this module exists to catch. Walking `fields` and `properties`
+    recursively is necessary because multi-fields (`legal_name.phonetic`) and
+    nested objects (`boc3_agents.co_name`) both hide analyzer bindings a
+    shallow scan would miss.
 
-    An absent analysis block and a present-but-empty one (`{}`) both return
-    None: neither declares anything to fingerprint, so there is nothing to
-    compare and no reason to distinguish them. The alternative — hashing `{}`
-    — would give every analyzer-free index across the whole cluster the same
-    non-None fingerprint, so two indices that share nothing but the absence of
-    analyzers would compare equal and report a false match.
+    Only `analyzer`/`search_analyzer` are pulled out of each node, not the
+    node itself, so an unrelated mapping edit — a new field, a `type` change,
+    a keyword field with no analyzer — leaves the fingerprint untouched. A
+    fingerprint that moves for reasons that don't affect scoring trains an
+    operator to stop trusting it.
     """
-    if not settings:
+    bindings = {}
+    if not properties:
+        return bindings
+    for name, definition in properties.items():
+        if not isinstance(definition, dict):
+            continue
+        path = "{}.{}".format(prefix, name) if prefix else name
+        entry = {
+            key: definition[key]
+            for key in ("analyzer", "search_analyzer")
+            if definition.get(key) is not None
+        }
+        if entry:
+            bindings[path] = entry
+        bindings.update(_analyzer_bindings(definition.get("fields"), path))
+        bindings.update(_analyzer_bindings(definition.get("properties"), path))
+    return bindings
+
+
+def fingerprint_analysis(settings, mapping_properties=None):
+    """Hash the analysis block plus analyzer bindings; None when both are absent.
+
+    Takes the plain dicts handed to indices.create/put_mapping rather than the
+    SimpleNamespace config, because those dicts are the exact structures that
+    reached Elasticsearch — hashing anything earlier in the pipeline would let
+    a serialization change move the fingerprint without any analyzer changing,
+    which is the one thing a staleness check must never do.
+
+    `mapping_properties` is optional and defaults to None so existing callers
+    that only ever had settings in hand keep working unchanged; it should be
+    index-mappings.json's `mappings.properties` dict when the caller has it,
+    since that is where a subfield's analyzer choice actually lives (see
+    `_analyzer_bindings`).
+
+    An absent analysis block and empty bindings are each treated as "declares
+    nothing"; only when BOTH sources declare nothing does this return None,
+    the same as a present-but-empty analysis block (`{}`). The alternative —
+    hashing `{}` — would give every analyzer-free index across the whole
+    cluster the same non-None fingerprint, so two indices that share nothing
+    but the absence of analyzers would compare equal and report a false
+    match. Either source alone declaring something is enough to fingerprint.
+    """
+    analysis = None
+    if settings:
+        analysis = (settings.get("index") or {}).get("analysis") or settings.get("analysis")
+    bindings = _analyzer_bindings(mapping_properties)
+    if not analysis and not bindings:
         return None
-    analysis = (settings.get("index") or {}).get("analysis") or settings.get("analysis")
-    if not analysis:
-        return None
-    canonical = json.dumps(analysis, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        {"analysis": analysis or {}, "bindings": bindings},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]

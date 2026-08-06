@@ -228,12 +228,19 @@ class PhaseEntityMatch:
         return True
 
     def _expected_analysis_fingerprint(self, config):
-        """Fingerprint of the index-settings.json that should have built the source index.
+        """Fingerprint of the index-settings.json + index-mappings.json that should
+        have built the source index.
 
         entity-match.json runs in its own step, so it cannot find the source
         index's settings without being told which step owns them — hence the
         optional source_settings_step key. Absent, the check is skipped rather
         than guessed at, so projects that never adopt the key are unaffected.
+
+        Must load index-mappings.json from that same step and pass its
+        properties through, mirroring exactly what phase_index_creation hashed
+        when it stamped the index — the two sides comparing different inputs
+        would report a mismatch on every run regardless of whether the
+        analyzers actually changed, which is worse than not checking at all.
         """
         step = getattr(config, "source_settings_step", None)
         if not step:
@@ -245,7 +252,17 @@ class PhaseEntityMatch:
         if not settings_config or not getattr(settings_config, "settings", None):
             return None
         settings = json.loads(json.dumps(settings_config.settings, default=vars))
-        return analysis_fingerprint.fingerprint_analysis(settings)
+
+        mapping_config = file_utils.load_from_project_file(
+            self.project, self.project_config.configurationDir, step, "index-mappings.json"
+        )
+        mapping_properties = None
+        if mapping_config and getattr(mapping_config, "mappings", None):
+            properties = getattr(mapping_config.mappings, "properties", None)
+            if properties is not None:
+                mapping_properties = json.loads(json.dumps(properties, default=vars))
+
+        return analysis_fingerprint.fingerprint_analysis(settings, mapping_properties)
 
     def _declared_ignored_values(self, config):
         """Read entity-match.json's ignore_values into a field -> values map.

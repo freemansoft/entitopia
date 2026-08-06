@@ -63,6 +63,53 @@ def test_present_but_empty_analysis_block_is_none_not_a_hash_of_empty_dict():
     assert fingerprint_analysis({"analysis": {}}) is None
 
 
+def test_changed_analyzer_binding_changes_the_hash():
+    # This is the F4 regression: repointing which analyzer a subfield uses is
+    # invisible to a fingerprint that only hashes the analysis block, because
+    # the analyzer itself may be untouched — only the binding in
+    # index-mappings.json moved. That is exactly the change a reindex-skip
+    # would leave undetected.
+    settings = settings_with({"analyzer": {"street_tokens": {"tokenizer": "standard"}}})
+    a = {"phy_street": {"fields": {"tokens": {"type": "text", "analyzer": "street_tokens"}}}}
+    b = {"phy_street": {"fields": {"tokens": {"type": "text", "analyzer": "street_clean"}}}}
+    assert fingerprint_analysis(settings, a) != fingerprint_analysis(settings, b)
+
+
+def test_unrelated_new_field_does_not_change_the_hash():
+    # A mapping change that adds no new analyzer binding — a plain keyword
+    # field, say — must not move the fingerprint. Otherwise every unrelated
+    # schema edit would look like a staleness event and operators would learn
+    # to ignore the warning.
+    settings = settings_with({"analyzer": {"street_tokens": {"tokenizer": "standard"}}})
+    a = {"phy_street": {"fields": {"tokens": {"type": "text", "analyzer": "street_tokens"}}}}
+    b = {
+        "phy_street": {"fields": {"tokens": {"type": "text", "analyzer": "street_tokens"}}},
+        "phy_zip": {"type": "keyword"},
+    }
+    assert fingerprint_analysis(settings, a) == fingerprint_analysis(settings, b)
+
+
+def test_mappings_absent_falls_back_to_settings_only_hash():
+    # mapping_properties defaults to None so every caller that predates F4 —
+    # and any future one that genuinely has no mappings in hand — keeps
+    # getting the same value it always did.
+    settings = settings_with({"analyzer": {"street_tokens": {"tokenizer": "standard"}}})
+    assert fingerprint_analysis(settings) == fingerprint_analysis(settings, None)
+
+
+def test_nested_fields_and_properties_are_both_walked_for_bindings():
+    # Multi-fields (`fields`) and nested objects (`properties`) both hide
+    # analyzer bindings a shallow top-level scan would miss — this repo uses
+    # both shapes (legal_name.phonetic is a multi-field, boc3_agents.co_name
+    # is nested), so a fingerprint that only checked one shape would be blind
+    # to drift in the other.
+    settings = settings_with({})
+    multi_field = {"legal_name": {"fields": {"phonetic": {"analyzer": "name_phonetic"}}}}
+    nested = {"boc3_agents": {"properties": {"co_name": {"analyzer": "name_clean"}}}}
+    assert fingerprint_analysis(settings, multi_field) != fingerprint_analysis(settings, nested)
+    assert fingerprint_analysis(settings, multi_field) != fingerprint_analysis(settings, {})
+
+
 def match_phase():
     return PhaseEntityMatch(es=None, project="DOT-Commercial", one_step="x", project_config=None)
 

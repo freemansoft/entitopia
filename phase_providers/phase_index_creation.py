@@ -31,6 +31,26 @@ class PhaseindexCreate:
         else:
             return None
 
+    def get_index_mapping_properties(self):
+        # Loaded here too (PhaseIndexMappings applies the mapping itself, in its
+        # own later step) because the fingerprint stamped at creation time must
+        # cover which analyzer each subfield binds to, not just which analyzers
+        # index-settings.json declares — that binding lives in index-mappings.json
+        # and a change to it is otherwise invisible to the staleness check.
+        index_mapping_config = file_utils.load_from_project_file(
+            self.project,
+            self.project_config.configurationDir,
+            self.one_step,
+            "index-mappings.json",
+        )
+        if not index_mapping_config:
+            return None
+        properties = getattr(index_mapping_config.mappings, "properties", None)
+        if properties is None:
+            return None
+        properties_json = json.dumps(properties, default=vars)
+        return json.loads(properties_json)
+
     def handle(self):
         self.logger.info(
             "Initiating step:{} Phase Handler: {}".format(
@@ -52,11 +72,14 @@ class PhaseindexCreate:
 
             self.logger.info("Creating index {} ".format(phase_config.index))
             settings = self.get_index_settings()
+            mapping_properties = self.get_index_mapping_properties()
             # Recorded at creation because this is the only moment the settings
             # that built the index and the index itself are both in hand. A
             # later reader can compare it against the config on disk and find
             # out whether the tokens it is about to score are current.
-            fingerprint = analysis_fingerprint.fingerprint_analysis(settings)
+            fingerprint = analysis_fingerprint.fingerprint_analysis(
+                settings, mapping_properties
+            )
             create_args = {"index": phase_config.index, "settings": settings}
             if fingerprint:
                 create_args["mappings"] = {
