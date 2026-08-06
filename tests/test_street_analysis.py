@@ -19,6 +19,27 @@ from elasticsearch import Elasticsearch
 SETTINGS_PATH = "DOT-Commercial/configuration/carriers/index-settings.json"
 TEST_INDEX = "test-street-analysis"
 
+# The street analyzer blocks below are hand-mirrored across three
+# index-settings.json files rather than generated from one shared source, so
+# nothing stops them from drifting apart. Listed here (rather than diffing
+# whole files) because the surrounding name-matching sections legitimately
+# differ per project — DOT-Commercial has a carrier-suffix stop list and
+# double-metaphone/beider-morse phonetics that CMS-Providers does not — so a
+# whole-file comparison would fail on day one for reasons that have nothing
+# to do with street matching.
+OTHER_SETTINGS_PATHS = [
+    "CMS-Providers/configuration/hospitals/index-settings.json",
+    "CMS-Providers/configuration/doctors-clinicians/index-settings.json",
+]
+STREET_CHAR_FILTERS = ["po_box_canon"]
+STREET_FILTERS = [
+    "street_suffix_canon",
+    "unit_designator_stop",
+    "punct_white",
+    "collapse_whitespace",
+]
+STREET_ANALYZERS = ["street_clean", "street_tokens"]
+
 
 @pytest.fixture(scope="module")
 def es_index():
@@ -45,6 +66,40 @@ def es_index():
 def tokens(es_index, analyzer, text):
     response = es_index.indices.analyze(index=TEST_INDEX, analyzer=analyzer, text=text)
     return {token["token"] for token in response["tokens"]}
+
+
+def _street_analysis_slice(settings_path):
+    """Pull just the street-matching pieces out of an index-settings.json file.
+
+    Parsed structures are compared rather than raw text so that formatting —
+    key order, whitespace, quoting — can never register as drift; only an
+    actual difference in what the analyzer does should fail this test.
+    """
+    with open(settings_path) as handle:
+        analysis = json.load(handle)["settings"]["index"]["analysis"]
+    return {
+        "char_filter": {k: analysis["char_filter"][k] for k in STREET_CHAR_FILTERS},
+        "filter": {k: analysis["filter"][k] for k in STREET_FILTERS},
+        "analyzer": {k: analysis["analyzer"][k] for k in STREET_ANALYZERS},
+    }
+
+
+@pytest.mark.parametrize("other_settings_path", OTHER_SETTINGS_PATHS)
+def test_street_analysis_is_identical_across_the_three_settings_files(other_settings_path):
+    """Guards against the exact failure mode this branch's mirroring invites.
+
+    Street matching lives in index-settings.json, copy-pasted by hand across
+    DOT-Commercial and both CMS-Providers projects because Elasticsearch has
+    no way to share analyzer config between indices. test_street_analysis's
+    other tests only ever load the DOT file, so an edit that touches CMS
+    alone — or a DOT edit that forgets to touch CMS — currently merges green:
+    nothing else in the suite loads all three files at once. This test does,
+    and needs no Elasticsearch, so it still catches drift when ES is down and
+    every ES-backed test above is skipped.
+    """
+    dot_slice = _street_analysis_slice(SETTINGS_PATH)
+    other_slice = _street_analysis_slice(other_settings_path)
+    assert dot_slice == other_slice
 
 
 @pytest.mark.parametrize(
