@@ -1158,7 +1158,7 @@ Expected: no error line. If it reports a mismatch immediately after a reload, `s
 grep -i "entity-match complete" /tmp/sweep.log
 ```
 
-Expected: a pair count in the same order of magnitude as the 429,505 recorded in `DOT-Commercial/README.md`. A count near zero means the reload or the analyzers are wrong — investigate before continuing.
+Expected: a pair count in the same order of magnitude as the 421,613 recorded in `DOT-Commercial/README.md`. A count near zero means the reload or the analyzers are wrong — investigate before continuing.
 
 - [ ] **Step 5: Verify the sanity anchor still ranks at the top**
 
@@ -1183,7 +1183,7 @@ BASE=$(git log --format=%H -1 -- docs/superpowers/specs/2026-08-04-address-synon
   --pairs-index chameleon-candidates-<today>-000001 --baseline "$BASE"
 ```
 
-Expected: `changed` near 0% — the new index was built with the new analyzers, so replaying it against the current config should show almost no movement. A large delta here means the reload used stale settings.
+Expected: this is not a staleness check. The harness replays address strings — sampled from the pairs index, which supplies only the text — through two independent analyzer _configurations_: the baseline revision and whatever is on disk now. It never touches the reloaded index's own analyzers, so `changed` measures how different those two configurations are, not whether the reload picked up current settings; it cannot be near 0% by construction whenever the baseline predates this work, and on this run it reported **33.4%**, matching the size of the DOT-Commercial street-analyzer change. The actual evidence that the reload used current analyzers is the fingerprint check (silent in Step 3) plus the `Sweeping against carriers-<index> (N documents)` log line from Step 4, which names the exact index the sweep read.
 
 - [ ] **Step 7: Record the observed figures**
 
