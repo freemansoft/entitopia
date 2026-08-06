@@ -102,9 +102,9 @@
             "ignore_case": true,
             "stopwords": [
               "ste", "suite", "apt", "apartment", "unit", "rm", "room",
-              "bldg", "building", "fl", "floor", "trlr", "trailer", "lot",
-              "sp", "space", "pmb", "dept", "department", "hngr", "hangar",
-              "ofc", "office", "slip", "pier"
+              "bldg", "fl", "floor", "trlr", "lot",
+              "sp", "spc", "pmb", "dept", "department", "hngr",
+              "ofc"
             ]
           },
           "punct_white": {
