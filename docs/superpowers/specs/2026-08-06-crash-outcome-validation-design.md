@@ -88,16 +88,52 @@ about one.
 
 ### Outcome variable
 
-A **severe crash** is `fatalities > 0 OR injuries > 0 OR tow_away = 'Y'`.
+**A carrier's outcome is whether it appears in the crashes index at all**, with
+`report_date` after its `add_date`. No severity predicate is applied.
 
-This is FMCSA's own reportable-crash definition rather than a threshold invented
-here, which is what makes the resulting rate comparable to GAO's 18% / 6%
-instead of merely resembling it. All three fields are present on the crashes
-index and were confirmed populated: of 333,120 crash records, roughly 58,831
-distinct carriers have at least one severe crash.
+That is not a shortcut. The FMCSA crash file already contains only _reportable_
+crashes — those involving a fatality, an injury requiring treatment away from the
+scene, or a vehicle towed away. Measured on the loaded data, **333,120 of 333,122
+records satisfy `fatalities > 0 OR injuries > 0 OR tow_away = 'Y'`: 99.9994%.**
+Applying that predicate would filter nothing while creating the impression of a
+severity threshold that was never really applied. Presence in the file _is_ the
+severe-crash outcome, and it is what makes this comparable to GAO's 18% / 6%.
 
-`crashes.dot_number` and `chameleon-candidates.successor.dot_number` are both
-mapped `keyword`, so the join needs no coercion.
+The base rate supports the reading. Roughly **122,483 distinct carriers of
+2,085,534 have at least one crash — 5.87%** — against the **6%** GAO measured for
+new applicants without chameleon attributes. Two different populations over two
+different decades landing that close is a strong sign the outcome variable is
+the same one.
+
+A stricter tier is available and reported as a secondary column, because
+presence-in-file is dominated by tow-aways: **8,541 records involve a fatality
+and 125,080 an injury, against 309,628 tow-aways.** An injury-or-fatality
+outcome is a materially harder test and is worth reporting beside the headline,
+but it is not the headline, because GAO's number is not that number.
+
+### Two field-type traps, both verified
+
+Both would corrupt the result silently rather than erroring, which is this
+codebase's recurring failure mode.
+
+1. **`tow_away` is `text`, not `keyword`.** `{"term": {"tow_away": "Y"}}` matches
+   **zero** documents, because the analyzer lowercased the indexed term to `y`
+   while the query term stays `Y`. Any severity filter must use
+   `tow_away.keyword`. This is the same defect as the `insp_carrier_state_id`
+   open item and the `debug-zero-hit-selector` skill eval, arriving a third time.
+   The `.keyword` form matches 309,628.
+
+2. **`dot_number` types differ across indexes.** It is `long` on `crashes` but
+   `keyword` on `carriers` and on `chameleon-candidates.successor.dot_number`.
+   Elasticsearch coerces a numeric-looking string in a `term` query, so both
+   spellings happen to work today — but any set-membership logic in Python must
+   normalize to `str` on both sides or the intersection silently comes back
+   empty. Similarly `phy_state` is `text` and needs `phy_state.keyword` to
+   aggregate.
+
+`report_date` is a `long` in `YYYYMMDD` form (e.g. `20240812`), not a date, while
+`carriers.add_date` is a real `date`. Comparing them means rendering `add_date`
+to a `YYYYMMDD` integer, not parsing `report_date` as a date.
 
 ### Exposure: the constraint that shapes the whole measurement
 
@@ -131,7 +167,7 @@ hardcoded date would keep printing plausible numbers after it drifted.
 
 ### Primary measurement: dose–response
 
-Bin successors by max score; report the share with at least one severe crash per
+Bin successors by max score; report the share appearing in the crash file per
 band. A monotonic rise is the evidence sought.
 
 The bin edges are **fixed here, before any run**, and deliberately reuse
