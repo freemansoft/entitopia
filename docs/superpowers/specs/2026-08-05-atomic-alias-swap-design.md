@@ -1,7 +1,9 @@
 # Atomic alias swap on index creation
 
 Date: 2026-08-05
-Status: proposed, not yet implemented
+Status: implemented 2026-08-06, with two deviations from the design below —
+the 404 handling (see Design) and an opt-in `--retain-aliases` escape hatch
+(see Scope).
 
 ## Problem
 
@@ -63,6 +65,13 @@ after an analyzer change.
 In scope: making index creation swap the alias atomically, in both projects,
 for every step that declares one.
 
+Also in scope, added during implementation: a `--retain-aliases` flag on
+`execute_project.py` that reinstates the additive behavior for one run. It
+defaults off, so the fix above is what an operator gets without knowing the flag
+exists. It is a run-level flag rather than a per-step config key deliberately —
+a config key would make an accumulated alias look intentional, and accumulation
+is indistinguishable from the bug this spec exists to fix.
+
 Out of scope: retention or deletion of superseded indexes. Nothing here deletes
 an index — the old one simply stops answering to the alias. Choosing how long
 to keep it, and pruning it, is a separate operational decision that should not
@@ -79,15 +88,37 @@ Replace the `put_alias` call in `PhaseindexCreate.handle()` with a single
 the alias, plus one `add` for the new index.
 
 ```python
-existing = self.es.options(ignore_status=404).indices.get_alias(name=phase_config.alias)
+try:
+    attached = indices_client.get_alias(name=alias)
+except NotFoundError:
+    attached = {}
 actions = [
-    {"remove": {"index": index_name, "alias": phase_config.alias}}
-    for index_name in (existing.body or {})
-    if index_name != phase_config.index
+    {"remove": {"index": attached_index, "alias": alias}}
+    for attached_index in attached
+    if attached_index != index
 ]
-actions.append({"add": {"index": phase_config.index, "alias": phase_config.alias}})
-self.es.indices.update_aliases(actions=actions)
+actions.append({"add": {"index": index, "alias": alias}})
+indices_client.update_aliases(actions=actions)
 ```
+
+**Deviation from this spec's original sketch, found in implementation.** That
+sketch read membership with `options(ignore_status=404)` and iterated
+`existing.body or {}`. Suppressing the status does not produce an empty body —
+Elasticsearch answers a missing alias with an error _document_, verified live:
+
+```
+GET /_alias/no-such-alias  ->  {"error":"alias [no-such-alias] missing","status":404}
+```
+
+Iterating that yields the keys `error` and `status`, so the first-creation path
+would have built `remove` actions naming two indexes that do not exist. Catching
+`NotFoundError` is what actually makes first creation degrade to a bare add, and
+it is the only shape in which the "no branch is needed" property below holds.
+
+This is also why the code lives in `utils.elasticsearch_utils.attach_alias`
+rather than inline in the phase: the phase builds its client with
+`client.IndicesClient(self.es)`, which cannot be faked, and the action list is
+the thing worth pinning in a test.
 
 Three properties this must have, each load-bearing:
 

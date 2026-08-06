@@ -97,16 +97,26 @@ class PhaseindexCreate:
             except BadRequestError as e:
                 self.logger.warning("Failed to create or update index: {}".format(e))
 
+            # Retention is opt-in per run (`--retain-aliases`) rather than
+            # configurable per step: no step wants a fan-out alias, and a config
+            # key would make an accumulated alias look intentional when it is
+            # far more often the bug.
+            retain_existing = getattr(self.project_config, "retain_aliases", False)
             try:
                 # https://elasticsearch-py.readthedocs.io/en/latest/api.html#indices
-                r = indiciesClient.put_alias(
-                    index=phase_config.index,
-                    name=phase_config.alias,
+                r = elasticsearch_utils.attach_alias(
+                    indiciesClient,
+                    phase_config.index,
+                    phase_config.alias,
+                    retain_existing=retain_existing,
                 )
                 self.logger.info(
-                    "Created alias {} on index {} returned {}".format(
-                        phase_config.alias, phase_config.index, r
+                    "Pointed alias {} at index {} (retain_existing={}) returned {}".format(
+                        phase_config.alias, phase_config.index, retain_existing, r
                     )
                 )
             except BadRequestError as e:
+                # Deliberately a warning, not a raise: the index was created and
+                # is about to be loaded, and discarding that work over an alias
+                # failure costs far more than the alias being left stale.
                 self.logger.warning("Failed to create or update alias: {}".format(e))

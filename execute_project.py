@@ -75,6 +75,17 @@ def parse_args():
             "without editing committed config. Omit for whatever the config says."
         ),
     )
+    parser.add_argument(
+        "--retain-aliases",
+        required=False,
+        action="store_true",
+        help=(
+            "Leave the previous index attached to the alias instead of swapping. "
+            "Off by default: an alias naming more than one index makes reads "
+            "return every document once per attached index, which is silent "
+            "rather than an error. Use only for a deliberate read-side cutover."
+        ),
+    )
     args = parser.parse_args()
     logger.info("Args: {} ".format(args))
     return args
@@ -124,6 +135,16 @@ def apply_args_to_config(config, args):
         new_config.num_rows_override = args.num_rows
         logger.info(
             "Row cap override: loading at most {} rows per dataset".format(args.num_rows)
+        )
+    if args.retain_aliases:
+        # Carried on the project config the same way as num_rows_override so
+        # index-creation can read it without a new argument threaded through the
+        # dispatcher. Set only when asked, so the absence of the attribute and a
+        # False both mean "swap", and no committed config can turn retention on.
+        new_config.retain_aliases = True
+        logger.warning(
+            "Alias retention on: each alias keeps every index it already names, "
+            "so reads through it return each document once per attached index"
         )
     logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
     return new_config
