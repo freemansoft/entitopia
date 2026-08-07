@@ -14,6 +14,9 @@ filters, per that README's own standard.
 import argparse
 import random
 import sys
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Runs as `.venv/bin/python scripts/measure_crash_lift.py`, which puts scripts/
@@ -22,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from elasticsearch import Elasticsearch
+from elasticsearch.helpers import bulk
 
 from utils.crash_lift import (
     SCORE_BANDS,
@@ -244,6 +248,41 @@ def _print_exposure_table(rows):
         )
 
 
+RECENCY_COHORTS = ["under-1y", "1-3y", "3y-plus"]
+
+
+def _recency_stats(rows, window_end):
+    """Crash rate per (band, cohort) cell, shared by the printed dose-response
+    table and the persisted recency rows.
+
+    Split out rather than computed twice for the same reason build_rows is
+    computed once and reused across the restricted/full/placebo views: two
+    call sites recomputing the same cells is how a printed table and a stored
+    one quietly stop agreeing.
+    """
+    stats = []
+    for _, _, label in SCORE_BANDS:
+        for cohort in RECENCY_COHORTS:
+            subset = [
+                r for r in rows
+                if r["band"] == label and recency_cohort(r["add"], window_end) == cohort
+            ]
+            exposure = sum(r["exposure"] for r in subset)
+            crashed = sum(1 for r in subset if r["crashed"])
+            stats.append(
+                {
+                    "band": label,
+                    "cohort": cohort,
+                    "carriers": len(subset),
+                    "crashed": crashed,
+                    "crashes_per_1000_months": (
+                        None if exposure <= 0 else 1000 * crashed / exposure
+                    ),
+                }
+            )
+    return stats
+
+
 def recency_table(rows, window_end):
     """Dose-response split by how recently the successor registered.
 
@@ -258,21 +297,17 @@ def recency_table(rows, window_end):
     because the recent cohorts will be small, and a rate over 40 carriers is
     not the claim a rate over 40,000 is.
     """
-    cohorts = ["under-1y", "1-3y", "3y-plus"]
     print("\nDOSE-RESPONSE BY REGISTRATION RECENCY (crashes per 1,000 exposure-months, n in parens)")
-    print("  {:<12} {:>22} {:>22} {:>22}".format("band", *cohorts))
+    print("  {:<12} {:>22} {:>22} {:>22}".format("band", *RECENCY_COHORTS))
+    stats = _recency_stats(rows, window_end)
     for _, _, label in SCORE_BANDS:
         cells = []
-        for cohort in cohorts:
-            subset = [
-                r for r in rows
-                if r["band"] == label and recency_cohort(r["add"], window_end) == cohort
-            ]
-            exposure = sum(r["exposure"] for r in subset)
-            crashed = sum(1 for r in subset if r["crashed"])
+        for cohort in RECENCY_COHORTS:
+            cell = next(s for s in stats if s["band"] == label and s["cohort"] == cohort)
             cells.append(
-                "n/a ({})".format(len(subset)) if exposure <= 0
-                else "{:.2f} ({:,})".format(1000 * crashed / exposure, len(subset))
+                "n/a ({})".format(cell["carriers"])
+                if cell["crashes_per_1000_months"] is None
+                else "{:.2f} ({:,})".format(cell["crashes_per_1000_months"], cell["carriers"])
             )
         print("  {:<12} {:>22} {:>22} {:>22}".format(label, *cells))
 
@@ -286,6 +321,11 @@ def _print_placebo(restricted, seed):
     banding itself (bin-edge placement, population size per bin) rather than
     the score predicting anything, and no other result in this run can be
     trusted until that is fixed.
+
+    Returns the permuted rows so a caller persisting this run can store them
+    as the "placebo" view alongside "restricted" and "full" — the same rows
+    the printed table above is built from, not a second, independently
+    shuffled draw.
     """
     placebo = [dict(r) for r in restricted]
     shuffled = [r["score"] for r in placebo]
@@ -293,6 +333,7 @@ def _print_placebo(restricted, seed):
     for row, score in zip(placebo, shuffled, strict=True):
         row["band"] = band_for(score)
     band_table(placebo, "PLACEBO (permuted scores; MUST be flat or the banding is wrong)")
+    return placebo
 
 
 def distinct_crashed_dot_numbers(client, crashes_index):
@@ -449,12 +490,29 @@ def _unflagged_stratum_counts(population, crashed_population, flagged):
     return counts, negative
 
 
+@dataclass
+class ControlResult:
+    """The three numbers persistence needs out of the control comparison, bundled.
+
+    _control_comparison already has several locals of its own; unpacking three
+    more into main() to carry through to the summary row would push main()
+    over ruff's local-variable budget for what is really one piece of state —
+    the outcome of this one comparison.
+    """
+
+    flagged_rate: float | None
+    standardized: float | None
+    skipped: list
+
+
 def _control_comparison(client, args, restricted, window_start):
-    """Standardize the whole unflagged population (not a sample) to the flagged cohort's mix, and print the lift.
+    """Standardize the whole unflagged population (not a sample) to the flagged cohort's mix, print the lift, and return it.
 
     Split out of main() so this section's several supporting queries
     (population and crashed-population stratum counts) don't push main()'s
-    local-variable count over ruff's PLR0914 budget.
+    local-variable count over ruff's PLR0914 budget. Returns a ControlResult
+    so the summary row persisted by _persist_results carries the same numbers
+    just printed, rather than a second, independently derived copy.
     """
     flagged = stratum_counts(restricted)
     population = population_stratum_counts(client, args.carriers_index, window_start)
@@ -499,6 +557,163 @@ def _control_comparison(client, args, restricted, window_start):
             "population and flagged disagreed on a stratum key somewhere and needs "
             "investigating before this run is trusted.".format(len(negative_strata))
         )
+    return ControlResult(flagged_rate, standardized, skipped)
+
+
+def source_fingerprint(client, carriers_index):
+    """The analysis fingerprint stamped on the carriers index being measured.
+
+    Carried onto every result document so a stored result can be tied back to
+    the token universe that produced it. Without it, matching a result to its
+    index means comparing timestamps by hand — which is exactly how this
+    project lost track of which figures came from which run.
+    """
+    mapping = client.indices.get_mapping(index=carriers_index)
+    for index_mapping in mapping.body.values():
+        return index_mapping.get("mappings", {}).get("_meta", {}).get("analysis_fingerprint")
+    return None
+
+
+def _band_documents(views, run_id, generated_at, source):
+    """One row per (view, band) cell — the restricted/full/placebo tables flattened for storage.
+
+    All three views share one loop rather than three near-identical blocks,
+    for the same reason build_rows computes all three views from one row set:
+    keeping them in lockstep is what stops the persisted numbers disagreeing
+    with each other or with what band_table printed for the same run.
+    """
+    documents = []
+    for view, view_rows in views:
+        for _, _, label in SCORE_BANDS:
+            band_rows = [r for r in view_rows if r["band"] == label]
+            crashed = sum(1 for r in band_rows if r["crashed"])
+            exposure = sum(r["exposure"] for r in band_rows)
+            documents.append(
+                {
+                    "run_id": run_id,
+                    "generated_at": generated_at,
+                    "row_type": "band",
+                    "view": view,
+                    "band": label,
+                    "carriers": len(band_rows),
+                    "crashed": crashed,
+                    "rate": rate(crashed, len(band_rows)),
+                    "crashes_per_1000_months": (
+                        None if exposure <= 0 else 1000 * crashed / exposure
+                    ),
+                    "source": source,
+                }
+            )
+    return documents
+
+
+def _recency_documents(rows, window_end, run_id, generated_at, source):
+    """One row per (band, cohort) cell of the dose-response table.
+
+    Task 5B added the recency dimension after this script's other rows were
+    already the reviewed baseline for persistence; without this, an active
+    chameleon's fresh-registration cohort — the population the restricted
+    headline structurally excludes — would exist only in a terminal, the same
+    gap this task exists to close for every other row.
+    """
+    return [
+        {
+            "run_id": run_id,
+            "generated_at": generated_at,
+            "row_type": "recency",
+            "band": stat["band"],
+            "recency_cohort": stat["cohort"],
+            "carriers": stat["carriers"],
+            "crashed": stat["crashed"],
+            "crashes_per_1000_months": stat["crashes_per_1000_months"],
+            "source": source,
+        }
+        for stat in _recency_stats(rows, window_end)
+    ]
+
+
+def _summary_document(run_id, generated_at, control, source):
+    """The one row a later comparison would query first: lift and its two inputs.
+
+    lift is computed here rather than stored as a bare ratio further upstream
+    because it is only meaningful when standardized_control_rate is present;
+    folding the None-guard into the one place that builds this document is
+    what stops a later reader dividing by a None standardized rate.
+
+    placebo_is_flat is deliberately absent: whether the placebo table came out
+    flat is a judgment made by reading it, and code asserting its own placebo
+    passed would defeat the point of having one.
+    """
+    return {
+        "run_id": run_id,
+        "generated_at": generated_at,
+        "row_type": "summary",
+        "flagged_rate": control.flagged_rate,
+        "standardized_control_rate": control.standardized,
+        "lift": (
+            None
+            if not control.standardized
+            else (control.flagged_rate or 0) / control.standardized
+        ),
+        "strata_without_controls": len(control.skipped),
+        "source": source,
+    }
+
+
+def _build_result_documents(run_id, generated_at, source, restricted, rows, placebo, window_end, control):
+    """Assemble one run's full set of persisted rows: band cells, recency cells, one summary.
+
+    Kept separate from the ES write so the row shapes can be checked against
+    index-mappings.json field by field, independent of whether a cluster is
+    even reachable — this function needs no client.
+    """
+    views = (("restricted", restricted), ("full", rows), ("placebo", placebo))
+    documents = _band_documents(views, run_id, generated_at, source)
+    documents.extend(_recency_documents(rows, window_end, run_id, generated_at, source))
+    documents.append(_summary_document(run_id, generated_at, control, source))
+    return documents
+
+
+def write_results(client, index, documents):
+    """Index one document per reported row, returning how many were written.
+
+    Refreshed on completion because the immediately following read-back check
+    would otherwise see nothing — newly indexed documents are not searchable
+    for up to a second, which this repo has been bitten by before.
+    """
+    actions = [{"_index": index, "_source": document} for document in documents]
+    written, _ = bulk(client, actions)
+    client.indices.refresh(index=index)
+    return written
+
+
+def _persist_results(client, args, window_start, window_end, dots, restricted, rows, placebo, control):
+    """Build this run's documents and write them, unless --no-write suppressed it.
+
+    Split out of main() because assembling the run_id/source/document-list
+    state is a lot of local variables for one step of the report; keeping it
+    here is what lets main() stay a readable outline of the report rather than
+    ending in a block of persistence bookkeeping.
+    """
+    run_id = uuid.uuid4().hex
+    generated_at = datetime.now(UTC).isoformat()
+    source = {
+        "pairs_index": args.pairs_index,
+        "carriers_index": args.carriers_index,
+        "crashes_index": args.crashes_index,
+        "analysis_fingerprint": source_fingerprint(client, args.carriers_index),
+        "crash_window_start": window_start,
+        "crash_window_end": window_end,
+        "distinct_successors": len(dots),
+        "restricted_cohort": len(restricted),
+    }
+    documents = _build_result_documents(
+        run_id, generated_at, source, restricted, rows, placebo, window_end, control
+    )
+    if not args.write:
+        return
+    written = write_results(client, args.results_alias, documents)
+    print("\nwrote {} result rows to {} as run_id {}".format(written, args.results_alias, run_id))
 
 
 def _parse_args():
@@ -516,16 +731,21 @@ def _parse_args():
     parser.add_argument("--carriers-index", default="carriers-000001")
     parser.add_argument("--crashes-index", default="crashes-000001")
     parser.add_argument("--seed", type=int, default=42, help="placebo permutation only")
+    parser.add_argument("--results-alias", default="chameleon-validation-000001")
+    parser.add_argument("--no-write", dest="write", action="store_false")
+    parser.set_defaults(write=True)
     return parser.parse_args()
 
 
 def main():
-    """Read the live cluster and print the crash-lift report end to end.
+    """Read the live cluster, print the crash-lift report end to end, and persist it.
 
     The seam between CLI/ES-client setup and the report body, and the report
     body itself is delegated to helpers (band_table, _print_exposure_table,
-    _print_placebo, _control_comparison) so this function stays short enough
-    to read as an outline rather than tripping ruff's statement-count limit.
+    _print_placebo, _control_comparison, _persist_results) so this function
+    stays short enough to read as an outline rather than tripping ruff's
+    statement-count limit. Printing happens whether or not --write is set, so
+    a run can always be inspected in the terminal even with persistence off.
     """
     args = _parse_args()
     client = Elasticsearch(
@@ -558,8 +778,8 @@ def main():
     band_table(rows, "FULL SET (companion; unequal exposure, do not quote as the headline)")
     _print_exposure_table(rows)
     recency_table(rows, window_end)
-    _print_placebo(restricted, args.seed)
-    _control_comparison(client, args, restricted, window_start)
+    placebo = _print_placebo(restricted, args.seed)
+    control = _control_comparison(client, args, restricted, window_start)
 
     print(
         "\nNOTE: fleet size drives crashes through miles driven and is a matching "
@@ -567,6 +787,8 @@ def main():
         "the standardized comparison, it is confounded by size and must not be "
         "reported as evidence the score ranks risk."
     )
+
+    _persist_results(client, args, window_start, window_end, dots, restricted, rows, placebo, control)
     return 0
 
 

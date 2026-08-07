@@ -43,6 +43,10 @@
     {
       "name": "chameleon-detection",
       "phases": ["index-create", "index-map", "entity-match"]
+    },
+    {
+      "name": "chameleon-validation",
+      "phases": ["index-create", "index-map"]
     }
   ],
   "all_phases": [

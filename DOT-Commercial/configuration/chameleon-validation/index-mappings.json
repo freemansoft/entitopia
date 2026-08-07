@@ -1,0 +1,34 @@
+{
+  "index": "chameleon-validation-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "run_id": { "type": "keyword" },
+      "generated_at": { "type": "date" },
+      "row_type": { "type": "keyword" },
+      "view": { "type": "keyword" },
+      "band": { "type": "keyword" },
+      "recency_cohort": { "type": "keyword" },
+      "carriers": { "type": "long" },
+      "crashed": { "type": "long" },
+      "rate": { "type": "double" },
+      "crashes_per_1000_months": { "type": "double" },
+      "flagged_rate": { "type": "double" },
+      "standardized_control_rate": { "type": "double" },
+      "lift": { "type": "double" },
+      "strata_without_controls": { "type": "long" },
+      "placebo_is_flat": { "type": "boolean" },
+      "source": {
+        "properties": {
+          "pairs_index": { "type": "keyword" },
+          "carriers_index": { "type": "keyword" },
+          "crashes_index": { "type": "keyword" },
+          "analysis_fingerprint": { "type": "keyword" },
+          "crash_window_start": { "type": "long" },
+          "crash_window_end": { "type": "long" },
+          "distinct_successors": { "type": "long" },
+          "restricted_cohort": { "type": "long" }
+        }
+      }
+    }
+  }
+}
