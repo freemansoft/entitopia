@@ -157,7 +157,16 @@ def standardize(flagged_counts, control_counts):
     weighted = 0.0
     represented = 0
     skipped = []
-    for stratum, (_, flagged_total) in sorted(flagged_counts.items()):
+    # Sorted by the stratum's string form, not the stratum tuple itself: a
+    # real stratum is (cohort_int, fleet_band, state), and `state` is None for
+    # a carrier that never filed `phy_state`. Python can order two strings or
+    # two Nones but not a None against a str, so comparing the raw tuples
+    # crashes the first time a None-state and a real-state stratum collide at
+    # the same cohort/fleet prefix. The sort itself only exists to make the
+    # "skipped" list's print order reproducible; the weighted sum below is
+    # order-independent, so trading exact key order for a stable string order
+    # changes nothing but which representation does the comparing.
+    for stratum, (_, flagged_total) in sorted(flagged_counts.items(), key=lambda item: str(item[0])):
         control = control_counts.get(stratum)
         control_rate = rate(*control) if control else None
         if control_rate is None:
