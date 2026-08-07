@@ -193,6 +193,37 @@ def build_rows(scores, crashes, attributes, window_start, window_end):
     return rows
 
 
+def _band_stats(rows):
+    """Carrier count, crash count, raw rate and exposure-normalized rate per score band, over one set of rows.
+
+    Every caller that reports on a single view — the printed restricted/full/
+    placebo tables, the printed exposure table, and the persisted band
+    documents — computed this same per-band arithmetic independently until
+    this was pulled out. Two loops over the same rows producing the same
+    numbers by construction still means a future edit to one and not the
+    other silently desyncs a printed table from what gets persisted (or from
+    each other); recency rows already had this guard via _recency_stats, this
+    gives band rows the same one.
+    """
+    stats = []
+    for _, _, label in SCORE_BANDS:
+        band_rows = [r for r in rows if r["band"] == label]
+        crashed = sum(1 for r in band_rows if r["crashed"])
+        exposure = sum(r["exposure"] for r in band_rows)
+        stats.append(
+            {
+                "band": label,
+                "carriers": len(band_rows),
+                "crashed": crashed,
+                "rate": rate(crashed, len(band_rows)),
+                "crashes_per_1000_months": (
+                    None if exposure <= 0 else 1000 * crashed / exposure
+                ),
+            }
+        )
+    return stats
+
+
 def band_table(rows, title):
     """Crash rate per score band, printed with its denominator.
 
@@ -202,15 +233,13 @@ def band_table(rows, title):
     """
     print("\n{}".format(title))
     print("  {:<12} {:>10} {:>10} {:>9}".format("band", "carriers", "crashed", "rate"))
-    for _, _, label in SCORE_BANDS:
-        band_rows = [r for r in rows if r["band"] == label]
-        crashed = sum(1 for r in band_rows if r["crashed"])
-        proportion = rate(crashed, len(band_rows))
+    for stat in _band_stats(rows):
+        proportion = stat["rate"]
         print(
             "  {:<12} {:>10,} {:>10,} {:>9}".format(
-                label,
-                len(band_rows),
-                crashed,
+                stat["band"],
+                stat["carriers"],
+                stat["crashed"],
                 "n/a" if proportion is None else "{:.2%}".format(proportion),
             )
         )
@@ -235,15 +264,13 @@ def _print_exposure_table(rows):
     """
     print("\nexposure-normalized, full set")
     print("  {:<12} {:>10} {:>18}".format("band", "carriers", "crashes/1000 months"))
-    for _, _, label in SCORE_BANDS:
-        band_rows = [r for r in rows if r["band"] == label]
-        exposure = sum(r["exposure"] for r in band_rows)
-        crashed = sum(1 for r in band_rows if r["crashed"])
+    for stat in _band_stats(rows):
         print(
             "  {:<12} {:>10,} {:>18}".format(
-                label,
-                len(band_rows),
-                "n/a" if exposure <= 0 else "{:.2f}".format(1000 * crashed / exposure),
+                stat["band"],
+                stat["carriers"],
+                "n/a" if stat["crashes_per_1000_months"] is None
+                else "{:.2f}".format(stat["crashes_per_1000_months"]),
             )
         )
 
@@ -577,30 +604,24 @@ def source_fingerprint(client, carriers_index):
 def _band_documents(views, run_id, generated_at, source):
     """One row per (view, band) cell — the restricted/full/placebo tables flattened for storage.
 
-    All three views share one loop rather than three near-identical blocks,
-    for the same reason build_rows computes all three views from one row set:
-    keeping them in lockstep is what stops the persisted numbers disagreeing
-    with each other or with what band_table printed for the same run.
+    Reads _band_stats rather than recomputing per-band arithmetic, so a
+    persisted row can never disagree with what band_table (or, for the full
+    view, _print_exposure_table) printed for the same run.
     """
     documents = []
     for view, view_rows in views:
-        for _, _, label in SCORE_BANDS:
-            band_rows = [r for r in view_rows if r["band"] == label]
-            crashed = sum(1 for r in band_rows if r["crashed"])
-            exposure = sum(r["exposure"] for r in band_rows)
+        for stat in _band_stats(view_rows):
             documents.append(
                 {
                     "run_id": run_id,
                     "generated_at": generated_at,
                     "row_type": "band",
                     "view": view,
-                    "band": label,
-                    "carriers": len(band_rows),
-                    "crashed": crashed,
-                    "rate": rate(crashed, len(band_rows)),
-                    "crashes_per_1000_months": (
-                        None if exposure <= 0 else 1000 * crashed / exposure
-                    ),
+                    "band": stat["band"],
+                    "carriers": stat["carriers"],
+                    "crashed": stat["crashed"],
+                    "rate": stat["rate"],
+                    "crashes_per_1000_months": stat["crashes_per_1000_months"],
                     "source": source,
                 }
             )
