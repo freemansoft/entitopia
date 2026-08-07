@@ -1333,6 +1333,36 @@ git commit -m "Persist crash-lift results to a date-stamped validation index"
 **Files:**
 
 - Modify: `DOT-Commercial/README.md` (the `entity-match` calibration open item)
+- Modify: `DOT-Commercial/docs/chameleon-pipeline-explainer.md` (new section 9)
+
+**The explainer is the theory-of-operation document** — it walks a reader from
+CSV through scoring to querying results, in sections 1-8. It currently ends at
+"how to query the calculated results" and says nothing about whether those
+results were ever checked against reality. A reader finishing it today would
+reasonably conclude the scores are known to work.
+
+Add `## 9. Does the score actually predict anything?` after section 8, covering,
+in the explainer's plain register rather than the spec's:
+
+- What the validation asks: whether high-scoring successors appear in the FMCSA
+  crash file more often than comparable carriers, using an outcome the matcher
+  never sees. No signal in `entity-match.json` reads crash data.
+- The GAO-12-364 reference point (18% vs 6%, a 3x lift) and why it is the right
+  yardstick.
+- The recency cohorts (`under-1y`, `1-3y`, `3y-plus`), measured back from the
+  newest crash rather than from today, exposure-normalized as crashes per 1,000
+  observed months — and **why** they exist: the headline restricts to carriers
+  registered before the crash window, which excludes exactly the fresh
+  registrations an active chameleon would be.
+- **The measured result, stated plainly**, including that it is null.
+- What the result does NOT mean: it is not evidence the matching is broken. The
+  loaded census carries no officer name, EIN or DUNS — three of the identifiers
+  FMCSA's own ARCHI tool matches on — so a weak lift is at least as consistent
+  with missing inputs as with a bad scorer. Say so, and point at the score
+  weighting open item.
+
+Cross-link the explainer section and the README open item to each other so a
+reader arriving at either finds the other.
 
 - [ ] **Step 1: Run the full measurement and capture output**
 
