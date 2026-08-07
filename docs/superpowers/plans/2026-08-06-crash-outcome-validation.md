@@ -274,7 +274,11 @@ def test_a_carrier_with_no_registration_date_never_counts():
 
 
 def test_months_between_is_fractional_so_short_exposure_is_not_rounded_away():
-    assert months_between(20250101, 20250701) == 6.0
+    # CORRECTED after implementation: this originally asserted `== 6.0`, which
+    # is arithmetically impossible under the implementation below — 181 days /
+    # 30.4375 is 5.947. A tolerance states the intent and still fails if the
+    # function returns days, weeks, or divides by 365.
+    assert 5.8 < months_between(20250101, 20250701) < 6.1
     assert round(months_between(20250101, 20250116), 1) == 0.5
 
 
@@ -801,7 +805,6 @@ def main():
     parser.add_argument("--pairs-index", default="chameleon-candidates-000001")
     parser.add_argument("--carriers-index", default="carriers-000001")
     parser.add_argument("--crashes-index", default="crashes-000001")
-    parser.add_argument("--control-size", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=42, help="placebo permutation only")
     args = parser.parse_args()
 
@@ -858,17 +861,8 @@ def main():
     band_table(placebo, "PLACEBO (permuted scores; MUST be flat or the banding is wrong)")
 
     flagged = stratum_counts(restricted)
-    control_dots = [
-        d for d in _sample_unflagged(client, args.carriers_index, set(dots), args.control_size)
-    ]
-    control_attributes = carrier_attributes(client, args.carriers_index, control_dots)
-    control_crashes = crash_dates(client, args.crashes_index, control_dots)
-    control_rows = build_rows(
-        {d: 0.0 for d in control_dots}, control_crashes, control_attributes,
-        window_start, window_end,
-    )
-    control_rows = [r for r in control_rows if r["registered_before_window"]]
-    standardized, skipped = standardize(flagged, stratum_counts(control_rows))
+    control = control_stratum_counts(client, args, flagged, window_start, window_end)
+    standardized, skipped = standardize(flagged, control)
 
     flagged_crashed = sum(1 for r in restricted if r["crashed"])
     flagged_rate = rate(flagged_crashed, len(restricted))
@@ -893,30 +887,27 @@ def main():
     return 0
 
 
-def _sample_unflagged(client, carriers_index, flagged, size):
-    """Carriers absent from the pair set entirely, for the control group."""
-    seen = []
-    after = None
-    while len(seen) < size:
-        composite = {"size": PAGE, "sources": [{"dot": {"terms": {"field": "dot_number"}}}]}
-        if after:
-            composite["after"] = after
-        response = client.search(
-            index=carriers_index,
-            size=0,
-            aggs={"c": {"composite": composite}},
-            track_total_hits=False,
-        )
-        agg = response["aggregations"]["c"]
-        if not agg["buckets"]:
-            break
-        seen.extend(
-            str(b["key"]["dot"]) for b in agg["buckets"] if str(b["key"]["dot"]) not in flagged
-        )
-        after = agg.get("after_key")
-        if not after:
-            break
-    return seen[:size]
+def control_stratum_counts(client, args, flagged, window_start, window_end):
+    """Crash counts per stratum for every carrier NOT in the pair set.
+
+    Covers the whole unflagged population rather than a sample, because the
+    spec's reason for choosing direct standardization was to use every control
+    carrier. It also removes an entire class of wrong answer: selecting
+    controls by paging an ordered field returns the OLDEST carriers, since
+    FMCSA assigns DOT numbers chronologically, and old carriers crash more.
+    That mistake was made once here and produced a confident 0.70x lift — the
+    score appearing to anti-predict crashes, when what was being measured was
+    company age.
+
+    Both sides come from subtraction, so nothing has to be sampled:
+
+        control_total   = all_carriers_total   - flagged_total
+        control_crashed = all_crashed_total    - flagged_crashed
+
+    The crashed side is cheap despite covering every carrier: only carriers
+    appearing in the crash file can contribute, and there are ~122,483 of
+    those against 2,085,534 carriers.
+    """
 
 
 if __name__ == "__main__":
@@ -929,7 +920,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 3: Verify the script runs end to end**
 
-Run: `.venv/bin/python scripts/measure_crash_lift.py --control-size 20000`
+Run: `.venv/bin/python scripts/measure_crash_lift.py`
 Expected: prints the crash window, counts, four band tables and the control comparison. No traceback.
 
 - [ ] **Step 4: Verify the placebo is flat**

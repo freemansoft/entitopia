@@ -211,6 +211,34 @@ Strata containing no control carriers are reported as such and excluded from the
 weighted total. Silently dropping them would quietly redefine the comparison
 population.
 
+**Do not select controls by paging an ordered field.** This was implemented
+once and produced a confidently wrong answer, so it is recorded here rather
+than left for the next person to rediscover. Paging carriers by `dot_number`
+and stopping at N returns the N _oldest_ registrations, because FMCSA assigns
+DOT numbers chronologically — verified: `dot=1` registered 1974-06-01,
+`dot=1000000` registered 2002-01-23. Old carriers are established, larger and
+higher-mileage, so they crash more. The measured result was a **0.70x lift**,
+control 9.50% against flagged 6.64% — the score appearing to _anti_-predict
+crashes, when what was actually being measured was company age.
+
+The whole-population form has no such failure mode and needs no sampling at
+all, because both sides are reachable by subtraction:
+
+```
+control_total[stratum]   = all_carriers_total[stratum] - flagged_total[stratum]
+control_crashed[stratum] = all_crashed_total[stratum]  - flagged_crashed[stratum]
+```
+
+The crashed side is cheap despite covering every carrier: only carriers that
+appear in the crash file can contribute, and there are ~122,483 of those out of
+2,085,534.
+
+**Sanity check with teeth.** The unflagged control rate before standardization
+should land near the measured 5.87% base rate. A control rate far from it means
+the control population is wrong, and that must be reported rather than
+published — the biased run above would have passed every test in this spec
+while inverting its conclusion.
+
 ### Placebo
 
 Re-run the banding with scores randomly permuted across the same successors. The
@@ -241,6 +269,33 @@ because it converts an open question into false confidence.
 - **The placebo is itself a test of the method.** If a permuted-score run does
   not come out flat, the banding is wrong and no result from it is publishable.
 - `.venv/bin/python -m ruff check .` prints `All checks passed!`.
+
+### Persisting each run
+
+Each run writes its rows to a date-stamped `chameleon-validation-{now/d}-000001`
+behind the alias `chameleon-validation-000001`, the same shape every other step
+in this project uses.
+
+Printing to stdout alone would reproduce the failure this spec's Documentation
+section warns about. The "roughly 195 pairs" figure in `DOT-Commercial/README.md`
+became unreproducible precisely because the run behind it was gone, and the
+controlled before/after comparison that resolved it was only possible because
+three earlier sweeps happened to still exist as indexes — luck, not design.
+
+Every row carries the `analysis_fingerprint` of the carriers index it measured,
+so a stored result is tied to the token universe that produced it instead of
+being matched to a run by timestamp afterwards. A run is retrievable as a unit
+by `run_id`.
+
+Every field on that index is **pinned**, never left to dynamic inference. A
+`rate` field that inferred `long` from a first value of `0` would silently
+truncate every subsequent rate to an integer — the same class of defect as the
+`tow_away` trap above, which is what dynamic inference already cost this
+project once.
+
+`placebo_is_flat` is stored but never set by the script. Whether the placebo
+passed is a judgment made by reading the table; code that asserted its own
+placebo had passed would defeat the reason for having one.
 
 ## Documentation
 
