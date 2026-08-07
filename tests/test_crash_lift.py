@@ -164,6 +164,22 @@ def test_empty_flagged_population_gives_none():
     assert standardize({}, {"a": (5, 10)}) == (None, [])
 
 
+def test_standardize_tolerates_a_none_valued_stratum_element():
+    # Found against live data, not hypothesized: a real stratum is
+    # (cohort_int, fleet_band, state), and `state` is None for any carrier
+    # that never filed phy_state. sorted() on the raw tuples raised
+    # TypeError: '<' not supported between instances of 'NoneType' and 'str'
+    # the first time a None-state stratum tied a real-state stratum on the
+    # other two elements — Python can order two strings or two Nones, but not
+    # one of each. The two strata below share cohort=2020 so they collide on
+    # exactly that comparison.
+    flagged = {(2020, "1", None): (1, 10), (2020, "1", "TX"): (2, 10)}
+    control = {(2020, "1", None): (5, 100), (2020, "1", "TX"): (5, 100)}
+    standardized, skipped = standardize(flagged, control)
+    assert round(standardized, 4) == 0.05
+    assert skipped == []
+
+
 # Loaded by path, mirroring test_profile_dataset.py's convention, because
 # scripts/ is a directory of standalone tools rather than an importable
 # package. A function-scoped `sys.path.insert` + import (as originally

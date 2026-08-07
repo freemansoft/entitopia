@@ -260,62 +260,193 @@ def _print_placebo(restricted, seed):
     band_table(placebo, "PLACEBO (permuted scores; MUST be flat or the banding is wrong)")
 
 
-def _sample_unflagged(client, carriers_index, flagged, size):
-    """Carriers absent from the pair set entirely, for the control group."""
-    seen = []
+def distinct_crashed_dot_numbers(client, crashes_index):
+    """Every DOT number appearing at least once in the crash file, unsampled.
+
+    Feeds the whole-population half of the control comparison. The prior
+    approach drew a --control-size SAMPLE of unflagged carriers by paging the
+    carriers index in dot_number order and stopping at the requested size —
+    which silently returned the OLDEST carriers in the file, because DOT
+    numbers are assigned chronologically, biasing the control group toward
+    established, high-mileage operations that crash more than average. The
+    replacement computes exact unflagged counts by subtracting the flagged
+    cohort's per-stratum counts from the whole population's, and that
+    requires every crashed carrier, not a sample of them.
+    """
+    dots = []
     after = None
-    while len(seen) < size:
+    while True:
         composite = {"size": PAGE, "sources": [{"dot": {"terms": {"field": "dot_number"}}}]}
+        if after:
+            composite["after"] = after
+        response = client.search(
+            index=crashes_index,
+            size=0,
+            aggs={"d": {"composite": composite}},
+            track_total_hits=False,
+        )
+        agg = response["aggregations"]["d"]
+        if not agg["buckets"]:
+            break
+        dots.extend(str(b["key"]["dot"]) for b in agg["buckets"])
+        after = agg.get("after_key")
+        if not after:
+            break
+    return dots
+
+
+def _iso_date(yyyymmdd):
+    """Render a YYYYMMDD int as `yyyy-MM-dd`, the form add_date's mapping accepts in a range query."""
+    return "{:04d}-{:02d}-{:02d}".format(yyyymmdd // 10000, yyyymmdd // 100 % 100, yyyymmdd % 100)
+
+
+def population_stratum_counts(client, carriers_index, window_start):
+    """Every carrier registered before the crash window, bucketed by build_rows's stratum key.
+
+    The population half of the whole-population control comparison: paired
+    with crashed_stratum_counts and subtracted against the flagged cohort in
+    _unflagged_stratum_counts, this gives exact unflagged per-stratum totals
+    without sampling. `missing_bucket=True` on the state and power-unit
+    sources is what makes a carrier missing phy_state or nbr_power_unit land
+    in this composite's null-keyed bucket instead of being silently dropped —
+    ES's composite aggregation drops docs missing a source field by default,
+    and build_rows keeps those carriers (state=None, fleet="unknown"), so
+    dropping them here would undercount the population relative to the
+    flagged side and bias every stratum's control rate.
+    """
+    counts = {}
+    after = None
+    query = {"range": {"add_date": {"lt": _iso_date(window_start)}}}
+    while True:
+        composite = {
+            "size": PAGE,
+            "sources": [
+                {
+                    "cohort": {
+                        "date_histogram": {
+                            "field": "add_date",
+                            "calendar_interval": "year",
+                            "format": "yyyy",
+                        }
+                    }
+                },
+                {"state": {"terms": {"field": "phy_state.keyword", "missing_bucket": True}}},
+                {
+                    "power": {
+                        "histogram": {"field": "nbr_power_unit", "interval": 1, "missing_bucket": True}
+                    }
+                },
+            ],
+        }
         if after:
             composite["after"] = after
         response = client.search(
             index=carriers_index,
             size=0,
-            aggs={"c": {"composite": composite}},
+            query=query,
+            aggs={"pop": {"composite": composite}},
             track_total_hits=False,
         )
-        agg = response["aggregations"]["c"]
+        agg = response["aggregations"]["pop"]
         if not agg["buckets"]:
             break
-        seen.extend(
-            str(b["key"]["dot"]) for b in agg["buckets"] if str(b["key"]["dot"]) not in flagged
-        )
+        for bucket in agg["buckets"]:
+            key = bucket["key"]
+            power = key["power"]
+            stratum = (int(key["cohort"]), fleet_size_band(None if power is None else int(power)), key["state"])
+            counts[stratum] = counts.get(stratum, 0) + bucket["doc_count"]
         after = agg.get("after_key")
         if not after:
             break
-    return seen[:size]
+    return counts
 
 
-def _control_comparison(client, args, restricted, dots, window_start, window_end):
-    """Standardize an unflagged sample to the flagged cohort's stratum mix and print the lift.
+def crashed_stratum_counts(client, carriers_index, crashes_index, window_start):
+    """Crash counts per stratum for every carrier that ever appears in the crash file.
 
-    Split out of main() because this is the one section that issues its own
-    additional queries (drawing the control sample and its attributes/crashes)
-    rather than reusing rows already built for the tables above, and folding
-    it into main() was what pushed that function's local-variable count over
-    ruff's PLR0914 budget.
+    The other half of the whole-population control comparison, computed the
+    same way build_rows computes an individual row's outcome — reusing
+    crashed_after_registration so a crash's stratum credit follows the same
+    causal guard as the flagged cohort: a crash predating registration
+    belongs to the predecessor, not this carrier.
+    """
+    crashed_dots = distinct_crashed_dot_numbers(client, crashes_index)
+    attributes = carrier_attributes(client, carriers_index, crashed_dots)
+    dates = crash_dates(client, crashes_index, crashed_dots)
+    counts = {}
+    for dot in crashed_dots:
+        attribute = attributes.get(dot)
+        if not attribute or attribute["add"] is None:
+            continue
+        add = attribute["add"]
+        if add >= window_start or not crashed_after_registration(add, dates.get(dot, [])):
+            continue
+        stratum = (add // 10000, attribute["fleet"], attribute["state"])
+        counts[stratum] = counts.get(stratum, 0) + 1
+    return counts
+
+
+def _unflagged_stratum_counts(population, crashed_population, flagged):
+    """Population counts minus flagged counts, giving exact unflagged counts without sampling.
+
+    Subtraction rather than querying the carriers index for "NOT IN flagged",
+    because the flagged set is on the order of 200k DOT numbers and a
+    composite aggregation has no efficient way to exclude that many terms;
+    both sides already have per-stratum totals, so subtracting is exact.
+
+    Returns the unflagged counts and the list of strata where subtraction
+    went negative. That should never happen if population and flagged share
+    exactly the same stratum-key definition (they call the same
+    fleet_size_band and read the same cohort/state fields) — a nonempty list
+    means that assumption broke somewhere, and the caller must say so rather
+    than silently reporting a rate built from a negative count.
+    """
+    counts = {}
+    negative = []
+    for stratum, total in population.items():
+        flagged_crashed, flagged_total = flagged.get(stratum, (0, 0))
+        crashed = crashed_population.get(stratum, 0) - flagged_crashed
+        remaining = total - flagged_total
+        if crashed < 0 or remaining < 0:
+            negative.append(stratum)
+            continue
+        counts[stratum] = (crashed, remaining)
+    return counts, negative
+
+
+def _control_comparison(client, args, restricted, window_start):
+    """Standardize the whole unflagged population (not a sample) to the flagged cohort's mix, and print the lift.
+
+    Split out of main() so this section's several supporting queries
+    (population and crashed-population stratum counts) don't push main()'s
+    local-variable count over ruff's PLR0914 budget.
     """
     flagged = stratum_counts(restricted)
-    control_dots = _sample_unflagged(client, args.carriers_index, set(dots), args.control_size)
-    control_attributes = carrier_attributes(client, args.carriers_index, control_dots)
-    control_crashes = crash_dates(client, args.crashes_index, control_dots)
-    control_rows = build_rows(
-        dict.fromkeys(control_dots, 0.0),
-        control_crashes,
-        control_attributes,
-        window_start,
-        window_end,
+    population = population_stratum_counts(client, args.carriers_index, window_start)
+    crashed_population = crashed_stratum_counts(
+        client, args.carriers_index, args.crashes_index, window_start
     )
-    control_rows = [r for r in control_rows if r["registered_before_window"]]
-    standardized, skipped = standardize(flagged, stratum_counts(control_rows))
+    control_counts, negative_strata = _unflagged_stratum_counts(
+        population, crashed_population, flagged
+    )
+    standardized, skipped = standardize(flagged, control_counts)
+
+    control_total = sum(total for _, total in control_counts.values())
+    control_crashed = sum(crashed for crashed, _ in control_counts.values())
+    raw_control_rate = rate(control_crashed, control_total)
 
     flagged_crashed = sum(1 for r in restricted if r["crashed"])
     flagged_rate = rate(flagged_crashed, len(restricted))
-    print("\nCONTROL COMPARISON (restricted cohort, directly standardized)")
-    print("  flagged successors : {:.2%} of {:,}".format(flagged_rate or 0, len(restricted)))
+    print("\nCONTROL COMPARISON (restricted cohort; whole unflagged population, not a sample)")
+    print("  flagged successors      : {:.2%} of {:,}".format(flagged_rate or 0, len(restricted)))
     print(
-        "  standardized control: {} of {:,} unflagged carriers".format(
-            "n/a" if standardized is None else "{:.2%}".format(standardized), len(control_rows)
+        "  unflagged, raw           : {} of {:,}".format(
+            "n/a" if raw_control_rate is None else "{:.2%}".format(raw_control_rate), control_total
+        )
+    )
+    print(
+        "  unflagged, standardized  : {} of {:,}".format(
+            "n/a" if standardized is None else "{:.2%}".format(standardized), control_total
         )
     )
     if standardized:
@@ -326,10 +457,21 @@ def _control_comparison(client, args, restricted, dots, window_start, window_end
         )
     if skipped:
         print("  strata with no controls, excluded from the weighted total: {}".format(len(skipped)))
+    if negative_strata:
+        print(
+            "  WARNING: {} strata had negative unflagged counts after subtraction; "
+            "excluded, the figures above are on the remaining strata only. This means "
+            "population and flagged disagreed on a stratum key somewhere and needs "
+            "investigating before this run is trusted.".format(len(negative_strata))
+        )
 
 
 def _parse_args():
-    """Command-line surface: which indices to read, how big a control sample, which placebo seed.
+    """Command-line surface: which indices to read and which placebo seed to permute with.
+
+    No control-size flag: the control comparison reads the whole unflagged
+    population (see _control_comparison), not a sample, so there is nothing
+    left to size.
 
     Split out of main() so main() reads as the report's outline rather than
     starting with a block of argparse boilerplate.
@@ -338,7 +480,6 @@ def _parse_args():
     parser.add_argument("--pairs-index", default="chameleon-candidates-000001")
     parser.add_argument("--carriers-index", default="carriers-000001")
     parser.add_argument("--crashes-index", default="crashes-000001")
-    parser.add_argument("--control-size", type=int, default=200000)
     parser.add_argument("--seed", type=int, default=42, help="placebo permutation only")
     return parser.parse_args()
 
@@ -382,7 +523,7 @@ def main():
     band_table(rows, "FULL SET (companion; unequal exposure, do not quote as the headline)")
     _print_exposure_table(rows)
     _print_placebo(restricted, args.seed)
-    _control_comparison(client, args, restricted, dots, window_start, window_end)
+    _control_comparison(client, args, restricted, window_start)
 
     print(
         "\nNOTE: fleet size drives crashes through miles driven and is a matching "
