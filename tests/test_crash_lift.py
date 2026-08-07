@@ -96,10 +96,22 @@ def test_a_carrier_with_no_registration_date_never_counts():
     assert crashed_after_registration(None, [20250601]) is False
 
 
+def test_months_between_approximates_calendar_months():
+    # Jan 1 to Jul 1 is six calendar months; 30.4375-day average months put it
+    # at ~5.95. The tolerance is what makes this a test of intent rather than
+    # of the divisor — it still fails if the function returns days, weeks, or
+    # divides by 365.
+    assert 5.8 < months_between(20250101, 20250701) < 6.1
+
+
 def test_months_between_is_fractional_so_short_exposure_is_not_rounded_away():
-    # 181 days / 30.4375 = ~5.95 months (Jan 1 to July 1)
-    assert round(months_between(20250101, 20250701), 1) == 5.9
     assert round(months_between(20250101, 20250116), 1) == 0.5
+
+
+def test_months_between_is_zero_when_the_dates_are_equal():
+    # A carrier registered on the window end has no exposure. The caller
+    # divides by this, so it must be exactly 0.0 rather than a small negative.
+    assert months_between(20250101, 20250101) == 0.0
 
 
 def test_rate_of_an_empty_band_is_none_not_zero():
