@@ -1,0 +1,80 @@
+"""Arithmetic for validating the chameleon score against crash outcomes.
+
+Exists so the parts of the validation that decide what a number MEANS can be
+tested without a cluster. The script that reads Elasticsearch is unavoidably
+integration-shaped; this is not, and a banding or reweighting error would
+otherwise only ever surface as a table that looks reasonable and is wrong.
+
+Kept free of Elasticsearch imports on purpose: anything here must be callable
+from a test with plain dicts.
+"""
+
+# Fixed by docs/superpowers/specs/2026-08-06-crash-outcome-validation-design.md
+# BEFORE the first run, and deliberately reusing thresholds the project already
+# committed to — 0.35 is the emit floor, 0.70 the triage threshold, and the
+# README already calls everything under 0.50 noise. Edges chosen after seeing
+# the outcome are the standard way this analysis fools its author, so changing
+# them makes a run a new measurement rather than a refined one.
+SCORE_BANDS = [
+    (0.35, 0.50, "0.35-0.50"),
+    (0.50, 0.60, "0.50-0.60"),
+    (0.60, 0.70, "0.60-0.70"),
+    (0.70, 0.80, "0.70-0.80"),
+    (0.80, 0.90, "0.80-0.90"),
+    (0.90, 1.00, "0.90-1.00"),
+]
+
+
+def band_for(score):
+    """Which score band a successor falls in, or None if it is out of range.
+
+    Half-open intervals except the last, so a score never lands in two bands
+    and 1.0 still has a home. None rather than a catch-all bucket because a
+    score below the emit floor means the caller passed something that is not a
+    pair score, and silently bucketing it would hide that.
+    """
+    if score is None:
+        return None
+    for lower, upper, label in SCORE_BANDS:
+        if lower <= score < upper:
+            return label
+    if score == SCORE_BANDS[-1][1]:
+        return SCORE_BANDS[-1][2]
+    return None
+
+
+def fleet_size_band(power_units):
+    """Coarse fleet-size stratum, because crash exposure scales with trucks.
+
+    Banded rather than used raw so control strata have enough carriers in them
+    to produce a stable rate. `unknown` is separate from `1` deliberately: a
+    carrier that never filed a power-unit count is not a carrier with one
+    truck, and merging them would shift real carriers between strata and bias
+    the standardized rate.
+    """
+    if power_units is None:
+        return "unknown"
+    count = int(power_units)
+    if count <= 1:
+        return "1"
+    if count <= 5:
+        return "2-5"
+    if count <= 20:
+        return "6-20"
+    if count <= 100:
+        return "21-100"
+    return "100+"
+
+
+def to_yyyymmdd(add_date):
+    """Render a carrier `add_date` into the integer space `report_date` uses.
+
+    Comparison happens in YYYYMMDD integer space rather than by parsing
+    `report_date` into a date, because `report_date` is mapped `long` and
+    parsing 333k of them per run to compare against one registration date
+    would be work done in the wrong direction. None when absent so the caller
+    can exclude the carrier rather than guess a registration date.
+    """
+    if not add_date:
+        return None
+    return int(str(add_date)[:10].replace("-", ""))

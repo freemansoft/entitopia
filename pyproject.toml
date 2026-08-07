@@ -96,3 +96,16 @@ max-positional-args = 10
 # frequently enable `D` on their own, and without it the suggested fix is to
 # add eighty docstrings that would each make the file worse.
 "tests/*" = ["PLR2004", "D103"]
+# B905 and RUF007 are exempted in test_crash_lift.py because the test
+# `test_bands_are_contiguous_and_ordered` deliberately uses zip() with slicing
+# to check that band boundaries are adjacent — this is the natural idiom for
+# the check, and replacing it with pairwise() or adding strict= would obscure
+# the intent without adding clarity to a 2-element unpacking.
+"tests/test_crash_lift.py" = ["B905", "RUF007"]
+# PLR2004 (magic value in comparison) is exempted in utils/crash_lift.py
+# because the band boundaries 5, 20, 100 in fleet_size_band() are fixed by
+# design and represent the upper limits of the fleet-size strata. These are
+# meaningful constants in the domain (see the docstring), not arbitrary numbers
+# that should be extracted, and extracting them would obscure the data-driven
+# shape of the function.
+"utils/crash_lift.py" = ["PLR2004"]
