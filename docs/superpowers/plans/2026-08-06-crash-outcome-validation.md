@@ -938,6 +938,158 @@ git commit -m "Add band tables, placebo and standardized control to crash-lift s
 
 ---
 
+### Task 5B: Split the dose–response by registration recency
+
+Added after Task 5 returned a null result (lift 1.10x, dose–response flat).
+The headline restricted cohort excludes every successor registered inside the
+crash window — which is the population most likely to contain an _active_
+chameleon. A carrier that re-registered in 2015 and has run quietly since is
+not what this project hunts. If the score carries signal only for fresh
+registrations, the Task 5 headline is structurally unable to see it.
+
+Exposure normalization is what makes this askable: crashes per 1,000 observed
+months puts a carrier with four months of history on the same scale as one
+with twenty-four.
+
+**Files:**
+
+- Modify: `scripts/measure_crash_lift.py`
+- Test: `tests/test_crash_lift.py`
+
+**Interfaces:**
+
+- Consumes: `build_rows`, `months_between`, `SCORE_BANDS`, `band_for` from Tasks 1-5.
+- Produces: `recency_cohort(add_yyyymmdd, window_end) -> str` in `utils/crash_lift.py`, and `recency_table(rows, window_end)` in the script.
+
+- [ ] **Step 1: Write the failing test**
+
+Cohort edges are FIXED HERE, before the run, for the same reason the score
+bands were — edges chosen after seeing the outcome are how this analysis fools
+its author.
+
+```python
+from utils.crash_lift import recency_cohort
+
+
+def test_recency_cohorts_are_measured_back_from_the_crash_window_end():
+    # Boundaries are months before the newest crash in the data, not before
+    # today, so the cohorts stay stable as the fetch window rolls forward.
+    assert recency_cohort(20260101, 20260301) == "under-1y"
+    assert recency_cohort(20240101, 20260301) == "1-3y"
+    assert recency_cohort(20200101, 20260301) == "3y-plus"
+
+
+def test_recency_cohort_boundaries_are_half_open():
+    # Exactly 12 months back belongs to the older cohort, so no carrier lands
+    # in two columns and the columns sum to the population.
+    assert recency_cohort(20250301, 20260301) == "1-3y"
+    assert recency_cohort(20230301, 20260301) == "3y-plus"
+
+
+def test_recency_cohort_is_none_without_a_registration_date():
+    # Same rule as everywhere else here: absent input is excluded, never
+    # guessed into a bucket.
+    assert recency_cohort(None, 20260301) is None
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `.venv/bin/python -m pytest tests/test_crash_lift.py -k recency -v`
+Expected: FAIL — `ImportError: cannot import name 'recency_cohort'`
+
+- [ ] **Step 3: Implement `recency_cohort` in `utils/crash_lift.py`**
+
+```python
+RECENCY_COHORTS = [(12, "under-1y"), (36, "1-3y")]
+
+
+def recency_cohort(add_yyyymmdd, window_end_yyyymmdd):
+    """How recently a carrier registered, measured back from the newest crash.
+
+    Exists because the crash-lift headline restricts to carriers registered
+    before the crash window, which structurally excludes the freshest
+    registrations — the ones an active chameleon would be. Splitting the score
+    bands by this lets a signal confined to recent registrations show up
+    instead of being averaged away against a decade of quiet carriers.
+
+    Measured back from the window end rather than from today so the cohorts do
+    not shift under a run simply because the fetch window rolled forward.
+    Boundaries are half-open, so the columns partition the population and a
+    carrier cannot appear in two.
+    """
+    if add_yyyymmdd is None:
+        return None
+    age = months_between(add_yyyymmdd, window_end_yyyymmdd)
+    for limit, label in RECENCY_COHORTS:
+        if age < limit:
+            return label
+    return "3y-plus"
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `.venv/bin/python -m pytest tests/test_crash_lift.py -k recency -v`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Add the table to the script**
+
+Print crashes per 1,000 exposure-months per (band, cohort) over the FULL row
+set — not the restricted cohort, since including recent registrations is the
+entire point. **Every cell prints its carrier count**, because a rate over 40
+carriers and a rate over 40,000 are different claims and the recent cohorts
+will be the small ones.
+
+```python
+def recency_table(rows, window_end):
+    """Dose-response split by how recently the successor registered.
+
+    Exposure-normalized rather than a raw proportion because the recent
+    cohorts have had less time to crash by construction; comparing raw
+    proportions across them would measure exposure, not risk.
+    """
+    cohorts = ["under-1y", "1-3y", "3y-plus"]
+    print("\nDOSE-RESPONSE BY REGISTRATION RECENCY (crashes per 1,000 exposure-months, n in parens)")
+    print("  {:<12} {:>22} {:>22} {:>22}".format("band", *cohorts))
+    for _, _, label in SCORE_BANDS:
+        cells = []
+        for cohort in cohorts:
+            subset = [
+                r for r in rows
+                if r["band"] == label and recency_cohort(r["add"], window_end) == cohort
+            ]
+            exposure = sum(r["exposure"] for r in subset)
+            crashed = sum(1 for r in subset if r["crashed"])
+            cells.append(
+                "n/a ({})".format(len(subset)) if exposure <= 0
+                else "{:.2f} ({:,})".format(1000 * crashed / exposure, len(subset))
+            )
+        print("  {:<12} {:>22} {:>22} {:>22}".format(label, *cells))
+```
+
+`build_rows` must carry `add` on each row for this to work; add it there if absent.
+
+- [ ] **Step 6: Call it from `main` and run for real**
+
+Call `recency_table(rows, window_end)` after the existing exposure-normalized
+table. Then run `.venv/bin/python scripts/measure_crash_lift.py` and report the
+table.
+
+**Report what it shows either way.** If the recent cohort trends with score
+while the overall result does not, that is the finding. If it is flat too, the
+null result stands and is stronger for having been checked where the signal
+was most likely to hide.
+
+- [ ] **Step 7: Lint, test, commit**
+
+```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m pytest tests/ -q
+git add utils/crash_lift.py scripts/measure_crash_lift.py tests/test_crash_lift.py
+git commit -m "Split the crash-lift dose-response by registration recency"
+```
+
+---
+
 ### Task 6: Persist each run's result to Elasticsearch
 
 Printing to stdout alone would repeat the exact failure this session spent hours
@@ -996,6 +1148,7 @@ an integer.
       "row_type": { "type": "keyword" },
       "view": { "type": "keyword" },
       "band": { "type": "keyword" },
+      "recency_cohort": { "type": "keyword" },
       "carriers": { "type": "long" },
       "crashed": { "type": "long" },
       "rate": { "type": "double" },
