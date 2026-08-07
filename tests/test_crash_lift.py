@@ -15,6 +15,7 @@ from utils.crash_lift import (
     fleet_size_band,
     months_between,
     rate,
+    standardize,
     to_yyyymmdd,
 )
 
@@ -123,3 +124,36 @@ def test_rate_of_an_empty_band_is_none_not_zero():
 
 def test_rate_is_a_proportion():
     assert rate(3, 12) == 0.25
+
+
+def test_standardized_rate_reweights_controls_to_the_flagged_mix():
+    # Controls are 50/50 across strata; flagged are 90/10. Standardizing must
+    # answer "what would the control rate be if controls had the flagged
+    # population's mix", which is 0.9*0.10 + 0.1*0.50 = 0.14 — NOT the crude
+    # control rate of 0.30. Getting this backwards is the whole reason the
+    # comparison exists.
+    flagged = {"a": (0, 90), "b": (0, 10)}
+    control = {"a": (10, 100), "b": (50, 100)}
+    standardized, skipped = standardize(flagged, control)
+    assert round(standardized, 4) == 0.14
+    assert skipped == []
+
+
+def test_strata_with_no_controls_are_reported_not_silently_dropped():
+    # Dropping them quietly redefines the comparison population, which would
+    # make the lift describe a different set of carriers than the headline.
+    flagged = {"a": (0, 50), "orphan": (0, 50)}
+    control = {"a": (10, 100)}
+    standardized, skipped = standardize(flagged, control)
+    assert standardized == 0.10
+    assert skipped == ["orphan"]
+
+
+def test_no_overlapping_strata_gives_none_rather_than_zero():
+    standardized, skipped = standardize({"a": (0, 10)}, {"b": (5, 10)})
+    assert standardized is None
+    assert skipped == ["a"]
+
+
+def test_empty_flagged_population_gives_none():
+    assert standardize({}, {"a": (5, 10)}) == (None, [])

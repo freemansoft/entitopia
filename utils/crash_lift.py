@@ -127,3 +127,45 @@ def rate(numerator, denominator):
     if not denominator:
         return None
     return numerator / denominator
+
+
+def standardize(flagged_counts, control_counts):
+    """Control crash rate reweighted to the flagged population's stratum mix.
+
+    Answers "what rate would the control group show if it had the flagged
+    group's distribution of registration cohort, fleet size and state?" —
+    which is the only version of the comparison that is not dominated by those
+    confounders. Fleet size in particular drives crashes through miles driven,
+    so an unadjusted control rate would mostly measure how big the carriers
+    are.
+
+    Direct standardization rather than drawing a matched sample: it is
+    deterministic, so the published number is reproducible without recording a
+    random seed, and it uses every control carrier rather than discarding most
+    of them. Sampling would add run-to-run noise to a figure whose entire
+    purpose is to be quoted and re-derived.
+
+    Returns the standardized rate and the list of strata that had flagged
+    carriers but no controls. Those are returned rather than dropped because
+    silently ignoring them would redefine the comparison population without
+    saying so.
+    """
+    total_flagged = sum(total for _, total in flagged_counts.values())
+    if not total_flagged:
+        return None, []
+
+    weighted = 0.0
+    represented = 0
+    skipped = []
+    for stratum, (_, flagged_total) in sorted(flagged_counts.items()):
+        control = control_counts.get(stratum)
+        control_rate = rate(*control) if control else None
+        if control_rate is None:
+            skipped.append(stratum)
+            continue
+        weighted += flagged_total * control_rate
+        represented += flagged_total
+
+    if not represented:
+        return None, skipped
+    return weighted / represented, skipped
