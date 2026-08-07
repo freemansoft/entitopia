@@ -80,6 +80,10 @@ max-positional-args = 10
 # import runs — forcing the import below the sys.path fix-up and out of
 # top-of-file position.
 "scripts/measure_address_analyzers.py" = ["E402"]
+# Same reasoning as measure_address_analyzers.py above: this script imports
+# utils.crash_lift, so the repo root must be pushed onto sys.path before that
+# import runs, forcing it below the sys.path fix-up.
+"scripts/measure_crash_lift.py" = ["E402"]
 # Magic values in assertions are what a test asserts.
 #
 # D103 (undocumented public function) is exempted for test functions

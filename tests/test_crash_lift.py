@@ -6,7 +6,12 @@ A defect in any of them produces a plausible-looking table rather than an
 error, which is the failure mode this repo keeps hitting.
 """
 
+import importlib.util
 import itertools
+from pathlib import Path
+
+import pytest
+from elasticsearch import Elasticsearch
 
 from utils.crash_lift import (
     SCORE_BANDS,
@@ -157,3 +162,56 @@ def test_no_overlapping_strata_gives_none_rather_than_zero():
 
 def test_empty_flagged_population_gives_none():
     assert standardize({}, {"a": (5, 10)}) == (None, [])
+
+
+# Loaded by path, mirroring test_profile_dataset.py's convention, because
+# scripts/ is a directory of standalone tools rather than an importable
+# package. A function-scoped `sys.path.insert` + import (as originally
+# sketched) trips ruff's PLC0415, which this repo does not exempt for new
+# code — this sidesteps that without mutating sys.path at all.
+_MEASURE_CRASH_LIFT = Path(__file__).parent.parent / "scripts" / "measure_crash_lift.py"
+
+
+def _load_measure_crash_lift():
+    spec = importlib.util.spec_from_file_location("measure_crash_lift", _MEASURE_CRASH_LIFT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+measure_crash_lift = _load_measure_crash_lift()
+
+
+@pytest.fixture
+def live_client():
+    """Real cluster, skipped when unreachable.
+
+    The pure functions above assert what we compute; only this asserts the
+    queries retrieve what we think. The dot_number type mismatch between
+    indexes (long on crashes, keyword elsewhere) is invisible to a unit test.
+    """
+    client = Elasticsearch(
+        hosts=[{"host": "localhost", "port": 9200, "scheme": "http"}], request_timeout=120
+    )
+    try:
+        reachable = client.ping()
+    except Exception:
+        reachable = False
+    if not reachable:
+        pytest.skip("Elasticsearch is not reachable on localhost:9200")
+    return client
+
+
+def test_crash_dates_join_across_the_dot_number_type_mismatch(live_client):
+    scores = measure_crash_lift.successor_scores(
+        live_client, "chameleon-candidates-000001", limit=500
+    )
+    assert scores, "no successors read from the candidates index"
+
+    found = measure_crash_lift.crash_dates(live_client, "crashes-000001", list(scores))
+    # Not every successor crashed, but across 500 the intersection must not be
+    # empty — an empty result here is the signature of the keyword/long
+    # mismatch silently intersecting to nothing.
+    assert found, "crash join returned nothing; check dot_number str/int coercion"
+    for dates in found.values():
+        assert all(isinstance(d, int) for d in dates)
