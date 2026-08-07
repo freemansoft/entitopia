@@ -191,6 +191,53 @@ carrier in it is already a candidate successor of a shut-down carrier, selected
 by the same seed query. No control-group construction is required, so there is
 no matching decision for a skeptic to attack.
 
+### Splitting the dose–response by registration recency
+
+Added after the first run returned a null result, because the headline is
+structurally unable to see the signal it most needs to find.
+
+The restricted cohort admits only successors registered **before** the crash
+window — which excludes the freshest registrations, and an active chameleon
+carrier _is_ a recent registration by definition. A carrier that re-registered
+in 2015 and has run quietly since is not what this project hunts. Averaged
+against a decade of such carriers, a signal confined to fresh registrations
+disappears.
+
+So the score bands are additionally cut by how recently the successor
+registered, over the **full** row set rather than the restricted cohort:
+
+```
+under-1y    age < 12 months
+1-3y        12 <= age < 36 months
+3y-plus     age >= 36 months
+```
+
+Four properties, each load-bearing:
+
+- **Measured back from the crash-window end, not from today.** The fetch window
+  rolls forward every refresh; anchoring to "now" would move a carrier between
+  columns between two runs that analyzed identical data.
+- **Half-open boundaries**, so the columns partition the population exactly and
+  no carrier is counted twice.
+- **Crashes per 1,000 exposure-months, not a raw proportion.** Recent cohorts
+  have had less time to crash by construction, so comparing raw proportions
+  across them measures exposure rather than risk.
+- **Every cell prints its carrier count.** The recent high-score cells are the
+  small ones — measured at n=148-229 — and a rate over 200 carriers is not the
+  claim a rate over 200,000 is. Without the denominator beside it, a 0.00 in
+  those cells reads as a finding rather than as an absence of data.
+
+Cohort edges are fixed here, before any run, for the same reason the score band
+edges are.
+
+**A known wrinkle in the boundary.** `months_between` divides days by 30.4375,
+the average month length, so a non-leap calendar year measures as 11.99 months
+rather than 12. A carrier registered exactly one year before the window end
+therefore lands in `under-1y` by a single day. This surfaced twice during
+implementation and is recorded rather than silently corrected: switching to
+exact calendar-month arithmetic is a deliberate change that would move carriers
+between cohorts, and it must not be made as a side effect of some other edit.
+
 ### Secondary measurement: matched control
 
 To state an absolute lift comparable to GAO's, compare against carriers
