@@ -24,6 +24,16 @@ SCORE_BANDS = [
     (0.90, 1.00, "0.90-1.00"),
 ]
 
+# Fleet-size strata fixed by design. Lower bound is inclusive; upper is too
+# (unlike SCORE_BANDS). See fleet_size_band() for the `unknown` stratum logic.
+FLEET_SIZE_BANDS = [
+    (1, 1, "1"),
+    (2, 5, "2-5"),
+    (6, 20, "6-20"),
+    (21, 100, "21-100"),
+    (101, float("inf"), "100+"),
+]
+
 
 def band_for(score):
     """Which score band a successor falls in, or None if it is out of range.
@@ -55,15 +65,10 @@ def fleet_size_band(power_units):
     if power_units is None:
         return "unknown"
     count = int(power_units)
-    if count <= 1:
-        return "1"
-    if count <= 5:
-        return "2-5"
-    if count <= 20:
-        return "6-20"
-    if count <= 100:
-        return "21-100"
-    return "100+"
+    for lower, upper, label in FLEET_SIZE_BANDS:
+        if lower <= count <= upper:
+            return label
+    return None
 
 
 def to_yyyymmdd(add_date):

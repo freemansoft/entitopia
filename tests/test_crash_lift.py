@@ -6,6 +6,8 @@ A defect in any of them produces a plausible-looking table rather than an
 error, which is the failure mode this repo keeps hitting.
 """
 
+import itertools
+
 from utils.crash_lift import SCORE_BANDS, band_for, fleet_size_band, to_yyyymmdd
 
 
@@ -28,7 +30,7 @@ def test_scores_below_the_emit_floor_have_no_band():
 
 
 def test_bands_are_contiguous_and_ordered():
-    for (_, upper, _), (lower, _, _) in zip(SCORE_BANDS, SCORE_BANDS[1:]):
+    for (_, upper, _), (lower, _, _) in itertools.pairwise(SCORE_BANDS):
         assert upper == lower
 
 
