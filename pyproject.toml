@@ -80,9 +80,13 @@ max-positional-args = 10
 # import runs — forcing the import below the sys.path fix-up and out of
 # top-of-file position.
 "scripts/measure_address_analyzers.py" = ["E402"]
-# Same reasoning as measure_address_analyzers.py above: this script imports
-# utils.crash_lift, so the repo root must be pushed onto sys.path before that
-# import runs, forcing it below the sys.path fix-up.
+# Same sys.path fix-up shape as measure_address_analyzers.py above: this
+# script imports utils.crash_lift after pushing the repo root onto sys.path.
+# Verified against ruff 0.16.1 that this entry is currently a no-op — that
+# version already allows a `sys.path.insert` call before a subsequent import
+# without flagging E402, so removing this line changes nothing today. Kept
+# anyway, defensively, in case a future ruff drops that allowance; mirrors
+# the sanctioned exemption above rather than inventing a new reason.
 "scripts/measure_crash_lift.py" = ["E402"]
 # Magic values in assertions are what a test asserts.
 #

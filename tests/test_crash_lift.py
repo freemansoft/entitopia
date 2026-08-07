@@ -215,3 +215,13 @@ def test_crash_dates_join_across_the_dot_number_type_mismatch(live_client):
     assert found, "crash join returned nothing; check dot_number str/int coercion"
     for dates in found.values():
         assert all(isinstance(d, int) for d in dates)
+    # Elasticsearch coerces numeric-looking terms in a `terms` query either
+    # way, so a non-empty `found` above proves the QUERY worked but not that
+    # the two sides agree on key TYPE — a crash_dates that forgot str() would
+    # still retrieve rows, just keyed by int, and every assertion above this
+    # one would still pass. This is the one that actually depends on both
+    # sides being normalized: found's keys can only be a subset of scores'
+    # keys if both are the same type, since int("123") != "123".
+    assert set(found) <= set(scores), (
+        "crash keys are not a subset of successor keys; check str() normalization on both sides"
+    )
