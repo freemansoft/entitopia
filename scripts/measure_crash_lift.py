@@ -30,6 +30,7 @@ from utils.crash_lift import (
     fleet_size_band,
     months_between,
     rate,
+    recency_cohort,
     standardize,
     to_yyyymmdd,
 )
@@ -178,6 +179,7 @@ def build_rows(scores, crashes, attributes, window_start, window_end):
                 "dot": dot,
                 "score": score,
                 "band": band_for(score),
+                "add": add,
                 "crashed": crashed_after_registration(add, crashes.get(dot, [])),
                 "exposure": max(months_between(max(add, window_start), window_end), 0.0),
                 "registered_before_window": add < window_start,
@@ -240,6 +242,39 @@ def _print_exposure_table(rows):
                 "n/a" if exposure <= 0 else "{:.2f}".format(1000 * crashed / exposure),
             )
         )
+
+
+def recency_table(rows, window_end):
+    """Dose-response split by how recently the successor registered.
+
+    Exists because the headline (band_table on `restricted`) structurally
+    excludes carriers registered inside the crash window — exactly the
+    population an active chameleon would fall into. Run over the FULL row set
+    rather than the restricted cohort, since including those fresh
+    registrations is the entire point of this table. Exposure-normalized
+    rather than a raw proportion because the recent cohorts have had less
+    time to crash by construction; comparing raw proportions across them
+    would measure exposure, not risk. Every cell prints its carrier count
+    because the recent cohorts will be small, and a rate over 40 carriers is
+    not the claim a rate over 40,000 is.
+    """
+    cohorts = ["under-1y", "1-3y", "3y-plus"]
+    print("\nDOSE-RESPONSE BY REGISTRATION RECENCY (crashes per 1,000 exposure-months, n in parens)")
+    print("  {:<12} {:>22} {:>22} {:>22}".format("band", *cohorts))
+    for _, _, label in SCORE_BANDS:
+        cells = []
+        for cohort in cohorts:
+            subset = [
+                r for r in rows
+                if r["band"] == label and recency_cohort(r["add"], window_end) == cohort
+            ]
+            exposure = sum(r["exposure"] for r in subset)
+            crashed = sum(1 for r in subset if r["crashed"])
+            cells.append(
+                "n/a ({})".format(len(subset)) if exposure <= 0
+                else "{:.2f} ({:,})".format(1000 * crashed / exposure, len(subset))
+            )
+        print("  {:<12} {:>22} {:>22} {:>22}".format(label, *cells))
 
 
 def _print_placebo(restricted, seed):
@@ -522,6 +557,7 @@ def main():
     band_table(restricted, "RESTRICTED COHORT (headline; comparable to GAO's 18% / 6%)")
     band_table(rows, "FULL SET (companion; unequal exposure, do not quote as the headline)")
     _print_exposure_table(rows)
+    recency_table(rows, window_end)
     _print_placebo(restricted, args.seed)
     _control_comparison(client, args, restricted, window_start)
 

@@ -20,6 +20,7 @@ from utils.crash_lift import (
     fleet_size_band,
     months_between,
     rate,
+    recency_cohort,
     standardize,
     to_yyyymmdd,
 )
@@ -118,6 +119,32 @@ def test_months_between_is_zero_when_the_dates_are_equal():
     # A carrier registered on the window end has no exposure. The caller
     # divides by this, so it must be exactly 0.0 rather than a small negative.
     assert months_between(20250101, 20250101) == 0.0
+
+
+def test_recency_cohorts_are_measured_back_from_the_crash_window_end():
+    # Boundaries are months before the newest crash in the data, not before
+    # today, so the cohorts stay stable as the fetch window rolls forward.
+    assert recency_cohort(20260101, 20260301) == "under-1y"
+    assert recency_cohort(20240101, 20260301) == "1-3y"
+    assert recency_cohort(20200101, 20260301) == "3y-plus"
+
+
+def test_recency_cohort_boundaries_are_half_open():
+    # Exactly 12 months back belongs to the older cohort, so no carrier lands
+    # in two columns and the columns sum to the population. "12 months back"
+    # is measured through months_between's existing 30.4375-day-average
+    # divisor (Tasks 1-5), not a calendar year: a non-leap calendar year is
+    # 365 days = 11.99 of those months, one day short of the boundary, so the
+    # probe date here is 2025-02-28 (366 days before window_end) rather than
+    # 2025-03-01.
+    assert recency_cohort(20250228, 20260301) == "1-3y"
+    assert recency_cohort(20230301, 20260301) == "3y-plus"
+
+
+def test_recency_cohort_is_none_without_a_registration_date():
+    # Same rule as everywhere else here: absent input is excluded, never
+    # guessed into a bucket.
+    assert recency_cohort(None, 20260301) is None
 
 
 def test_rate_of_an_empty_band_is_none_not_zero():

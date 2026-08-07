@@ -100,6 +100,32 @@ def months_between(start_yyyymmdd, end_yyyymmdd):
     return (end - start).days / 30.4375
 
 
+RECENCY_COHORTS = [(12, "under-1y"), (36, "1-3y")]
+
+
+def recency_cohort(add_yyyymmdd, window_end_yyyymmdd):
+    """How recently a carrier registered, measured back from the newest crash.
+
+    Exists because the crash-lift headline restricts to carriers registered
+    before the crash window, which structurally excludes the freshest
+    registrations — the ones an active chameleon would be. Splitting the score
+    bands by this lets a signal confined to recent registrations show up
+    instead of being averaged away against a decade of quiet carriers.
+
+    Measured back from the window end rather than from today so the cohorts do
+    not shift under a run simply because the fetch window rolled forward.
+    Boundaries are half-open, so the columns partition the population and a
+    carrier cannot appear in two.
+    """
+    if add_yyyymmdd is None:
+        return None
+    age = months_between(add_yyyymmdd, window_end_yyyymmdd)
+    for limit, label in RECENCY_COHORTS:
+        if age < limit:
+            return label
+    return "3y-plus"
+
+
 def crashed_after_registration(add_yyyymmdd, report_dates):
     """Whether any crash postdates the carrier's registration.
 
