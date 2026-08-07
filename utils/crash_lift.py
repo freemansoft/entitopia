@@ -9,6 +9,8 @@ Kept free of Elasticsearch imports on purpose: anything here must be callable
 from a test with plain dicts.
 """
 
+from datetime import date
+
 # Fixed by docs/superpowers/specs/2026-08-06-crash-outcome-validation-design.md
 # BEFORE the first run, and deliberately reusing thresholds the project already
 # committed to — 0.35 is the emit floor, 0.70 the triage threshold, and the
@@ -83,3 +85,45 @@ def to_yyyymmdd(add_date):
     if not add_date:
         return None
     return int(str(add_date)[:10].replace("-", ""))
+
+
+def months_between(start_yyyymmdd, end_yyyymmdd):
+    """Fractional months of observation between two YYYYMMDD integers.
+
+    Fractional rather than whole months because the exposure-normalized view
+    exists precisely for carriers registered partway through the crash window;
+    rounding their exposure to whole months would erase the distinction it was
+    added to preserve.
+    """
+    start = date(start_yyyymmdd // 10000, start_yyyymmdd // 100 % 100, start_yyyymmdd % 100)
+    end = date(end_yyyymmdd // 10000, end_yyyymmdd // 100 % 100, end_yyyymmdd % 100)
+    return (end - start).days / 30.4375
+
+
+def crashed_after_registration(add_yyyymmdd, report_dates):
+    """Whether any crash postdates the carrier's registration.
+
+    The entire causal claim of this measurement rests here: a crash that
+    predates registration belongs to whoever held that DOT number before, and
+    counting it would let the predecessor's history leak into the successor's
+    outcome — manufacturing exactly the correlation being tested for.
+
+    Strictly after, so a same-day crash does not count. That biases against
+    finding an effect, which is the safe direction for a validation.
+    """
+    if add_yyyymmdd is None:
+        return False
+    return any(report_date > add_yyyymmdd for report_date in report_dates)
+
+
+def rate(numerator, denominator):
+    """Proportion, or None when the denominator is empty.
+
+    None and 0.0 mean different things and conflating them is the reporting
+    equivalent of this repo's recurring silent-wrong-output bug: None is "no
+    carriers fell in this band", 0.0 is "carriers fell here and none crashed".
+    Printing 0.0% for an empty band invents a measurement that was never made.
+    """
+    if not denominator:
+        return None
+    return numerator / denominator

@@ -8,7 +8,15 @@ error, which is the failure mode this repo keeps hitting.
 
 import itertools
 
-from utils.crash_lift import SCORE_BANDS, band_for, fleet_size_band, to_yyyymmdd
+from utils.crash_lift import (
+    SCORE_BANDS,
+    band_for,
+    crashed_after_registration,
+    fleet_size_band,
+    months_between,
+    rate,
+    to_yyyymmdd,
+)
 
 
 def test_band_edges_are_half_open_so_no_score_lands_in_two_bands():
@@ -60,3 +68,46 @@ def test_add_date_with_a_time_component_still_coerces():
 def test_missing_add_date_is_none_so_the_carrier_can_be_excluded():
     assert to_yyyymmdd(None) is None
     assert to_yyyymmdd("") is None
+
+
+def test_a_crash_before_registration_does_not_count():
+    # The whole causal claim rests on this. A crash the predecessor had before
+    # the successor existed says nothing about the successor.
+    assert crashed_after_registration(20250101, [20241201]) is False
+
+
+def test_a_crash_after_registration_counts():
+    assert crashed_after_registration(20250101, [20250102]) is True
+
+
+def test_a_crash_on_the_registration_date_does_not_count():
+    # Strictly after. Same-day is ambiguous and rare; excluding it is the
+    # conservative direction, biasing against finding an effect.
+    assert crashed_after_registration(20250101, [20250101]) is False
+
+
+def test_any_qualifying_crash_is_enough():
+    assert crashed_after_registration(20250101, [20240101, 20250601]) is True
+
+
+def test_a_carrier_with_no_registration_date_never_counts():
+    # Cannot establish the crash postdates registration, so it is excluded
+    # rather than assumed.
+    assert crashed_after_registration(None, [20250601]) is False
+
+
+def test_months_between_is_fractional_so_short_exposure_is_not_rounded_away():
+    # 181 days / 30.4375 = ~5.95 months (Jan 1 to July 1)
+    assert round(months_between(20250101, 20250701), 1) == 5.9
+    assert round(months_between(20250101, 20250116), 1) == 0.5
+
+
+def test_rate_of_an_empty_band_is_none_not_zero():
+    # None means "no carriers in this band"; 0.0 means "carriers, none crashed".
+    # Printing 0.0% for an empty band invents a measurement.
+    assert rate(0, 0) is None
+    assert rate(0, 10) == 0.0
+
+
+def test_rate_is_a_proportion():
+    assert rate(3, 12) == 0.25
