@@ -474,9 +474,9 @@ band — the top band is actually the lowest). The whole unflagged population,
 standardized to the flagged cohort's registration-year/fleet-size/state mix,
 crashed at **6.02%** — a lift of **1.10x**, against GAO's **3.0x**. The
 permuted-score placebo lands at essentially the same rate on the two bands
-holding 99.3% of the cohort; the small high-score tail bands (n=145-283)
-wobble more, consistent with sampling noise at that count rather than a real
-trend.
+holding 98.0% of the cohort ((146,045 + 46,797) / 196,707); the small
+high-score tail bands (n=145-283) wobble more, consistent with sampling noise
+at that count rather than a real trend.
 
 **This is a null result, stated plainly rather than softened.** By this
 proxy, on this data, the flagged population is not measurably riskier than
@@ -497,23 +497,25 @@ broken," for two reasons that have to travel with the number:
 ### Why GAO got 3.0x and this got 1.10x
 
 Mostly because GAO was measuring a much smaller, much cleaner set. They
-flagged 1,136 carriers; this sweep flags 249,549 successors, which is 12% of
+flagged 1,136 carriers; this sweep flags 249,778 successors, which is 12% of
 every carrier in the file. When most of a flagged set is wrong, its crash
 rate slides toward the rate for carriers in general — and that is exactly
 where this one sat.
 
 The clearest way to see it: a shut-down carrier can have at most **one** real
-successor, but the sweep emits **8.7 pairs for every predecessor**. So even
-in the best case, no more than about 11% of the pairs can be right, and the
-true figure is far lower because most shut-down carriers simply never come
-back. Working backwards from the 1.10x lift suggests roughly **5%** of the
+successor, but the sweep emits **9.0 pairs for every predecessor that
+produced at least one pair** (46,792 of the 48,540 the selector examined; the
+rest never paired at all). So even in the best case, no more than about 11%
+of the pairs can be right, and the true figure is far lower because most
+shut-down carriers simply never come back. Working backwards from the 1.10x
+lift suggests roughly **5%** of the
 flagged set is real — which sits comfortably under that ceiling, and matches
 what the direct measurement said from a completely different direction.
 
 Two things are worth ruling out, because they would be easy to blame. The
 24-month crash window is not the problem: the comparison group was measured
 over the same window. Nor is the outcome definition: the base rate here came
-out at 5.87% against GAO's 6%, which is close enough to say both are counting
+out at 5.86% against GAO's 6%, which is close enough to say both are counting
 the same thing.
 
 So this is a **precision** problem, not a measurement problem — and precision

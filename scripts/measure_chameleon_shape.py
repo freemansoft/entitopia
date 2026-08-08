@@ -224,13 +224,17 @@ def temporal_headroom(weights, separation):
 def print_temporal_headroom(headroom):
     """Print the weight-vs-separation comparison: can `temporal` matter at all, given how little the data separates on it.
 
-    The finding this table exists to support: `temporal` has just enough
-    weight to explain a fraction of the pre/post-shutdown score gap even at
-    its theoretical best case, while the three name signals combined outweigh
-    it several times over — so a pair's rank is set overwhelmingly by name
-    similarity, not by whether its dates are chameleon-shaped at all. This
-    corroborates DOT-Commercial/README.md's open item that name similarity is
-    "effectively triple-weighted."
+    The finding this table exists to support is the weight comparison, not
+    the ceiling/gap ratio: name signals combined carry roughly 9x temporal's
+    configured weight (0.45 vs 0.05 of 0.94), so a pair's rank is set
+    overwhelmingly by name similarity. The ceiling/gap ratio printed below
+    does NOT support "temporal is too weak to matter" — measured, temporal's
+    best-case ceiling (0.0532) is 5.6x the observed pre/post-shutdown gap
+    (0.0095), i.e. temporal has more than enough theoretical headroom to
+    produce that gap on its own. What the data shows is that it doesn't:
+    weight, not ceiling, is what is starving it in practice, which is exactly
+    the 9x-weight finding above. This corroborates DOT-Commercial/README.md's
+    open item that name similarity is "effectively triple-weighted."
     """
     total = headroom["total_weight"]
     temporal = headroom["temporal_weight"]
@@ -255,11 +259,30 @@ def print_temporal_headroom(headroom):
             name, total, "n/a" if not total else "{:.1%}".format(name / total)
         )
     )
-    if ceiling and gap and temporal:
+    if ceiling and temporal and gap:
+        if gap > 0:
+            # The normal case: post-shutdown pairs score higher on average, so
+            # "ceiling is Nx the gap" reads as a magnitude and means what it says.
+            ratio_clause = "temporal's ceiling is {:.1f}x the observed pre/post gap".format(
+                ceiling / gap
+            )
+        else:
+            # gap < 0 means post-shutdown pairs scored LOWER on average than
+            # pre-shutdown ones — the opposite of what a chameleon-detecting
+            # score should show. ceiling / gap would still divide cleanly (no
+            # zero-division risk), but printing it as "-5.6x the gap" hands a
+            # reader a signed ratio in a sentence built to be read as a
+            # magnitude, and the minus sign is easy to skim past. State the
+            # direction in words instead of leaning on the sign to carry it.
+            ratio_clause = (
+                "the observed pre/post gap runs the WRONG way (post-shutdown scored "
+                "{:.4f} lower than pre-shutdown, not higher)".format(-gap)
+            )
         print(
-            "  temporal's ceiling is {:.1f}x the observed pre/post gap; name signals carry {:.1f}x "
-            "more configured weight than temporal — ranking is dominated by name similarity, "
-            "not shutdown timing.".format(ceiling / gap, name / temporal)
+            "  {}; name signals carry {:.1f}x more configured weight than temporal — "
+            "ranking is dominated by name similarity, not shutdown timing.".format(
+                ratio_clause, name / temporal
+            )
         )
 
 

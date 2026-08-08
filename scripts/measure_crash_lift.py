@@ -102,6 +102,21 @@ def crash_dates(client, crashes_index, dot_numbers):
     result is the "no crash" outcome rather than an error. Queried in batches
     by DOT number instead of scanning the whole crash index, because the
     flagged population is a small fraction of it.
+
+    The `dates` sub-aggregation caps at `size: 200` per carrier, and without
+    an explicit order `terms` fills that cap by doc_count, not by date value —
+    so a carrier with more than 200 distinct report dates can have its
+    earliest, doc_count-losing dates truncated out. `crashed_after_registration`
+    only needs one surviving date after `add_date` to mark a carrier crashed,
+    so this is harmless as long as at least one post-registration date makes
+    the cut, which is true for every carrier in the restricted cohort measured
+    here (busiest holds 681 distinct dates, comfortably over the cap, but
+    still marks crashed). It stops being harmless for a carrier registered
+    inside the crash window whose more-than-200 distinct dates are dominated
+    by pre-registration dates from the DOT number's prior holder: if every
+    post-registration date happens to fall in the truncated tail, that carrier
+    silently scores "not crashed" instead of erroring, which is exactly the
+    failure mode this project treats as the worse one.
     """
     found = {}
     for start in range(0, len(dot_numbers), PAGE):
@@ -551,6 +566,20 @@ def _control_comparison(client, args, restricted, window_start):
     )
     standardized, skipped = standardize(flagged, control_counts)
 
+    # standardize() weights each stratum's control rate by that stratum's
+    # FLAGGED total, then divides by the flagged total it actually had a
+    # control rate for (skipping strata with flagged carriers but no
+    # controls) — so the standardized rate's real denominator is this
+    # "represented" figure, not control_total (every unflagged carrier across
+    # every stratum, most of which never enter the weighted sum at all).
+    # Printing standardized against control_total was the bug: it attached a
+    # ~1.6M-carrier denominator to a rate that is actually a weighted average
+    # over ~197K flagged successors.
+    skipped_set = set(skipped)
+    represented_flagged = sum(
+        total for stratum, (_, total) in flagged.items() if stratum not in skipped_set
+    )
+
     control_total = sum(total for _, total in control_counts.values())
     control_crashed = sum(crashed for crashed, _ in control_counts.values())
     raw_control_rate = rate(control_crashed, control_total)
@@ -565,8 +594,14 @@ def _control_comparison(client, args, restricted, window_start):
         )
     )
     print(
-        "  unflagged, standardized  : {} of {:,}".format(
-            "n/a" if standardized is None else "{:.2%}".format(standardized), control_total
+        "  unflagged, standardized  : {} — weighted mean over {:,} represented flagged successors "
+        "({:,} restricted total, {} strata excluded for no controls); raw unflagged pool is {:,}, "
+        "not this rate's denominator".format(
+            "n/a" if standardized is None else "{:.2%}".format(standardized),
+            represented_flagged,
+            len(restricted),
+            len(skipped),
+            control_total,
         )
     )
     if standardized:
@@ -607,6 +642,15 @@ def _band_documents(views, run_id, generated_at, source):
     Reads _band_stats rather than recomputing per-band arithmetic, so a
     persisted row can never disagree with what band_table (or, for the full
     view, _print_exposure_table) printed for the same run.
+
+    `crashes_per_1000_months` is forced to None for the placebo view. The
+    rows underneath it are real carriers with real exposure months, but their
+    band comes from a permuted score — so the figure _band_stats would compute
+    is a real number attached to a fake grouping, not a rate of anything. It
+    is also never printed (_print_placebo calls band_table, which shows only
+    `rate`), so a value here would exist solely to be misread by whoever
+    queries this alias next, mistaking it for the same exposure-normalized
+    figure the full/restricted views carry.
     """
     documents = []
     for view, view_rows in views:
@@ -621,7 +665,9 @@ def _band_documents(views, run_id, generated_at, source):
                     "carriers": stat["carriers"],
                     "crashed": stat["crashed"],
                     "rate": stat["rate"],
-                    "crashes_per_1000_months": stat["crashes_per_1000_months"],
+                    "crashes_per_1000_months": (
+                        None if view == "placebo" else stat["crashes_per_1000_months"]
+                    ),
                     "source": source,
                 }
             )
@@ -636,12 +682,20 @@ def _recency_documents(rows, window_end, run_id, generated_at, source):
     chameleon's fresh-registration cohort — the population the restricted
     headline structurally excludes — would exist only in a terminal, the same
     gap this task exists to close for every other row.
+
+    `view` is set to "full" because `rows` here is always the caller's full
+    row set (recency_table's whole point is to include the fresh
+    registrations the restricted view excludes) — without it, a consumer
+    filtering band rows by `view` to avoid double-counting restricted/full/
+    placebo would silently lose every recency row, since none of them would
+    match any `view` value at all.
     """
     return [
         {
             "run_id": run_id,
             "generated_at": generated_at,
             "row_type": "recency",
+            "view": "full",
             "band": stat["band"],
             "recency_cohort": stat["cohort"],
             "carriers": stat["carriers"],
