@@ -227,6 +227,7 @@ flowchart LR
         carriers-step[carriers]
         carriers-ingestion-setup-step[carriers ingestion setup]
         chameleon-step[chameleon-detection]
+        chameleon-validation-step[chameleon-validation]
     end
 
     subgraph indexes
@@ -240,6 +241,7 @@ flowchart LR
         carriers-index["carriers-{day}-000001"] -..-> carriers-alias[alias]
 
         chameleon-index["chameleon-candidates-{day}-000001"] -..- chameleon-alias[alias]
+        chameleon-validation-index["chameleon-validation-{day}-000001"] -..- chameleon-validation-alias[alias]
 
         per-unit-enrichment-index[inspections-per-unit enrichment]
         crashes-enrichment-index[crashes enrichment]
@@ -325,6 +327,12 @@ flowchart LR
     chameleon-step -->|"index-create, index-map, entity-match"| chameleon-index
     entity-match-config["entity-match.json<br/>selector · seed_signals · weights<br/>ignore_values · max_shared_records"] -.-> chameleon-step
     carriers-index -.->|"corpus frequency scan<br/>finds non-identifying values"| chameleon-step
+
+    chameleon-validation-step -->|"index-create, index-map"| chameleon-validation-index
+    validation-scripts["scripts/measure_chameleon_shape.py<br/>scripts/measure_crash_lift.py"] -->|"writes result rows"| chameleon-validation-index
+    chameleon-index -.->|"scored pairs — read only"| validation-scripts
+    carriers-index -.->|"registration date, fleet size, state"| validation-scripts
+    crashes-index -.->|"outcome the matcher never sees"| validation-scripts
 
 
 ```
