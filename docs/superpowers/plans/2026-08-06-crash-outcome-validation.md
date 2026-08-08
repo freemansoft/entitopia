@@ -23,10 +23,10 @@
 | Fact                                          | Value                                                            |
 | --------------------------------------------- | ---------------------------------------------------------------- |
 | Pairs in `chameleon-candidates-000001`        | 421,846                                                          |
-| Distinct successors                           | ~249,549                                                         |
+| Distinct successors                           | 249,778 (exact; an early ~249,549 was a cardinality estimate)     |
 | Crash records                                 | 333,122                                                          |
 | Records with fatality/injury/tow-away         | 333,120 (99.9994%) — so presence in file **is** the outcome      |
-| Distinct carriers with any crash              | ~122,483 of 2,085,534 = **5.87%** (GAO's non-chameleon rate: 6%) |
+| Distinct carriers with any crash              | 122,258 of 2,085,534 = **5.86%** (GAO's non-chameleon rate: 6%)  |
 | `crashes.dot_number`                          | `long`                                                           |
 | `carriers.dot_number`, `successor.dot_number` | `keyword`                                                        |
 | `crashes.report_date`                         | `long`, `YYYYMMDD` form (e.g. `20240812`)                        |

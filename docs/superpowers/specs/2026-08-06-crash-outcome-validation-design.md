@@ -7,7 +7,10 @@ The title of this document said "against crash outcomes" for its first day,
 which was the framing error corrected in Scope below.
 
 Date: 2026-08-06
-Status: proposed, not yet implemented
+Status: implemented 2026-08-08 (plan:
+`docs/superpowers/plans/2026-08-06-crash-outcome-validation.md`). Both results
+were null; see `DOT-Commercial/README.md`'s calibration open item for the
+measured figures and the ranked list of candidate fixes.
 
 ## Problem
 
@@ -97,7 +100,7 @@ Out of scope, and each for a reason:
 
 ### Unit of analysis: the successor carrier, not the pair
 
-The sweep emitted 421,846 pairs covering approximately **249,549 distinct
+The sweep emitted 421,846 pairs covering exactly **249,778 distinct
 successors** (measured 2026-08-06). A carrier appearing in forty pairs would
 otherwise contribute forty times to a rate, weighting the result by how many
 shut-down carriers happened to resemble it rather than by anything about the
@@ -120,8 +123,8 @@ Applying that predicate would filter nothing while creating the impression of a
 severity threshold that was never really applied. Presence in the file _is_ the
 severe-crash outcome, and it is what makes this comparable to GAO's 18% / 6%.
 
-The base rate supports the reading. Roughly **122,483 distinct carriers of
-2,085,534 have at least one crash — 5.87%** — against the **6%** GAO measured for
+The base rate supports the reading. Exactly **122,258 distinct carriers of
+2,085,534 have at least one crash — 5.86%** — against the **6%** GAO measured for
 new applicants without chameleon attributes. Two different populations over two
 different decades landing that close is a strong sign the outcome variable is
 the same one.
@@ -366,11 +369,11 @@ control_crashed[stratum] = all_crashed_total[stratum]  - flagged_crashed[stratum
 ```
 
 The crashed side is cheap despite covering every carrier: only carriers that
-appear in the crash file can contribute, and there are ~122,483 of those out of
+appear in the crash file can contribute, and there are 122,258 of those out of
 2,085,534.
 
 **Sanity check with teeth.** The unflagged control rate before standardization
-should land near the measured 5.87% base rate. A control rate far from it means
+should land near the measured 5.86% base rate. A control rate far from it means
 the control population is wrong, and that must be reported rather than
 published — the biased run above would have passed every test in this spec
 while inverting its conclusion.
