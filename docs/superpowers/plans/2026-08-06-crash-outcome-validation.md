@@ -1328,12 +1328,150 @@ git commit -m "Persist crash-lift results to a date-stamped validation index"
 
 ---
 
+### Task 9: Measure whether the top tier is chameleon-shaped
+
+**Run this before Task 7**, since Task 7 records its result.
+
+The crash lift measures a proxy. This measures the thing the project claims to
+do. `DOT-Commercial/README.md` defines the target as carriers "shut down... that
+reopen under a new DOT number" — a temporal structure checkable directly against
+the emitted pairs, with no proxy, no labels and no new data.
+
+**Files:**
+
+- Create: `scripts/measure_chameleon_shape.py`
+- Modify: `utils/crash_lift.py` (add `gap_band`)
+- Test: `tests/test_crash_lift.py`
+
+**Interfaces:**
+
+- Consumes: `SCORE_BANDS`, `band_for`, `rate` from `utils.crash_lift`; the pairs index.
+- Produces: `gap_band(gap_days) -> str | None`.
+
+**Baseline measured 2026-08-07 — the script must reproduce these:** among 1,729
+pairs scoring ≥ 0.70, the gap distribution is 370 / 519 / 435 / 405 across the
+four bands below; mean `total_score` is 0.4425 over 306,401 pre-shutdown pairs
+and 0.4520 over 115,445 post-shutdown pairs. If your run disagrees, stop and
+report it rather than adjusting the query.
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+from utils.crash_lift import gap_band
+
+
+def test_gap_bands_split_on_the_shutdown_date():
+    # The sign of gap_days is the whole point: negative means the successor
+    # already existed when the predecessor was shut down, so it cannot be that
+    # predecessor reincarnated.
+    assert gap_band(-1200) == "3y+ before"
+    assert gap_band(-30) == "0-3y before"
+    assert gap_band(200) == "under 1y after"
+    assert gap_band(500) == "1y+ after"
+
+
+def test_gap_band_zero_is_after_not_before():
+    # Same-day re-registration is the strongest chameleon shape there is, so it
+    # must not fall into a "before" bucket.
+    assert gap_band(0) == "under 1y after"
+
+
+def test_gap_band_is_none_when_the_gap_is_unknown():
+    assert gap_band(None) is None
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `.venv/bin/python -m pytest tests/test_crash_lift.py -k gap_band -v`
+Expected: FAIL — `ImportError: cannot import name 'gap_band'`
+
+- [ ] **Step 3: Implement `gap_band` in `utils/crash_lift.py`**
+
+```python
+GAP_BANDS = [(-1095, "3y+ before"), (0, "0-3y before"), (366, "under 1y after")]
+
+
+def gap_band(gap_days):
+    """Where a pair falls relative to the predecessor's shutdown.
+
+    Exists because this project defines a chameleon carrier as one that reopens
+    AFTER being shut down, which makes the sign of `gap_days` the most direct
+    accuracy check available — it needs no proxy outcome and no labelled data.
+    A successor that already existed years before the shutdown is not that
+    predecessor reincarnated, whatever the name and address similarity say.
+
+    Boundaries are half-open with zero falling on the "after" side, because
+    same-day re-registration is the strongest chameleon shape in the data and
+    must not be bucketed as pre-existing.
+    """
+    if gap_days is None:
+        return None
+    for limit, label in GAP_BANDS:
+        if gap_days < limit:
+            return label
+    return "1y+ after"
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `.venv/bin/python -m pytest tests/test_crash_lift.py -k gap_band -v`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Write the measurement script**
+
+`scripts/measure_chameleon_shape.py`, following the same shape as
+`measure_crash_lift.py` (module docstring saying why, `sys.path` fix-up, an
+`Elasticsearch` client on localhost:9200, `argparse` with `--pairs-index`
+defaulting to `chameleon-candidates-000001`). It must report:
+
+1. **Gap distribution per score band** — a matrix of score band × gap band with
+   counts and row percentages, so it is visible whether temporal plausibility
+   improves as score rises. Print denominators.
+2. **Score separation** — mean `total_score` and pair count for pre-shutdown
+   (`gap_days < 0`) against post-shutdown (`gap_days >= 0`).
+3. **Whether `temporal` fired** — the share of pairs in each gap band whose
+   `matched_on` contains `temporal`. If a pre-shutdown pair can match on
+   `temporal`, that signal is not doing what its name implies.
+
+Use aggregations rather than fetching documents; the pair count is ~422k.
+Emit aggregate counts only — never a DOT number, carrier name or address.
+
+- [ ] **Step 6: Run it and report**
+
+```bash
+.venv/bin/python scripts/measure_chameleon_shape.py
+```
+
+State plainly whether temporal plausibility improves with score. **Report it
+either way and do not re-cut the bands to improve the picture.**
+
+- [ ] **Step 7: Lint, test, commit**
+
+```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m pytest tests/ -q
+git add utils/crash_lift.py scripts/measure_chameleon_shape.py tests/test_crash_lift.py
+git commit -m "Measure whether the top-scoring pairs are chameleon-shaped"
+```
+
+---
+
 ### Task 7: Run it and record the result
 
 **Files:**
 
 - Modify: `DOT-Commercial/README.md` (the `entity-match` calibration open item)
 - Modify: `DOT-Commercial/docs/chameleon-pipeline-explainer.md` (new section 9)
+
+**FRAMING, which governs everything written in this task.** The crash lift is a
+**secondary** result and must be reported as _"the flagged population is not
+measurably riskier than comparable carriers"_ — never as a verdict on whether
+the matching is accurate. Crash involvement is a proxy GAO used because
+chameleon carriers matter for safety; it is not the definition of one. The
+**primary** accuracy result is Task 9's chameleon-shape measurement, and it
+leads. Record both, in that order, with the caveat that 49 CFR 386.73 covers
+affiliated entities as well as new identities, so a pre-existing successor is
+not automatically a false positive — it is simply not reincarnation.
 
 **The explainer is the theory-of-operation document** — it walks a reader from
 CSV through scoring to querying results, in sections 1-8. It currently ends at

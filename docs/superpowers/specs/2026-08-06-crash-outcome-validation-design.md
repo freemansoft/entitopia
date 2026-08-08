@@ -1,4 +1,10 @@
-# Validating the chameleon score against crash outcomes
+# Validating the chameleon score
+
+Primary: does the score find chameleon-shaped pairs? Secondary: does the
+flagged population show the elevated crash rate GAO measured?
+
+The title of this document said "against crash outcomes" for its first day,
+which was the framing error corrected in Scope below.
 
 Date: 2026-08-06
 Status: proposed, not yet implemented
@@ -55,8 +61,23 @@ than as a verdict on soft matching in general.
 
 ## Scope
 
-In scope: measuring whether `total_score` predicts severe crashes, and
-recording the result so it is re-derivable.
+In scope: measuring whether `total_score` finds chameleon-shaped pairs, and
+whether it predicts severe crashes, and recording both so they are
+re-derivable.
+
+**The two are not the same question, and an earlier revision of this spec
+conflated them.** Crash involvement is a proxy GAO used because chameleon
+carriers matter to regulators for safety reasons. It is not the definition of
+one. A chameleon that never crashes is still a chameleon; a carrier that
+crashes constantly and has never changed identity is not one. Treating a crash
+lift as a verdict on matching accuracy overstates what it can establish, and
+that error is corrected here rather than quietly edited out.
+
+The direct measure is structural and needs no proxy — see "Does the top tier
+look like chameleons?" below. The crash lift is retained as a **secondary**
+result, because it is a published external yardstick and because the harness
+built for it (banding, exposure normalization, standardization, persistence)
+applies to any outcome variable.
 
 Out of scope, and each for a reason:
 
@@ -190,6 +211,52 @@ This is the primary measure because it is **internally controlled**: every
 carrier in it is already a candidate successor of a shut-down carrier, selected
 by the same seed query. No control-group construction is required, so there is
 no matching decision for a skeptic to attack.
+
+### The direct measure: does the top tier look like chameleons?
+
+`DOT-Commercial/README.md` defines the target as carriers "shut down for safety
+or insurance reasons that reopen under a new DOT number." That is a **temporal
+structure**: the successor registers _after_ the predecessor is shut down. It is
+checkable directly against the emitted pairs, with no proxy outcome, no labels,
+and no external dataset.
+
+Three measurements, all over `gap_days` (successor `add_date` minus predecessor
+`shutdown_date`), which the sweep already emits:
+
+1. **Temporal plausibility of the actionable tier.** The `gap_days`
+   distribution among pairs scoring ≥ 0.70. A pair whose successor registered
+   years before the predecessor's shutdown is not a reincarnation of it.
+2. **Score separation.** Mean `total_score` for pre-shutdown against
+   post-shutdown pairs. If the scorer captures the chameleon pattern, these
+   must differ.
+3. **Whether `temporal` earns its weight.** It is a scored signal in
+   `entity-match.json`. If plausible and implausible pairs score the same, it is
+   either weak or computed in a way that does not penalize a negative gap.
+
+**Measured 2026-08-07, before any change** — these are the baseline the work has
+to improve on:
+
+| Successor registered           | Pairs ≥ 0.70 | Share |
+| ------------------------------ | -----------: | ----: |
+| 3+ years _before_ shutdown     |          370 | 21.4% |
+| 0-3 years before shutdown      |          519 | 30.0% |
+| within 1 year _after_ shutdown |          435 | 25.2% |
+| 1+ years after shutdown        |          405 | 23.4% |
+
+51.4% of the tier an operator would act on has the successor registering before
+the predecessor was ever shut down. Scores do not separate the two populations:
+mean 0.4425 across 306,401 pre-shutdown pairs against 0.4520 across 115,445
+post-shutdown pairs.
+
+**A caveat that must travel with this result.** 49 CFR 386.73 covers operating
+as an _affiliated entity_, not only under a new identity. A high-scoring pair
+naming a pre-existing company is therefore not automatically a false positive —
+it may be a genuine affiliate, which is a different and still useful finding.
+What it is not is _reincarnation_, which is what this project says it hunts. The
+3+ year band is where that defence runs out.
+
+This measurement is cheap, needs no new data, and is the one that answers "are
+we finding chameleon carriers." It is primary; the crash lift is secondary.
 
 ### Splitting the dose–response by registration recency
 
