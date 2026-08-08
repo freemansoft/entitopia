@@ -494,6 +494,34 @@ broken," for two reasons that have to travel with the number:
   proxy. Neither result here should be read as "accuracy" without that
   qualification.
 
+### Why GAO got 3.0x and this got 1.10x
+
+Mostly because GAO was measuring a much smaller, much cleaner set. They
+flagged 1,136 carriers; this sweep flags 249,549 successors, which is 12% of
+every carrier in the file. When most of a flagged set is wrong, its crash
+rate slides toward the rate for carriers in general — and that is exactly
+where this one sat.
+
+The clearest way to see it: a shut-down carrier can have at most **one** real
+successor, but the sweep emits **8.7 pairs for every predecessor**. So even
+in the best case, no more than about 11% of the pairs can be right, and the
+true figure is far lower because most shut-down carriers simply never come
+back. Working backwards from the 1.10x lift suggests roughly **5%** of the
+flagged set is real — which sits comfortably under that ceiling, and matches
+what the direct measurement said from a completely different direction.
+
+Two things are worth ruling out, because they would be easy to blame. The
+24-month crash window is not the problem: the comparison group was measured
+over the same window. Nor is the outcome definition: the base rate here came
+out at 5.87% against GAO's 6%, which is close enough to say both are counting
+the same thing.
+
+So this is a **precision** problem, not a measurement problem — and precision
+is something you can fix. The [README's calibration open
+item](../README.md#open-items) lists five candidate changes ranked by expected
+effect, from tightening predecessor selection to sourcing the officer, EIN and
+DUNS fields that FMCSA's own tool relies on.
+
 The direct check is where the real signal is: the ranking lands on the
 temporally coherent side of its own window barely a third of the time, and
 that's squarely a scoring-weight problem, not a data-availability one. See the
