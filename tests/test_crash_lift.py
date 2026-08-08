@@ -211,9 +211,13 @@ def test_standardize_tolerates_a_none_valued_stratum_element():
 def test_gap_bands_split_on_the_shutdown_date():
     # The sign of gap_days is the whole point: negative means the successor
     # already existed when the predecessor was shut down, so it cannot be that
-    # predecessor reincarnated.
-    assert gap_band(-1200) == "3y+ before"
-    assert gap_band(-30) == "0-3y before"
+    # predecessor reincarnated. The 180-day edge is not arbitrary: it is
+    # matching/signals.py's own BACKWARD_WINDOW_DAYS, the pre-shutdown window
+    # the temporal signal itself treats as plausible pre-positioning — so a
+    # pair outside it is implausible by the model's own design, not by an
+    # edge this test invented.
+    assert gap_band(-1200) == "180d+ before"
+    assert gap_band(-30) == "0-180d before"
     assert gap_band(200) == "under 1y after"
     assert gap_band(500) == "1y+ after"
 

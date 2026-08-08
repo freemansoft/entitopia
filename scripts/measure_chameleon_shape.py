@@ -12,8 +12,15 @@ must register AFTER the predecessor's shutdown. `gap_days` (successor
 every emitted pair, so this needs no labelled outcome and no new data: a
 negative `gap_days` at a high score is a direct, unambiguous miss.
 
-Baseline measured 2026-08-07: among 1,729 pairs scoring >= 0.70, the gap
-distribution is 370 / 519 / 435 / 405 across the four bands below; mean
+The gap bands (`utils.crash_lift.GAP_BANDS`) are anchored to
+`matching/signals.py`'s own `BACKWARD_WINDOW_DAYS = 180`, not an arbitrary
+round number: that is the pre-shutdown window the `temporal` signal itself
+scores as plausible pre-positioning, so a pair outside it is implausible by
+the model's own design, and this report judges the model against its own
+claim rather than a boundary invented independently.
+
+Baseline measured 2026-08-08: among 1,729 pairs scoring >= 0.70, the gap
+distribution is 728 / 161 / 435 / 405 across the four bands below; mean
 total_score is 0.4425 over 306,401 pre-shutdown pairs (gap_days < 0) and
 0.4520 over 115,445 post-shutdown pairs (gap_days >= 0). Those figures predate
 the stop-list correction referenced in the repo's recent commits, so a run
@@ -33,7 +40,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from elasticsearch import Elasticsearch
 
-from utils.crash_lift import GAP_BANDS, SCORE_BANDS, rate
+from utils.crash_lift import GAP_BANDS, SCORE_BANDS
+from utils.file_utils import load_from_file
+
+# Default location of the live scoring config, so load_signal_weights() reads
+# the weights actually driving the sweep instead of a copy pasted into this
+# script that would go stale silently the next time entity-match.json is
+# retuned.
+DEFAULT_ENTITY_MATCH_CONFIG = (
+    Path(__file__).resolve().parent.parent
+    / "DOT-Commercial"
+    / "configuration"
+    / "chameleon-detection"
+    / "entity-match.json"
+)
+
+# The three configured entries that all score name similarity: two phonetic
+# encoders (name-phonetic at two different subfields) plus the cleaned token
+# form (name-token). Summed together because DOT-Commercial/README.md's open
+# item about name similarity being "effectively triple-weighted" is a claim
+# about their combined weight, not any one of them individually.
+NAME_SIGNAL_TYPES = ("name-phonetic", "name-token")
 
 # One definition of the gap-band edges as an Elasticsearch range spec, reused
 # by both the score/gap matrix and the temporal-signal check below. Elastic's
@@ -145,62 +172,109 @@ def print_separation(separation):
         )
 
 
-def temporal_signal_share(client, pairs_index):
-    """Share of pairs per gap band whose `matched_on` includes `temporal`.
+def load_signal_weights(config_path):
+    """Configured weight per signal type, summed across entries sharing a type.
 
-    Exists to test a specific bug hypothesis: a signal named `temporal` ought
-    to fire only when the dates are chameleon-shaped. If it fires at a
-    comparable rate on pairs with negative gap_days — pairs that CANNOT be a
-    reincarnation, because the successor predates the shutdown — the signal is
-    rewarding something other than what its name promises, and every score it
-    contributes to is inflated on exactly the pairs this report is checking.
+    Reads `entity-match.json` directly rather than hardcoding its numbers, so
+    this report stays correct the next time the config is retuned instead of
+    quietly comparing against stale weights. Summed by type because two
+    entries share `name-phonetic` (the plain and Beider-Morse subfields) —
+    `load_from_file`'s SimpleNamespace tree keeps each config entry separate,
+    and this is the one place that collapses them for the "name signals
+    combined" comparison below.
     """
-    response = client.search(
-        index=pairs_index,
-        size=0,
-        aggs={
-            "gap": {
-                "range": {"field": "gap_days", "ranges": GAP_RANGES},
-                "aggs": {"temporal": {"filter": {"term": {"matched_on": "temporal"}}}},
-            }
-        },
-        track_total_hits=False,
+    config = load_from_file(str(config_path))
+    weights = {}
+    for signal in config.signals:
+        weights[signal.type] = weights.get(signal.type, 0.0) + float(signal.weight)
+    return weights
+
+
+def temporal_headroom(weights, separation):
+    """How much the `temporal` signal COULD move total_score, against how much the data actually separates on it.
+
+    Computed once, as one structure, so the printed ceiling, the printed
+    observed gap and the printed ratio between them can never disagree with
+    each other — the three numbers this function returns are read together in
+    print_temporal_headroom, not recomputed at each print site.
+
+    max_contribution divides by the FULL configured weight total (0.94), the
+    best case for temporal's influence: `matching/scorer.py` renormalizes
+    total_score by only the evaluable signals' weight, so on any pair missing
+    other evidence temporal's share of that smaller denominator is larger —
+    this ceiling is deliberately the loosest one that still uses only the
+    published config, not a per-pair maximum that would need fetching
+    documents to compute.
+    """
+    total = sum(weights.values())
+    temporal_weight = weights.get("temporal", 0.0)
+    name_weight = sum(weights.get(t, 0.0) for t in NAME_SIGNAL_TYPES)
+    pre_mean = separation["pre"]["mean"]
+    post_mean = separation["post"]["mean"]
+    observed_gap = None if pre_mean is None or post_mean is None else post_mean - pre_mean
+    return {
+        "total_weight": total,
+        "temporal_weight": temporal_weight,
+        "name_weight": name_weight,
+        "observed_gap": observed_gap,
+        "max_contribution": None if total <= 0 else temporal_weight / total,
+    }
+
+
+def print_temporal_headroom(headroom):
+    """Print the weight-vs-separation comparison: can `temporal` matter at all, given how little the data separates on it.
+
+    The finding this table exists to support: `temporal` has just enough
+    weight to explain a fraction of the pre/post-shutdown score gap even at
+    its theoretical best case, while the three name signals combined outweigh
+    it several times over — so a pair's rank is set overwhelmingly by name
+    similarity, not by whether its dates are chameleon-shaped at all. This
+    corroborates DOT-Commercial/README.md's open item that name similarity is
+    "effectively triple-weighted."
+    """
+    total = headroom["total_weight"]
+    temporal = headroom["temporal_weight"]
+    name = headroom["name_weight"]
+    gap = headroom["observed_gap"]
+    ceiling = headroom["max_contribution"]
+
+    print("\nCAN THE `temporal` SIGNAL EVEN MOVE THE SCORE? (weights read live from entity-match.json)")
+    print("  temporal weight               : {:.2f} of {:.2f} configured total".format(temporal, total))
+    print(
+        "  max possible contribution     : {} (temporal weight x its max score of 1.0, over the full configured total)".format(
+            "n/a" if ceiling is None else "{:.4f}".format(ceiling)
+        )
     )
-    buckets = response["aggregations"]["gap"]["buckets"]
-    return [
-        {
-            "band": label,
-            "total": bucket["doc_count"],
-            "fired": bucket["temporal"]["doc_count"],
-        }
-        for label, bucket in zip(GAP_LABELS, buckets, strict=True)
-    ]
-
-
-def print_temporal_share(shares):
-    """Print the temporal-signal firing rate per gap band, with n/a for an empty band rather than a fabricated 0.0%."""
-    print("\nDID THE `temporal` SIGNAL FIRE? (share of pairs in each gap band with `temporal` in matched_on)")
-    print("  {:<18} {:>10} {:>10} {:>9}".format("gap band", "n", "fired", "share"))
-    for entry in shares:
-        proportion = rate(entry["fired"], entry["total"])
+    print(
+        "  observed pre/post mean gap    : {}".format(
+            "n/a" if gap is None else "{:.4f}".format(gap)
+        )
+    )
+    print(
+        "  name signals combined weight  : {:.2f} of {:.2f} configured total ({})".format(
+            name, total, "n/a" if not total else "{:.1%}".format(name / total)
+        )
+    )
+    if ceiling and gap and temporal:
         print(
-            "  {:<18} {:>10,} {:>10,} {:>9}".format(
-                entry["band"],
-                entry["total"],
-                entry["fired"],
-                "n/a" if proportion is None else "{:.1%}".format(proportion),
-            )
+            "  temporal's ceiling is {:.1f}x the observed pre/post gap; name signals carry {:.1f}x "
+            "more configured weight than temporal — ranking is dominated by name similarity, "
+            "not shutdown timing.".format(ceiling / gap, name / temporal)
         )
 
 
 def _parse_args():
-    """Command-line surface: which pairs index to read.
+    """Command-line surface: which pairs index and which scoring config to read.
 
     Split out of main() so main() reads as the report's outline, matching
-    measure_crash_lift.py's convention.
+    measure_crash_lift.py's convention. --entity-match-config defaults to the
+    live DOT-Commercial config rather than a value baked into the report body,
+    so pointing this script at a different project's config is a flag, not an
+    edit.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pairs-index", default="chameleon-candidates-000001")
+    parser.add_argument("--entity-match-config", default=str(DEFAULT_ENTITY_MATCH_CONFIG))
     return parser.parse_args()
 
 
@@ -208,9 +282,9 @@ def main():
     """Read the live cluster and print the three-part chameleon-shape report end to end.
 
     No persistence step (unlike measure_crash_lift.py): this report has no
-    proxy outcome to compare across runs, only the sweep's own emitted fields,
-    so there is nothing a later run would need to look back at beyond the
-    printed numbers themselves.
+    proxy outcome to compare across runs, only the sweep's own emitted fields
+    and its own scoring config, so there is nothing a later run would need to
+    look back at beyond the printed numbers themselves.
     """
     args = _parse_args()
     client = Elasticsearch(
@@ -223,8 +297,8 @@ def main():
     separation = score_separation(client, args.pairs_index)
     print_separation(separation)
 
-    shares = temporal_signal_share(client, args.pairs_index)
-    print_temporal_share(shares)
+    weights = load_signal_weights(args.entity_match_config)
+    print_temporal_headroom(temporal_headroom(weights, separation))
 
     return 0
 
