@@ -48,22 +48,5 @@
         "repo": "anthropics/claude-plugins-official"
       }
     }
-  },
-  "permissions": {
-    "allow": [
-      "Bash(curl -s localhost:9200:*)",
-      "Bash(curl -s http://localhost:9200:*)",
-      "Bash(curl -s -m 3 localhost:9200:*)",
-      "Bash(curl -s -XGET localhost:9200:*)",
-      "Bash(curl -s -XGET http://localhost:9200:*)",
-      "Bash(curl localhost:9200:*)",
-      "Bash(curl http://localhost:9200:*)",
-      "Bash(cd /Users/joefreeman/Documents/GitHub/freemansoft/entitopia:*)",
-      "Bash(cd /Users/joefreeman/Documents/GitHub/freemansoft/entitopia/:*)",
-      "Bash(.venv/bin/python:*)",
-      "Bash(bash dependencies.sh:*)",
-      "Bash(bash /Users/joefreeman/.claude/plugins/cache/claude-plugins-official/superpowers:*)",
-      "Bash(git:*)"
-    ]
   }
 }
