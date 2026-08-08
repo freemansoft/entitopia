@@ -236,24 +236,46 @@ Three measurements, all over `gap_days` (successor `add_date` minus predecessor
 **Measured 2026-08-07, before any change** — these are the baseline the work has
 to improve on:
 
-| Successor registered           | Pairs ≥ 0.70 | Share |
-| ------------------------------ | -----------: | ----: |
-| 3+ years _before_ shutdown     |          370 | 21.4% |
-| 0-3 years before shutdown      |          519 | 30.0% |
-| within 1 year _after_ shutdown |          435 | 25.2% |
-| 1+ years after shutdown        |          405 | 23.4% |
+| Successor registered                            | Pairs ≥ 0.70 | Share |
+| ----------------------------------------------- | -----------: | ----: |
+| more than 180d _before_ shutdown                |          728 | 42.1% |
+| 0-180d before shutdown (pre-positioning window) |          161 |  9.3% |
+| 0-365d after shutdown (classic reincarnation)   |          435 | 25.2% |
+| more than 1 year after shutdown                 |          405 | 23.4% |
 
-51.4% of the tier an operator would act on has the successor registering before
-the predecessor was ever shut down. Scores do not separate the two populations:
+**Only 34.5% of the tier an operator would act on is temporally coherent** by
+the scorer's own definition. Scores barely separate the populations either:
 mean 0.4425 across 306,401 pre-shutdown pairs against 0.4520 across 115,445
-post-shutdown pairs.
+post-shutdown pairs, a difference of 0.0095.
+
+**Registering before the shutdown is not disqualifying, and the bands above are
+cut on the model's own window rather than an invented one.** An operator who
+knows a shutdown is coming can stand up the successor in advance, so a short
+pre-window is a real chameleon tactic. `TemporalSignal` already encodes exactly
+that: `BACKWARD_WINDOW_DAYS = 180` with `BACKWARD_SCALE = 0.5`, giving a
+pre-positioned successor partial credit at half weight. An earlier revision of
+this spec called pre-shutdown pairs structurally impossible and treated the
+signal's behaviour as a bug hypothesis. Both were wrong, and the 180-day
+boundary above replaces an arbitrary three-year one so the measurement is
+judged against the design's own claim.
+
+**The real diagnosis is weighting, not the temporal signal.** `temporal` carries
+0.05 of the 0.94 total — 5.3%, so it can move a score by at most ~0.053, which
+bounds the 0.0095 separation actually observed. The three name signals together
+carry 47.8%. Temporal plausibility is therefore a rounding error in a ranking
+dominated by name similarity, which is why 42.1% of the top tier sits outside
+the modelled window: those pairs score **zero** on temporal and still clear 0.70
+on name and address alone. This is independent corroboration of the existing
+`DOT-Commercial/README.md` open item that name similarity is effectively
+triple-weighted and ranks the wrong pairs highest — a second, sharper piece of
+evidence for a defect already recorded, not a new one.
 
 **A caveat that must travel with this result.** 49 CFR 386.73 covers operating
 as an _affiliated entity_, not only under a new identity. A high-scoring pair
 naming a pre-existing company is therefore not automatically a false positive —
 it may be a genuine affiliate, which is a different and still useful finding.
-What it is not is _reincarnation_, which is what this project says it hunts. The
-3+ year band is where that defence runs out.
+What it is not is _reincarnation_, which is what this project says it hunts.
+Beyond 180 days before the shutdown is where that defence runs out.
 
 This measurement is cheap, needs no new data, and is the one that answers "are
 we finding chameleon carriers." It is primary; the crash lift is secondary.

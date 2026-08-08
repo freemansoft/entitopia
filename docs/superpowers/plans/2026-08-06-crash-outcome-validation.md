@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Measure whether `total_score` predicts an outcome the matcher never sees — appearing in the FMCSA crash file — and record the result so it is re-derivable.
+**Goal:** Measure whether `total_score` finds chameleon-shaped pairs (primary, Task 9) and whether the flagged population shows the elevated crash rate GAO measured (secondary, Tasks 1-6), and record both so they are re-derivable.
 
 **Architecture:** Pure arithmetic (banding, exposure, standardization) lives in `utils/crash_lift.py` and is unit-tested with no Elasticsearch. All cluster I/O and printing lives in `scripts/measure_crash_lift.py`, following the `measure_address_analyzers.py` precedent of a committed measurement script whose output is quoted in a README.
 
@@ -1349,7 +1349,7 @@ the emitted pairs, with no proxy, no labels and no new data.
 - Produces: `gap_band(gap_days) -> str | None`.
 
 **Baseline measured 2026-08-07 — the script must reproduce these:** among 1,729
-pairs scoring ≥ 0.70, the gap distribution is 370 / 519 / 435 / 405 across the
+pairs scoring ≥ 0.70, the gap distribution is 728 / 161 / 435 / 405 across the
 four bands below; mean `total_score` is 0.4425 over 306,401 pre-shutdown pairs
 and 0.4520 over 115,445 post-shutdown pairs. If your run disagrees, stop and
 report it rather than adjusting the query.
@@ -1364,8 +1364,8 @@ def test_gap_bands_split_on_the_shutdown_date():
     # The sign of gap_days is the whole point: negative means the successor
     # already existed when the predecessor was shut down, so it cannot be that
     # predecessor reincarnated.
-    assert gap_band(-1200) == "3y+ before"
-    assert gap_band(-30) == "0-3y before"
+    assert gap_band(-1200) == "180d+ before"
+    assert gap_band(-30) == "0-180d before"
     assert gap_band(200) == "under 1y after"
     assert gap_band(500) == "1y+ after"
 
@@ -1388,7 +1388,7 @@ Expected: FAIL — `ImportError: cannot import name 'gap_band'`
 - [ ] **Step 3: Implement `gap_band` in `utils/crash_lift.py`**
 
 ```python
-GAP_BANDS = [(-1095, "3y+ before"), (0, "0-3y before"), (366, "under 1y after")]
+GAP_BANDS = [(-180, "180d+ before"), (0, "0-180d before"), (366, "under 1y after")]
 
 
 def gap_band(gap_days):
