@@ -45,6 +45,53 @@ Dataset-specific. Framework-level items are in the [top-level README](../README.
 
    The correction perturbs the noise band and leaves the reviewable set untouched — the expected outcome for a change affecting roughly 2,800 `phy_street` values out of 2,085,534, and a useful negative result: street-token changes of this size are not what is holding calibration back. Weighting is (see the next item).
 
+   **The calibration question above finally has an answer against reality, not just against itself, and it is recorded here in full because the theory-of-operation explainer's [§9](docs/chameleon-pipeline-explainer.md#9-does-the-score-actually-predict-anything) only summarizes it.** Two validations, primary then secondary per the design's own framing, both measured 2026-08-08 against the same `carriers-000001` / `chameleon-candidates-000001` aliases (fingerprint `0595ca890d9ec6fb`, unchanged from the sweep above) and persisted to the `chameleon-validation-000001` alias, so either run is re-derivable by `run_id` rather than only quotable from this paragraph.
+
+   Primary — does the score find chameleon-shaped pairs, checked directly against the README's own definition ("shut down... that reopen under a new DOT number"), no proxy or external data needed: `.venv/bin/python scripts/measure_chameleon_shape.py`. Of the **1,729 pairs scoring ≥ 0.70**, the `gap_days` distribution is 728 registered more than 180 days _before_ the predecessor's shutdown (42.1%), 161 within the `temporal` signal's own 180-day pre-positioning window (9.3%), 435 within a year after (25.2%), and 405 more than a year after (23.4%) — **only 34.5% (596 of 1,729) is temporally coherent** within the scorer's own window. Mean `total_score` separates pre-shutdown pairs (0.4425 over 306,401) from post-shutdown pairs (0.4520 over 115,445) by just **0.0095**. `TemporalSignal` is not broken — `matching/signals.py` deliberately gives a pre-shutdown pair partial credit (`BACKWARD_WINDOW_DAYS = 180`, `BACKWARD_SCALE = 0.5`) because pre-positioning a successor ahead of a known-coming shutdown is a real tactic — it is simply outvoted: `temporal` carries 0.05 of the 0.94 configured total (a ceiling of ~0.053 on any score), while the three name signals above carry 0.45 combined, nine times as much. **This is independent corroboration of the name-triple-weighting item below, not a new defect.** A caveat that travels with it: 49 CFR 386.73 covers operating as an _affiliated entity_, not only under a new identity, so a high-scoring pair naming a pre-existing company is not automatically a false positive — it may be a genuine affiliate. What it is not is _reincarnation_, which is what this project says it hunts.
+
+   Secondary — does the flagged population show GAO-12-364's measured crash lift (18% vs 6%, a proxy for safety risk, not a redefinition of "chameleon"): `.venv/bin/python scripts/measure_crash_lift.py`. Crash window (read from `crashes-000001`, reloaded to 333,120 docs matching `crashes.csv` exactly — a prior index held 333,122 from an older rolling-window extract, so any earlier crash-figure quote will show small, legitimate movement against this one): 2024-08-12 to 2026-07-29. 249,778 distinct successors; the restricted cohort (`add_date` before the crash window, comparable to GAO's figures) is **196,707** (21.2% excluded as registered inside the window). Per-band crash rate inside that cohort does not rise with score:
+
+   | score band | carriers | crashed |   rate |
+   | ---------- | -------: | ------: | -----: |
+   | 0.35-0.50  |  146,045 |   9,683 |  6.63% |
+   | 0.50-0.60  |   46,797 |   2,296 |  4.91% |
+   | 0.60-0.70  |    1,275 |      69 |  5.41% |
+   | 0.70-0.80  |      283 |      39 | 13.78% |
+   | 0.80-0.90  |      156 |      19 | 12.18% |
+   | 0.90-1.00  |      145 |       6 |  4.14% |
+
+   Flagged successors crashed at **6.64%** overall; the whole unflagged population (standardized by registration-year/fleet-size/state to the flagged cohort's mix, 252 strata excluded for holding no controls) crashed at **6.02%** — a lift of **1.10x** against GAO's published **3.0x**. The permuted-score placebo landed within a point of the same rate on the two bands holding 98.0% of the restricted cohort ((146,045 + 46,797) / 196,707); the small high-score tail bands (n=145-283) moved more, consistent with sampling noise at that count rather than a real trend. **Report this as "the flagged population is not measurably riskier than comparable carriers," never as a verdict on matching accuracy** — crash involvement is a proxy GAO used because chameleon carriers matter for safety, not this project's definition of one. The loaded census also carries no officer name, EIN, or DUNS — three of the identifiers FMCSA's own ARCHI tool matches on — so a weak lift is at least as consistent with missing inputs as with a bad scorer. **Both validations measure precision-shaped properties only** — whether a flagged pair is temporally coherent, and whether the flagged population is riskier than comparable carriers. Neither can measure recall: there is no list of known chameleon carriers to check the sweep against, so a real chameleon it never surfaced is invisible to both methods.
+
+   **Why GAO measured 3.0x and this sweep measures 1.10x: dilution, not a difference in how the outcome was measured.** GAO flagged **1,136 carriers**; this sweep flags **249,778 distinct successors — 12.0% of every carrier in the census**. A flagged set that is mostly false positives has a crash rate that converges on the population base rate by arithmetic, and this one did: 6.64% flagged, 6.02% standardized control, 5.86% base. Three independent lines agree on that reading:
+
+   - **A structural ceiling.** A predecessor has at most _one_ true successor. Of the **48,540** predecessors the selector examined, only **46,792** appear in at least one emitted pair — the rest are inert for this ratio, since a predecessor with no pair cannot contribute a true positive either way. Against that pair-producing denominator the sweep emits **9.0 pairs per predecessor** (421,846 over 46,792). So at most 46,792 pairs — **11.1%** — can be correct, and that assumes every shut-down carrier reincarnated, which is nowhere near true. (Dividing by all 48,540 examined instead gives 8.7 pairs and a 11.5% ceiling — close enough to read the same way, but the two denominators answer different questions, so pick one and say which.) The real ceiling is a fraction of 11.1%.
+   - **The dilution arithmetic.** If true positives carry GAO's 3.0x and false positives sit at base rate, an observed 1.10x implies a true-positive share of `(1.10 - 1) / (3.0 - 1)` ≈ **5%** — comfortably under the structural ceiling, which is what an independent estimate should look like.
+   - **The primary measurement, by a different route.** Only 34.5% of the ≥ 0.70 tier is temporally coherent. Different method, same conclusion.
+
+   Two population differences compound it. GAO examined **new applicants** — a narrow funnel by construction — while this sweeps 2,085,534 carriers. And GAO required attribute match **and** demonstrated motive to evade; the motive filter here (an out-of-service order) over-selects for the `nested` mapping reason recorded two items below. FMCSA's own vetting also matches officer names, EIN and DUNS, none of which the census carries.
+
+   Ruled out as explanations: the **24-month crash window** (the control used the identical window, so the comparison is internally consistent) and the **outcome definition** (the measured base rate — 5.86%, against the current `crashes-000001` index this validation reads throughout — lands within 0.14 points of GAO's 6%, which is strong evidence it is the same outcome variable). The 5% figure is a one-parameter model assuming GAO's lift transfers and false positives sit exactly at base rate; GAO's population was 2005-2010 new applicants rather than 2026 carriers, so treat it as an order-of-magnitude read.
+
+   **This is a precision problem, and precision is fixable.** Ranked by expected effect on the dilution above:
+
+   | #   | Change                                                                                         | Why it should tighten precision                                                                                                                                                                                                                                                  | Status          |
+   | --- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+   | 1   | Map `out_of_service_orders` as `nested` and use a `nested` query in `matching/predecessors.py` | Shrinks the predecessor set at the source, so the whole pair count falls rather than being filtered later. Also repairs `shutdown_date`/`gap_days`, which currently may come from an order the selector never intended to match — the same field the primary measurement judges. | open item below |
+   | 2   | Rebalance signal weights away from name                                                        | 0.45 of 0.94 sits on one field while `temporal` gets 0.05, which is why 42.1% of the top tier sits outside the modelled window and still clears 0.70 on name and address alone. A complete name change is the defining chameleon move.                                           | open item below |
+   | 3   | Require temporal coherence rather than scoring it                                              | A successor registered more than 180 days before the shutdown fails the project's own definition. Making that a selector predicate instead of a 5%-weighted signal removes 42.1% of the top tier without touching any other logic.                                               | not yet an item |
+   | 4   | Parse street into house number / name / unit                                                   | `100 MAIN ST` vs `200 MAIN ST` scores 0.525 on a signal weighted 0.20 — a false-positive generator at scale.                                                                                                                                                                     | open item below |
+   | 5   | Source officer name (EIN and DUNS are not obtainable — see below)                              | The identifiers ARCHI matches on and this census lacks. Still the largest single lever, but only one third of it is actually available; the other two are dead ends, which is worth knowing before anyone plans work around them.                                                | not yet an item |
+
+   Items 3 and 5 have no home elsewhere in this list, so they are recorded here. None of the five has been attempted, and the ordering is an expectation, not a measurement — re-run both validation scripts after each to find out.
+
+   **On item 5 specifically, researched 2026-08-08 and recorded so it is not re-researched.** The three ARCHI identifiers are not equally available, and two of them are not available at all:
+
+   - **DUNS is obsolete.** The federal government retired it on 2022-04-04 in favour of the [UEI in SAM.gov](https://www.fema.gov/node/what-unique-entity-identifier-uei-and-how-it-related-system-award-management-sam). GAO-12-364 cites DUNS because it was written in 2012. DUNS still exists only as Dun & Bradstreet's commercial product — licensed, not bulk-downloadable. UEI is free but covers only entities registered for federal awards, which most small carriers are not.
+   - **EIN is not public.** FMCSA collects it at registration and does not disseminate it; the IRS publishes EINs only for tax-exempt organizations. No public dataset of carrier EINs exists, and a tax identifier is an unlikely FOIA result.
+   - **Officer name is obtainable, but not from FMCSA.** Verified: the carriers index has 47 fields and none is officer/owner/contact/principal, and `carriers.csv` has no such column. It would have to come from state Secretary of State registries (authoritative, but 50 different formats), an aggregator such as OpenCorporates (one API, paid for bulk), FMCSA's [L&I system](https://li-public.fmcsa.dot.gov/lihtml/liintro.html) (whose [data.gov entry documents HTML access only](https://catalog.data.gov/dataset/licensing-and-insurance), no bulk file), or FOIA.
+
+   **A person-name field is already downloaded and unused.** `boc3_agents.attn_to_or_title` is indexed, populated on **75.4% of sampled rows**, and referenced by no signal in `entity-match.json`. It is the process agent's contact rather than the carrier's officer, so it is weaker than what ARCHI matches on and will be shared across a filing agent's entire book of business — the exact false-positive shape `ignore_values` exists to suppress. Recorded because it costs nothing to evaluate if item 5 is ever picked up: the data is already on disk and in the cluster. Not judged worth measuring yet.
+
 1. **Name similarity is effectively triple-weighted, which currently ranks the wrong pairs highest.** `entity-match.json` lists three name signals over the same two fields (`name-phonetic` twice plus `name-token`, together 0.45 of the 0.94 total). Because `carrier_suffix_stop` strips `TRUCKING`/`LOGISTICS`/`LLC`/`INC`, most carrier names reduce to a single token, so the blended overlap becomes effectively binary. Measured: a pair with a byte-identical street, same state, and registration 45 days after the shutdown scored **0.3483 and was dropped** by the 0.35 floor, while `ABC TRUCKING LLC` vs `ABC LOGISTICS INC` in different states — sharing nothing but the token `ABC` — scored **0.5113 and was emitted**. A complete name change is the defining chameleon move, so this is backwards.
 
    The `min_signals` half of this is **fixed**: `PairScorer` now counts distinct evidence sources rather than signal instances, so the three name arms collapse into one and a name-only pair no longer clears a floor written to demand corroboration from a second, independent source. Against the shipped config, 8 signals resolve to 6 sources. What remains is the weighting itself — 0.45 of 0.94 still sits on one field — and that is a calibration decision rather than a structural one, so it should be made against real sweep output rather than guessed at a second time.
@@ -210,6 +257,7 @@ flowchart LR
         carriers-step[carriers]
         carriers-ingestion-setup-step[carriers ingestion setup]
         chameleon-step[chameleon-detection]
+        chameleon-validation-step[chameleon-validation]
     end
 
     subgraph indexes
@@ -223,6 +271,7 @@ flowchart LR
         carriers-index["carriers-{day}-000001"] -..-> carriers-alias[alias]
 
         chameleon-index["chameleon-candidates-{day}-000001"] -..- chameleon-alias[alias]
+        chameleon-validation-index["chameleon-validation-{day}-000001"] -..- chameleon-validation-alias[alias]
 
         per-unit-enrichment-index[inspections-per-unit enrichment]
         crashes-enrichment-index[crashes enrichment]
@@ -308,6 +357,12 @@ flowchart LR
     chameleon-step -->|"index-create, index-map, entity-match"| chameleon-index
     entity-match-config["entity-match.json<br/>selector · seed_signals · weights<br/>ignore_values · max_shared_records"] -.-> chameleon-step
     carriers-index -.->|"corpus frequency scan<br/>finds non-identifying values"| chameleon-step
+
+    chameleon-validation-step -->|"index-create, index-map"| chameleon-validation-index
+    validation-scripts["scripts/measure_chameleon_shape.py<br/>scripts/measure_crash_lift.py"] -->|"writes result rows"| chameleon-validation-index
+    chameleon-index -.->|"scored pairs — read only"| validation-scripts
+    carriers-index -.->|"registration date, fleet size, state"| validation-scripts
+    crashes-index -.->|"outcome the matcher never sees"| validation-scripts
 
 
 ```

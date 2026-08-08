@@ -377,3 +377,157 @@ How it fits into the flow (the "Growing `entity-match.json`" chart above):
 Run this LLM flow when reviewing a new data extract or when the declared exclusion list seems
 stale, not as part of every dataset reload. It drives the hand-maintained list and
 leaves the per-run frequency scan untouched.
+
+## 9. Does the score actually predict anything?
+
+Everything above describes what the matcher _did_ — how many pairs it emitted,
+what score they got, which signals fired. None of it says whether the matcher
+was _right_. A scorer that ranked carriers by ZIP code would produce an
+equally clean set of counts. Two checks exist to answer that instead, and
+they are not equally trustworthy: one is direct, one is a proxy, and the
+proxy is reported second on purpose.
+
+### The direct check: does the top tier actually look like chameleons?
+
+The [top-level README](../README.md) defines a chameleon as a carrier "shut
+down for safety or insurance reasons that reopens under a new DOT number" —
+a claim about timing, not about anything a proxy outcome is needed for. The
+successor has to register after the predecessor shuts down, or, per
+`TemporalSignal`'s own 180-day pre-positioning window, shortly before a
+known-coming shutdown. `gap_days` (successor `add_date` minus predecessor
+`shutdown_date`) is already on every emitted pair, so checking this needs no
+labels and no external dataset: run
+`.venv/bin/python scripts/measure_chameleon_shape.py` and look at where the
+≥ 0.70 tier's gaps actually land.
+
+Measured 2026-08-08: of the **1,729 pairs scoring ≥ 0.70**, only **34.5%
+(596)** fall inside the temporally coherent window. 42.1% (728) registered
+more than 180 days _before_ the predecessor even shut down — outside what
+the scorer itself treats as plausible pre-positioning. Mean score barely
+separates pre- from post-shutdown pairs: 0.4425 against 0.4520, a gap of
+0.0095. That's not because `temporal` is buggy — `matching/signals.py`
+deliberately gives a pre-shutdown pair partial credit
+(`BACKWARD_WINDOW_DAYS = 180`, `BACKWARD_SCALE = 0.5`) because standing a
+successor up ahead of a known-coming shutdown is a real tactic — it's because
+`temporal` can't move the needle much even at its theoretical best: it carries
+0.05 of the 0.94 configured weight (a ceiling of about 0.053 on any score),
+while the three name signals in §5 carry 0.45 combined, nine times as much.
+The ranking is set almost entirely by name similarity, so a byte-identical
+name plus a shared address clears 0.70 with a large negative `gap_days` and
+`temporal` contributing nothing to stop it. This is the "name effectively
+triple-weighted" open item in the README, seen from a different angle — not a
+new defect.
+
+One caveat travels with this result everywhere it's quoted: 49 CFR 386.73
+covers operating as an _affiliated entity_, not only under a brand-new
+identity, so a high-scoring pair naming a pre-existing company is not
+automatically wrong — it may be a genuine affiliate relationship, which is a
+different and still useful finding. What it is not is _reincarnation_, which
+is the pattern this project says it's hunting.
+
+### The proxy check: crash involvement
+
+[GAO-12-364](https://www.gao.gov/products/gao-12-364) found that FMCSA
+new-applicants with "chameleon attributes" (registration details matching a
+prior carrier that had motive to evade enforcement) were involved in severe
+crashes at **18%**, against **6%** for applicants without them — a 3x lift.
+That's a useful yardstick because the crash data is already loaded here and
+nothing in `entity-match.json` reads it: a crash outcome is genuinely
+external evidence, not a restatement of the score.
+
+It's still a proxy, and a weaker one than the direct check above: crash
+involvement is something GAO measured because chameleon carriers matter to
+regulators for safety reasons, not the definition of one. A chameleon that
+never crashes is still a chameleon; a carrier that crashes constantly and has
+never changed identity is not one. So this result is reported second, and it
+should never be read as a verdict on whether the matching is accurate — only
+on whether the flagged population happens to be riskier than comparable
+carriers.
+
+Every cohort and band below is fixed _before_ looking at the outcome, for the
+same reason a trial pre-registers its endpoints — cutting them after seeing
+the result is exactly how this kind of measurement fools its author:
+
+- **Score bands** reuse thresholds this document and the README already
+  commit to (the 0.35 emit floor, the 0.70 triage line) instead of inventing
+  new ones.
+- **The restricted cohort** — the one comparable to GAO's numbers — is
+  successors registered _before_ the crash file's rolling 24-month window, so
+  every carrier in it has had the full window to crash. That excludes the
+  freshest registrations, which is exactly the population an _active_
+  chameleon would fall into, so a companion, exposure-normalized view over
+  every successor (crashes per 1,000 months of observed exposure, not a raw
+  proportion) is reported alongside it. The two are not interchangeable.
+- **Recency cohorts** (`under-1y`, `1-3y`, `3y-plus`, measured back from the
+  crash file's own newest report date rather than from today, so the columns
+  don't reshuffle between two runs over identical data) exist for the same
+  reason: a signal confined to carriers that re-registered recently would
+  wash out completely if averaged against a decade of carriers that
+  re-registered long ago and have been running quietly ever since.
+
+Run `.venv/bin/python scripts/measure_crash_lift.py`. Measured 2026-08-08:
+crash window 2024-08-12 to 2026-07-29; 249,778 distinct successors, restricted
+cohort 196,707 (21.2% excluded as registered inside the window). That cohort
+crashed at **6.64%**; per-band rates inside it don't rise with score
+(6.63% / 4.91% / 5.41% / 13.78% / 12.18% / 4.14% from lowest to highest
+band — the top band is actually the lowest). The whole unflagged population,
+standardized to the flagged cohort's registration-year/fleet-size/state mix,
+crashed at **6.02%** — a lift of **1.10x**, against GAO's **3.0x**. The
+permuted-score placebo lands at essentially the same rate on the two bands
+holding 98.0% of the cohort ((146,045 + 46,797) / 196,707); the small
+high-score tail bands (n=145-283) wobble more, consistent with sampling noise
+at that count rather than a real trend.
+
+**This is a null result, stated plainly rather than softened.** By this
+proxy, on this data, the flagged population is not measurably riskier than
+comparable carriers. That is a different statement from "the matching is
+broken," for two reasons that have to travel with the number:
+
+- The loaded carrier census carries no officer name, no EIN, and no DUNS —
+  three of the identifiers FMCSA's own ARCHI vetting tool matches shared
+  registrations on. A weak lift is at least as consistent with those inputs
+  being missing as with the scorer being wrong, and no amount of analyzer
+  tuning recovers data that was never loaded.
+- This measures precision-shaped properties only. There is no list of known
+  chameleon carriers to check recall against, so a real chameleon the sweep
+  never surfaced is invisible to every method in this section, direct or
+  proxy. Neither result here should be read as "accuracy" without that
+  qualification.
+
+### Why GAO got 3.0x and this got 1.10x
+
+Mostly because GAO was measuring a much smaller, much cleaner set. They
+flagged 1,136 carriers; this sweep flags 249,778 successors, which is 12% of
+every carrier in the file. When most of a flagged set is wrong, its crash
+rate slides toward the rate for carriers in general — and that is exactly
+where this one sat.
+
+The clearest way to see it: a shut-down carrier can have at most **one** real
+successor, but the sweep emits **9.0 pairs for every predecessor that
+produced at least one pair** (46,792 of the 48,540 the selector examined; the
+rest never paired at all). So even in the best case, no more than about 11%
+of the pairs can be right, and the true figure is far lower because most
+shut-down carriers simply never come back. Working backwards from the 1.10x
+lift suggests roughly **5%** of the
+flagged set is real — which sits comfortably under that ceiling, and matches
+what the direct measurement said from a completely different direction.
+
+Two things are worth ruling out, because they would be easy to blame. The
+24-month crash window is not the problem: the comparison group was measured
+over the same window. Nor is the outcome definition: the base rate here came
+out at 5.86% against GAO's 6%, which is close enough to say both are counting
+the same thing.
+
+So this is a **precision** problem, not a measurement problem — and precision
+is something you can fix. The [README's calibration open
+item](../README.md#open-items) lists five candidate changes ranked by expected
+effect, from tightening predecessor selection to sourcing the officer, EIN and
+DUNS fields that FMCSA's own tool relies on.
+
+The direct check is where the real signal is: the ranking lands on the
+temporally coherent side of its own window barely a third of the time, and
+that's squarely a scoring-weight problem, not a data-availability one. See the
+`entity-match` calibration item in the
+[top-level README's open items](../README.md#open-items) for the numbers
+recorded against production data, and the name-weighting item it points at
+next.

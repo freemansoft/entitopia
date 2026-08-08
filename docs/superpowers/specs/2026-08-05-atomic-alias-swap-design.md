@@ -22,7 +22,7 @@ own, so every reload adds another index to the alias and none are ever removed.
 
 Measured on 2026-08-05, immediately after a second `carriers` reload:
 
-```
+```txt
 carriers-000001 -> carriers-2026.08.05-000001    2,085,534 docs
 carriers-000001 -> carriers-2026.08.01-000001    2,085,536 docs
 
@@ -106,7 +106,7 @@ sketch read membership with `options(ignore_status=404)` and iterated
 `existing.body or {}`. Suppressing the status does not produce an empty body —
 Elasticsearch answers a missing alias with an error _document_, verified live:
 
-```
+```bash
 GET /_alias/no-such-alias  ->  {"error":"alias [no-such-alias] missing","status":404}
 ```
 

@@ -4,6 +4,9 @@
     "properties": {
       "dot_number": {
         "type": "long"
+      },
+      "tow_away": {
+        "type": "keyword"
       }
     }
   }

@@ -172,6 +172,19 @@ outright without them.
 docker compose -f docker/compose.yml up -d --build
 ```
 
+The cluster is always at **`http://localhost:9200`**, unauthenticated, and
+`curl`ing it needs no approval — `.claude/settings.json` allows it. Query it
+freely to check mappings, counts and aliases rather than asking or guessing;
+several defects in this repo were only visible by looking at the live index
+(`tow_away` mapped as `text` so `{"term": {"tow_away": "Y"}}` matched zero
+documents, and `dot_number` typed `long` on crashes but `keyword` elsewhere).
+A claim about what the data contains should be checked against the cluster
+before it is written down.
+
+Writes are a different matter: creating, deleting or reindexing against a
+loaded cluster destroys work that takes hours to rebuild, so confirm those
+first even though the allowlist does not distinguish them.
+
 If the build fails with `docker-credential-desktop: executable file not found`,
 prepend Docker Desktop's bin directory to PATH for the command:
 `export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"`.
