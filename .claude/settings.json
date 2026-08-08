@@ -57,7 +57,9 @@
       "Bash(curl -s -XGET localhost:9200:*)",
       "Bash(curl -s -XGET http://localhost:9200:*)",
       "Bash(curl localhost:9200:*)",
-      "Bash(curl http://localhost:9200:*)"
+      "Bash(curl http://localhost:9200:*)",
+      "Bash(cd /Users/joefreeman/Documents/GitHub/freemansoft/entitopia:*)",
+      "Bash(cd /Users/joefreeman/Documents/GitHub/freemansoft/entitopia/:*)"
     ]
   }
 }
