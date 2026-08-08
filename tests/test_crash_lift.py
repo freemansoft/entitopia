@@ -18,6 +18,7 @@ from utils.crash_lift import (
     band_for,
     crashed_after_registration,
     fleet_size_band,
+    gap_band,
     months_between,
     rate,
     recency_cohort,
@@ -205,6 +206,26 @@ def test_standardize_tolerates_a_none_valued_stratum_element():
     standardized, skipped = standardize(flagged, control)
     assert round(standardized, 4) == 0.05
     assert skipped == []
+
+
+def test_gap_bands_split_on_the_shutdown_date():
+    # The sign of gap_days is the whole point: negative means the successor
+    # already existed when the predecessor was shut down, so it cannot be that
+    # predecessor reincarnated.
+    assert gap_band(-1200) == "3y+ before"
+    assert gap_band(-30) == "0-3y before"
+    assert gap_band(200) == "under 1y after"
+    assert gap_band(500) == "1y+ after"
+
+
+def test_gap_band_zero_is_after_not_before():
+    # Same-day re-registration is the strongest chameleon shape there is, so it
+    # must not fall into a "before" bucket.
+    assert gap_band(0) == "under 1y after"
+
+
+def test_gap_band_is_none_when_the_gap_is_unknown():
+    assert gap_band(None) is None
 
 
 # Loaded by path, mirroring test_profile_dataset.py's convention, because

@@ -142,6 +142,30 @@ def crashed_after_registration(add_yyyymmdd, report_dates):
     return any(report_date > add_yyyymmdd for report_date in report_dates)
 
 
+GAP_BANDS = [(-1095, "3y+ before"), (0, "0-3y before"), (366, "under 1y after")]
+
+
+def gap_band(gap_days):
+    """Where a pair falls relative to the predecessor's shutdown.
+
+    Exists because this project defines a chameleon carrier as one that reopens
+    AFTER being shut down, which makes the sign of `gap_days` the most direct
+    accuracy check available — it needs no proxy outcome and no labelled data.
+    A successor that already existed years before the shutdown is not that
+    predecessor reincarnated, whatever the name and address similarity say.
+
+    Boundaries are half-open with zero falling on the "after" side, because
+    same-day re-registration is the strongest chameleon shape in the data and
+    must not be bucketed as pre-existing.
+    """
+    if gap_days is None:
+        return None
+    for limit, label in GAP_BANDS:
+        if gap_days < limit:
+            return label
+    return "1y+ after"
+
+
 def rate(numerator, denominator):
     """Proportion, or None when the denominator is empty.
 
