@@ -78,7 +78,14 @@ def test_oos_path_is_configurable():
     # matching/ is framework code shared by every project (see the top-level
     # README's open item 6), so the array field name a future project's
     # "shut down" concept lives under cannot be a literal in this module.
-    query = selector(selector="out-of-service", oos_path="shutdown_orders").build_query()
+    # oos_status/oos_date_from are set so all three sub-clauses (exists,
+    # terms, range) are exercised under the override — checking only exists
+    # would let a regression that hardcoded the default back into terms or
+    # range pass unnoticed.
+    query = selector(selector="out-of-service", oos_path="shutdown_orders",
+                     oos_status=["ACTIVE"], oos_date_from="2020-01-01").build_query()
     assert query["nested"]["path"] == "shutdown_orders"
     must = query["nested"]["query"]["bool"]["must"]
     assert {"exists": {"field": "shutdown_orders.oos_date"}} in must
+    assert {"terms": {"shutdown_orders.status": ["ACTIVE"]}} in must
+    assert {"range": {"shutdown_orders.oos_date": {"gte": "2020-01-01"}}} in must
