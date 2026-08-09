@@ -92,6 +92,8 @@
     "min_total_score": 0.35,
     "min_signals": 2,
     "require_identity_signal": true,
-    "max_pairs_per_predecessor": 10
+    "max_pairs_per_predecessor": 10,
+    "min_gap_days": -180,
+    "max_gap_days": 365
   }
 }
