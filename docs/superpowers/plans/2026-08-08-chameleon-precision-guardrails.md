@@ -144,6 +144,20 @@ def test_vin_only_requires_vin_to_be_the_sole_evidence():
     assert summarize(rows)["vin_only"] == 1
 
 
+def test_vin_only_identity_tolerates_corroborating_signals():
+    # A pair carrying temporal or agent alongside the VIN is still reachable
+    # only because vin-overlap is conclusive — neither can lift it over the
+    # 0.35 floor. The strict metric excludes it; this one does not, and the
+    # two disagreed by 156 pairs on the baseline index.
+    rows = [
+        pair(matched_on=["vin-overlap", "temporal"]),
+        pair(matched_on=["vin-overlap", "address"], succ="3"),
+    ]
+    result = summarize(rows)
+    assert result["vin_only"] == 0
+    assert result["vin_only_identity"] == 1
+
+
 def test_triage_unbounded_admits_pre_shutdown_pairs():
     # The 906-style filter as actually run: bounded above only.
     rows = [pair(score=0.7, gap=-2000, matched_on=["vin-overlap"])]
@@ -252,6 +266,8 @@ testable while scripts/measure_crash_lift.py stays integration-shaped.
 
 from dataclasses import dataclass
 
+from matching.scorer import IDENTITY_SIGNAL_TYPES
+
 # The threshold the README's triage set and both validation scripts already
 # use. Reused rather than re-chosen: an edge picked after seeing the outcome is
 # the standard way this analysis fools its author.
@@ -282,6 +298,7 @@ METRICS = (
     "coherent_ge_070",
     "coherent_share_ge_070",
     "vin_only",
+    "vin_only_identity",
     "triage_unbounded",
     "triage_bounded",
     "identical_name_triage",
@@ -344,8 +361,17 @@ def summarize(pairs) -> dict:
         counts["pairs"] += 1
         predecessors.add(pred.get("dot_number"))
 
+        # Two readings of "shares a vehicle and nothing else", both tracked
+        # because they answer different questions and disagreed by 156 pairs
+        # on the baseline (519 against 675). The strict one is the literal
+        # population; the identity one is the population that exists ONLY
+        # because vin-overlap is marked conclusive, since agent (0.04) and
+        # temporal (0.05) cannot lift a pair over the 0.35 floor between them.
+        # Collapsing them into one metric would silently pick a side.
         if matched == {"vin-overlap"}:
             counts["vin_only"] += 1
+        if matched & IDENTITY_SIGNAL_TYPES == {"vin-overlap"}:
+            counts["vin_only_identity"] += 1
 
         if score < TRIAGE_SCORE:
             continue
@@ -551,7 +577,9 @@ Expected: every delta zero, exit 0. This is the harness proving it agrees with i
 
 - [ ] **Step 7: Check the baseline against the README's published figures**
 
-Read `DOT-Commercial/data/precision/baseline-2026.08.06.json` and confirm against `DOT-Commercial/README.md`'s open item 2: `pairs` = 421,846; `triage_unbounded` = 906; `triage_bounded` = 186; `identical_name_triage` = 436; `vin_only` = 675; `pairs_ge_070` = 1,729; `coherent_ge_070` = 596; `predecessors_with_pairs` = 46,792.
+Read `DOT-Commercial/data/precision/baseline-2026.08.06.json` and confirm against `DOT-Commercial/README.md`'s open item 2: `pairs` = 421,846; `triage_unbounded` = 906; `triage_bounded` = 186; `identical_name_triage` = 436; `vin_only_identity` = 675; `pairs_ge_070` = 1,729; `coherent_ge_070` = 596; `predecessors_with_pairs` = 46,792.
+
+`vin_only` has no README counterpart and is expected to read **519** — the README's 675 is the identity-based reading, which is why both are tracked. Confirmed against the baseline index 2026-08-08 by two `_count` queries differing only in whether `agent` and `temporal` were excluded.
 
 If any disagree, **stop and reconcile before going further.** The harness is wrong or the README is, and either way every later comparison rests on it. A disagreement in `identical_name_triage` most likely means `legal_name` is being read from the `text` field rather than compared as raw `_source` bytes; `_source` is what `summarize` reads, so check the pair document actually carries the field.
 
@@ -843,6 +871,7 @@ cat > DOT-Commercial/data/precision/expect-nested.json <<'JSON'
   "pairs_ge_070": "informational",
   "coherent_share_ge_070": "must_not_fall",
   "vin_only": "within_10pct",
+  "vin_only_identity": "within_10pct",
   "triage_bounded": "within_10pct",
   "identical_name_triage": "within_10pct",
   "canary": "must_not_fall",
@@ -1148,6 +1177,7 @@ cat > DOT-Commercial/data/precision/expect-temporal.json <<'JSON'
   "coherent_ge_070": "within_10pct",
   "coherent_share_ge_070": "must_not_fall",
   "vin_only": "informational",
+  "vin_only_identity": "informational",
   "triage_bounded": "within_10pct",
   "identical_name_triage": "within_10pct",
   "canary": "must_not_fall",
@@ -1220,6 +1250,7 @@ cat > DOT-Commercial/data/precision/expect-weights.json <<'JSON'
   "coherent_ge_070": "informational",
   "coherent_share_ge_070": "must_not_fall",
   "vin_only": "must_not_fall",
+  "vin_only_identity": "must_not_fall",
   "triage_bounded": "must_not_fall",
   "identical_name_triage": "within_10pct",
   "canary": "must_not_fall",
