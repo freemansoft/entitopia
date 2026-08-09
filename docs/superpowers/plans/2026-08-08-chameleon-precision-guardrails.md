@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Raise the precision of the chameleon sweep — currently ~5% estimated true-positive share, with only 34.5% of the ≥ 0.70 tier temporally coherent — through three ordered changes, each one measured against a frozen baseline on held-constant data and revertible by an atomic alias repoint.
+**Goal:** Raise the precision of the chameleon sweep — currently ~5% estimated true-positive share, with only 34.5% of the ≥ 0.70 tier temporally coherent — through three ordered changes, each one measured against a frozen baseline on held-constant data and revertible by an atomic alias repoint. Two tasks were added after a post-hoc review, to keep the comparison harness reusable outside this one project and to make the plan's own admitted recall blind spot cheaper to check.
 
-**Architecture:** The failure mode this plan is built to prevent is the one the repo keeps hitting: a phase logs success and produces quietly wrong output. So no change ships on argument. Task 1 builds a comparison harness that turns a sweep into a fixed set of counted metrics and diffs two sweeps against declared expectations. Tasks 2-4 each make exactly one change, re-sweep, and diff. The carriers reindex in Task 2 copies `_source` from the existing index rather than reloading from CSV, so the mapping is the only variable and the comparison is a controlled experiment rather than two different datasets. Task 5 is the one genuine data change and is deliberately last, outside the A/B chain, because it re-baselines everything before it.
+**Architecture:** The failure mode this plan is built to prevent is the one the repo keeps hitting: a phase logs success and produces quietly wrong output. So no change ships on argument. Task 1 builds a comparison harness that turns a sweep into a fixed set of counted metrics and diffs two sweeps against declared expectations; Task 1b splits that harness into a generic diff engine (`utils/`, reusable by any project) and DOT-Commercial's own metric vocabulary (`DOT-Commercial/precision_metrics.py`), so this plan doesn't leave chameleon-specific constants sitting in framework code. Tasks 2-4 each make exactly one change, re-sweep, and diff. The carriers reindex in Task 2 copies `_source` from the existing index rather than reloading from CSV, so the mapping is the only variable and the comparison is a controlled experiment rather than two different datasets; Task 2 also parameterizes the one field path it touches, rather than adding a second hardcoded FMCSA literal on top of the ones the framework README already flags. Task 5 is the one genuine data change and is deliberately last, outside the A/B chain, because it re-baselines everything before it. Task 5b closes with a stratified sample for a human to review — every metric in this plan is precision-shaped, and this is the cheapest way to make the recall question answerable, without pretending an automated task can answer it.
 
 **Tech Stack:** Python 3 in `.venv`, elasticsearch-py 9.4.1 against local Elasticsearch 9.4.1, pytest, ruff.
 
@@ -46,18 +46,21 @@ Both are verified in the code, and both are why the protocol steps below look fu
 
 **Created:**
 
-- `utils/sweep_compare.py` — pure functions: turn a pair population into a fixed metric record, and diff two records against declared expectations. No Elasticsearch import, so the arithmetic that decides what a number _means_ is testable without a cluster. Mirrors how `utils/crash_lift.py` is already split from `scripts/measure_crash_lift.py`.
+- `utils/sweep_compare.py` — the generic diff engine only, after Task 1b: turn a metric record into a diff against declared expectations. No Elasticsearch import, no project-specific vocabulary, so a future project scoring pairs can reuse it without forking. Mirrors how `utils/crash_lift.py` is already split from `scripts/measure_crash_lift.py`.
 - `tests/test_sweep_compare.py` — tests for the above.
 - `scripts/compare_sweeps.py` — the Elasticsearch-reading CLI. Scans two pair indexes, summarizes both, prints the diff, exits non-zero on a declared regression.
 - `tests/test_predecessors.py` — first tests for `matching/predecessors.py`, which currently has none.
+- `DOT-Commercial/precision_metrics.py` (Task 1b) — `summarize()` and the chameleon-specific constants (coherent window, triage corroboration, canary shape) moved out of `utils/sweep_compare.py`, because they are this project's vocabulary, not framework code.
+- `tests/test_dot_commercial_precision_metrics.py` (Task 1b) — the `summarize()` tests, relocated from `tests/test_sweep_compare.py`.
+- `DOT-Commercial/scripts/sample_pairs_for_review.py` (Task 5b) — pulls a stratified sample of pairs across score bands into a human-reviewable format; see Task 5b for why this is a sampler, not an automated labeler.
 
 **Modified:**
 
-- `matching/predecessors.py` — nested out-of-service clause (Task 2); temporal coherence predicate (Task 3).
+- `matching/predecessors.py` — `oos_path` config knob and nested out-of-service clause (Task 2); temporal coherence predicate (Task 3).
 - `DOT-Commercial/configuration/carriers/index-mappings.json:142` — `out_of_service_orders` becomes `nested` (Task 2).
 - `DOT-Commercial/configuration/chameleon-detection/entity-match.json` — `predecessors.max_successor_gap_days` (Task 3); signal weights (Task 4).
 - `DOT-Commercial/configuration/inspections/index-mappings.json` — pin `insp_carrier_state_id` (Task 5).
-- `DOT-Commercial/README.md` — open items updated as each closes (Tasks 2-5).
+- `DOT-Commercial/README.md` — open items updated as each closes (Tasks 2-5); recall-sample results recorded (Task 5b).
 
 ---
 
@@ -601,6 +604,88 @@ Claude-Session: https://claude.ai/code/session_01BmGiqBi59L8nj5x6eoqrkz"
 
 ---
 
+### Task 1b: Split the sweep-comparison harness into generic and DOT-specific layers
+
+Added after a post-hoc review of the landed plan and Task 1's implementation, flagged as a generality gap: `utils/sweep_compare.py` sits in the framework's shared `utils/` package (alongside `utils/crash_lift.py`, `utils/file_utils.py`, used by every project) but `summarize()` and its module constants — `TRIAGE_SCORE`, `COHERENT_MIN_GAP`/`COHERENT_MAX_GAP` anchored to `matching/signals.py`'s `BACKWARD_WINDOW_DAYS`, `CORROBORATING = {"vin-overlap", "exact-identifier"}`, `CANARY_SCORE`/`CANARY_MAX_GAP` — are chameleon-carrier vocabulary specific to this one project. A future project adopting `entity-match` for its own precision work would have to fork this file rather than reuse it.
+
+The repo already has the right precedent for this split: `utils/crash_lift.py` (generic banding arithmetic, no project constants) versus `scripts/measure_crash_lift.py` (DOT-specific bands and thresholds). This task applies the same split one level further — the diff engine (`compare()`, `MetricDelta`, `EXPECTATIONS`, `TOLERANCE`) is genuinely project-agnostic: any project scoring pairs needs "declare an expectation, measure before and after, diff." `summarize()` is not — it encodes what "coherent," "triage," and "canary" mean specifically for chameleon detection.
+
+Small and mechanical: move code, do not change behavior. Every number `scripts/compare_sweeps.py` prints must be identical before and after.
+
+**Files:**
+
+- Modify: `utils/sweep_compare.py` — keep only `MetricDelta`, `compare()`, `EXPECTATIONS`, `TOLERANCE`. Remove `summarize()`, `METRICS`, `TRIAGE_SCORE`, `COHERENT_MIN_GAP`, `COHERENT_MAX_GAP`, `CORROBORATING`, `CANARY_SCORE`, `CANARY_MAX_GAP`, `_is_coherent()`, and the `IDENTITY_SIGNAL_TYPES` import.
+- Create: `DOT-Commercial/precision_metrics.py` — receives everything removed above, unchanged. Its module docstring should say what `summarize()`'s docstring already says, plus one line: this is DOT-Commercial's own metric vocabulary, not framework code, because "coherent" and "triage" are chameleon-detection terms with no meaning for another project's pair-scoring.
+- Modify: `scripts/compare_sweeps.py` — `from utils.sweep_compare import compare` stays; add `from DOT_Commercial.precision_metrics import METRICS, summarize` (Python module names can't contain a hyphen, so check how existing code imports across the `DOT-Commercial/` directory boundary — likely via `sys.path` manipulation and a directory that is not a normal package. If `DOT-Commercial/` cannot be imported as a dotted module because of the hyphen, load `precision_metrics.py` with `importlib` from an absolute path constructed via `Path(__file__).resolve().parent.parent / "DOT-Commercial" / "precision_metrics.py"`, the same pattern `scripts/measure_chameleon_shape.py` already uses for `DEFAULT_ENTITY_MATCH_CONFIG`. Confirm which approach the codebase actually supports before choosing — do not guess.
+- Modify: `tests/test_sweep_compare.py` — keep only the `compare()` tests (`test_compare_*`). Move every `summarize()`/`test_summarize_*`/`test_pairs_*`/`test_coherent_*`/`test_vin_only*`/`test_triage_*`/`test_identical_name_*`/`test_canary_*`/`test_predecessors_with_pairs_*` test to a new file.
+- Create: `tests/test_dot_commercial_precision_metrics.py` — the moved tests, `import`ed against `DOT_Commercial.precision_metrics` (or the `importlib` equivalent chosen above) instead of `utils.sweep_compare`. No behavior change, so no new test cases — this is purely relocating the ones Task 1 already wrote and got passing.
+
+**Interfaces:**
+
+- Consumes: Task 1's landed code at commit `85f5c8f` (or later on this branch) as the source to split.
+- Produces: `utils.sweep_compare.compare(baseline, candidate, expectations)` unchanged in signature and behavior. `DOT_Commercial.precision_metrics.summarize(pairs)` and `.METRICS` — same names, same values, new location. Task 2 onward (and `scripts/compare_sweeps.py`) import `summarize`/`METRICS` from the new location; nothing else in the plan changes.
+
+- [ ] **Step 1: Confirm the import mechanics before moving anything**
+
+```bash
+grep -n "sys.path.insert\|importlib" scripts/*.py phase_providers/*.py | head -10
+```
+
+`scripts/measure_chameleon_shape.py` and `scripts/measure_crash_lift.py` already insert the repo root onto `sys.path` to reach `utils/`. Check whether anything in the repo already imports a `.py` file that lives inside a hyphenated directory (`DOT-Commercial/`) as a module — `fetch_commercial_carriers.py` lives there too and is invoked as a script (`python3 fetch_commercial_carriers.py` from within that directory per its README), not imported, which suggests the hyphen has never been crossed as an import boundary before. If it hasn't, use `importlib.util.spec_from_file_location` to load `DOT-Commercial/precision_metrics.py` by path — do not invent a workaround that renames or symlinks the directory.
+
+- [ ] **Step 2: Move the code**
+
+Cut `summarize()`, `METRICS`, and its constants out of `utils/sweep_compare.py` into `DOT-Commercial/precision_metrics.py` verbatim — same function bodies, same comments, same constant values. Update `utils/sweep_compare.py`'s module docstring to describe only what remains: the generic diff engine.
+
+- [ ] **Step 3: Move the tests**
+
+Cut the `summarize()`-testing functions out of `tests/test_sweep_compare.py` into `tests/test_dot_commercial_precision_metrics.py`, updating only the import line. Leave assertions untouched.
+
+- [ ] **Step 4: Wire up `scripts/compare_sweeps.py`**
+
+Update its import per Step 1's finding. Everything else in that file — `summarize_index()`, `print_table()`, `main()` — is unchanged; it already only calls `summarize()` and `compare()` by name, not by knowing where they live.
+
+- [ ] **Step 5: Run both test files and confirm identical output**
+
+```bash
+.venv/bin/python -m pytest tests/test_sweep_compare.py tests/test_dot_commercial_precision_metrics.py -v
+```
+
+Expected: same 20 tests total as Task 1 left, split across two files, all passing.
+
+Then confirm the CLI still produces byte-identical output against the frozen baseline:
+
+```bash
+.venv/bin/python scripts/compare_sweeps.py \
+  --baseline-index chameleon-candidates-2026.08.06-000001 \
+  --candidate-index chameleon-candidates-2026.08.06-000001 \
+  --expectations DOT-Commercial/data/precision/expect-identity.json
+```
+
+Expected: identical to Task 1's Step 6 output — every delta zero. Any difference means the move changed behavior, not just location, and that is a bug to find before committing.
+
+- [ ] **Step 6: Lint and commit**
+
+```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m pytest tests/ -q
+git add utils/sweep_compare.py DOT-Commercial/precision_metrics.py scripts/compare_sweeps.py \
+        tests/test_sweep_compare.py tests/test_dot_commercial_precision_metrics.py
+git commit -m "refactor: split sweep-comparison harness into generic and DOT-specific layers
+
+utils/ is shared framework code, but summarize()'s constants — coherent
+windows, triage corroboration, the canary shape — are chameleon-detection
+vocabulary with no meaning for another project. Moves them to
+DOT-Commercial/precision_metrics.py, mirroring the existing crash_lift.py
+(generic) vs measure_crash_lift.py (DOT-specific) split, so a future project
+adopting entity-match can reuse the diff engine without forking the metrics.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01BmGiqBi59L8nj5x6eoqrkz"
+```
+
+---
+
 ### Task 2: Map `out_of_service_orders` as `nested` and query it as nested
 
 Closes README open item 4. This is first because it repairs `shutdown_date`/`gap_days` — the field Task 3's predicate and the whole `coherent_ge_070` metric are computed from. Doing Task 3 first would build a predicate on a date that may come from an order the selector never intended to match.
@@ -613,8 +698,10 @@ Closes README open item 4. This is first because it repairs `shutdown_date`/`gap
 
 **Interfaces:**
 
-- Consumes: `scripts/compare_sweeps.py` from Task 1.
-- Produces: `PredecessorSelector.build_query()` returns a query whose out-of-service clause is `{"nested": {"path": "out_of_service_orders", "query": {...}}}`. Task 3 adds a sibling clause to the same `build_query()` output.
+- Consumes: `scripts/compare_sweeps.py` from Task 1b.
+- Produces: `PredecessorSelector.build_query()` returns a query whose out-of-service clause is `{"nested": {"path": <config.oos_path, default "out_of_service_orders">, "query": {...}}}`. Task 3 adds a sibling clause to the same `build_query()` output.
+
+**Generality note, added after a post-hoc review of the plan:** the top-level `README.md`'s open item 6 already flags `matching/predecessors.py` for hardcoding FMCSA field paths — `matching/` is framework code shared by every project, but it currently only works for this one. The literal string `"out_of_service_orders"` below is read from config rather than hardcoded, so this fix doesn't add a second hardcoded literal on top of the one already tracked. The sub-field names (`status`, `oos_date`) stay hardcoded — parameterizing those too would turn this selector into the query-DSL-in-JSON the README explicitly says to avoid (see its open item 6: "keeping selectors a closed, code-backed menu rather than a query-DSL-in-JSON"). Only the array path needed configuring, because that's the one thing this fix could not express without it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -688,12 +775,29 @@ def test_either_selector_unions_them():
 def test_unknown_selector_is_refused():
     with pytest.raises(ValueError, match="unknown selector"):
         selector(selector="whatever")
+
+
+def test_oos_path_defaults_to_out_of_service_orders():
+    # Existing DOT-Commercial config sets nothing here, so this default is
+    # what every current deployment actually runs on.
+    query = selector(selector="out-of-service").build_query()
+    assert query["nested"]["path"] == "out_of_service_orders"
+
+
+def test_oos_path_is_configurable():
+    # matching/ is framework code shared by every project (see the top-level
+    # README's open item 6), so the array field name a future project's
+    # "shut down" concept lives under cannot be a literal in this module.
+    query = selector(selector="out-of-service", oos_path="shutdown_orders").build_query()
+    assert query["nested"]["path"] == "shutdown_orders"
+    must = query["nested"]["query"]["bool"]["must"]
+    assert {"exists": {"field": "shutdown_orders.oos_date"}} in must
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/python -m pytest tests/test_predecessors.py -v`
-Expected: FAIL on the four nested tests with `KeyError: 'nested'`. The `both`/`either`/unknown-selector tests should already pass.
+Expected: FAIL on the six nested/path tests with `KeyError: 'nested'`. The `both`/`either`/unknown-selector tests should already pass.
 
 - [ ] **Step 3: Change the mapping**
 
@@ -716,7 +820,20 @@ Leave `auth_history`, `crashes`, `inspections`, and `boc3_agents` alone. Only th
 
 - [ ] **Step 4: Change the query**
 
-In `matching/predecessors.py`, replace `_out_of_service_clause` (lines 54-70):
+In `matching/predecessors.py`, first add one line to `__init__` (find the existing block that sets `self.oos_status`, `self.oos_date_from`, `self.max_predecessors` from `config`, and add alongside it):
+
+```python
+        # Not "out_of_service_orders" as a literal: matching/ is framework
+        # code shared by every project (see the top-level README's open item
+        # 6 on hardcoded FMCSA field paths), and the nested array this
+        # selector's population lives under is exactly the kind of thing a
+        # different project's "shut down" concept would name differently.
+        # Defaults to the existing field name, so no current config needs to
+        # change to keep its current behavior.
+        self.oos_path = getattr(config, "oos_path", "out_of_service_orders")
+```
+
+Then replace `_out_of_service_clause` (lines 54-70):
 
 ```python
     def _out_of_service_clause(self):
@@ -734,18 +851,18 @@ In `matching/predecessors.py`, replace `_out_of_service_clause` (lines 54-70):
         Only oos_date is required; status and date-from are operator knobs for
         tightening the sweep rather than fields every deployment sets.
         """
-        must = [{"exists": {"field": "out_of_service_orders.oos_date"}}]
+        must = [{"exists": {"field": "{}.oos_date".format(self.oos_path)}}]
         if self.oos_status:
-            must.append({"terms": {"out_of_service_orders.status": self.oos_status}})
+            must.append({"terms": {"{}.status".format(self.oos_path): self.oos_status}})
         if self.oos_date_from:
             # oos_date is mapped as keyword, but ISO dates sort lexicographically
             # so a range query still behaves correctly.
             must.append(
-                {"range": {"out_of_service_orders.oos_date": {"gte": self.oos_date_from}}}
+                {"range": {"{}.oos_date".format(self.oos_path): {"gte": self.oos_date_from}}}
             )
         return {
             "nested": {
-                "path": "out_of_service_orders",
+                "path": self.oos_path,
                 "query": {"bool": {"must": must}},
             }
         }
@@ -756,7 +873,7 @@ In `matching/predecessors.py`, replace `_out_of_service_clause` (lines 54-70):
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `.venv/bin/python -m pytest tests/test_predecessors.py -v`
-Expected: PASS, 7 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 6: Commit the code change before touching the cluster**
 
@@ -769,7 +886,10 @@ git commit -m "fix: select predecessors with a nested out-of-service query
 
 An object mapping matched status and oos_date from two different orders, so
 carriers with no single qualifying order were swept and shutdown_date could
-come from an order the selector never intended to match.
+come from an order the selector never intended to match. The array path is
+now read from config (defaulting to the existing field name) rather than
+hardcoded, so this fix doesn't add a second literal on top of the FMCSA field
+paths matching/predecessors.py already hardcodes elsewhere.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01BmGiqBi59L8nj5x6eoqrkz"
@@ -1389,6 +1509,271 @@ Move open item 1 to closed with the measured recovered-row count. Add a line to 
 
 ---
 
+### Task 5b: Build a stratified recall-sample review tool
+
+Added after a post-hoc review of the plan, which flagged its own biggest blind spot in its closing section: every metric in Tasks 1-5 measures precision-shaped properties — coherence, corroboration, the canary shape. None of them can measure recall, because there is no list of known chameleon carriers to check the sweep against. A change that passes every guarded metric can still have destroyed real matches, and nothing built so far would show it.
+
+The fix for that is not more automated proxies — the crash-lift validation is already a weak one and the README says so at length. It's a small number of real human judgments. This task builds the tool that makes that judgment call cheap to make; **it does not make the judgment itself.** No subagent labels pairs as real or fake chameleons — that requires a human reviewer weighing evidence the way the README's own sanity anchors do (a byte-identical name, a shared address, a plausible timeline), which is exactly the judgment this whole plan has been trying to keep out of an automated metric.
+
+**Files:**
+
+- Create: `DOT-Commercial/scripts/sample_pairs_for_review.py`
+- Create: `tests/test_sample_pairs_for_review.py`
+
+**Interfaces:**
+
+- Consumes: whichever result index Task 5 Step 6 recorded as `task-5` in `DOT-Commercial/data/precision/result-indexes.txt` — the final, re-baselined post-inspections-fix sweep, so the sample reflects every change this plan made rather than an intermediate state.
+- Produces: `DOT-Commercial/data/precision/review-sample.jsonl` — one JSON object per sampled pair, plus a `verdict` field left `null` for a human to fill in. Nothing downstream in this plan reads that field; it exists for the human reviewer and for whatever analysis happens after this plan closes.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_sample_pairs_for_review.py`:
+
+```python
+"""Stratified sampling for human recall review.
+
+Exists so the sampling logic — which band gets how many pairs, what a
+reviewable row looks like — is testable without a cluster. The Elasticsearch
+scan that feeds it is integration-shaped and lives in the script, not here.
+"""
+
+from DOT_Commercial.scripts.sample_pairs_for_review import (
+    SAMPLE_BANDS,
+    build_review_row,
+    stratified_sample,
+)
+
+
+def pair(score, dot_pred="1", dot_succ="2"):
+    return {
+        "total_score": score,
+        "gap_days": 10,
+        "matched_on": ["name-phonetic"],
+        "predecessor": {"dot_number": dot_pred, "legal_name": "A"},
+        "successor": {"dot_number": dot_succ, "legal_name": "B"},
+    }
+
+
+def test_sample_respects_the_per_band_quota():
+    rows = [pair(0.40, dot_succ=str(i)) for i in range(20)]
+    sample = stratified_sample(rows, per_band=5, seed=1)
+    assert len(sample) == 5
+
+
+def test_sample_draws_from_every_populated_band():
+    rows = [pair(0.40, dot_succ="a"), pair(0.75, dot_succ="b"), pair(0.95, dot_succ="c")]
+    sample = stratified_sample(rows, per_band=1, seed=1)
+    bands = {SAMPLE_BANDS_for(row["total_score"]) for row in sample}
+    assert len(bands) == 3
+
+
+def SAMPLE_BANDS_for(score):
+    for lower, upper, label in SAMPLE_BANDS:
+        if lower <= score < upper:
+            return label
+    return SAMPLE_BANDS[-1][2] if score == SAMPLE_BANDS[-1][1] else None
+
+
+def test_sample_is_deterministic_for_a_given_seed():
+    rows = [pair(0.40, dot_succ=str(i)) for i in range(50)]
+    first = stratified_sample(rows, per_band=10, seed=7)
+    second = stratified_sample(rows, per_band=10, seed=7)
+    assert [r["successor"]["dot_number"] for r in first] == [
+        r["successor"]["dot_number"] for r in second
+    ]
+
+
+def test_review_row_carries_a_null_verdict_for_the_human_to_fill_in():
+    row = build_review_row(pair(0.82))
+    assert row["verdict"] is None
+    assert "total_score" in row and "predecessor" in row and "successor" in row
+
+
+def test_review_row_never_invents_a_verdict():
+    # The whole point of this tool is that a human decides, not a heuristic.
+    # A default other than None would look like an answer nobody gave.
+    row = build_review_row(pair(0.99))
+    assert row["verdict"] is None
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `.venv/bin/python -m pytest tests/test_sample_pairs_for_review.py -v`
+Expected: FAIL — `ModuleNotFoundError`. Resolve the import path the same way Task 1b's Step 1 resolved importing across the hyphenated `DOT-Commercial/` directory; use whichever mechanism that task settled on (likely `importlib.util.spec_from_file_location`, not a dotted import), and adjust this test file's import line to match rather than assuming a clean `DOT_Commercial.scripts` package path works.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `DOT-Commercial/scripts/sample_pairs_for_review.py`:
+
+```python
+"""Pull a stratified sample of scored pairs for a human to adjudicate.
+
+Every metric in DOT-Commercial/precision_metrics.py measures precision-shaped
+properties: coherence, corroboration, the canary shape. None of them can
+measure recall, because there is no list of known chameleon carriers to check
+the sweep against — a change that passes every guarded metric can still have
+thrown away real matches. This is the cheapest available substitute: pull a
+small sample stratified across score bands (so the low-score noise band and
+the high-score canary tier are both represented, not just whichever is
+largest) and let a human say, pair by pair, whether it looks like a real
+chameleon. It writes a sample, not a verdict — nothing here decides what a
+pair is.
+"""
+
+import argparse
+import json
+import random
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from elasticsearch import Elasticsearch
+from elasticsearch.helpers import scan
+
+# Reuses precision_metrics.TRIAGE_SCORE as its top edge deliberately: the
+# review sample should cover the noise band the README already calls out
+# (below 0.35), the mid-range, and the triage tier, not an independently
+# chosen cut that would make this sample answer a different question than
+# the rest of the plan's metrics do.
+SAMPLE_BANDS = [
+    (0.35, 0.50, "0.35-0.50"),
+    (0.50, 0.70, "0.50-0.70"),
+    (0.70, 0.90, "0.70-0.90"),
+    (0.90, 1.00, "0.90-1.00"),
+]
+
+SOURCE_FIELDS = [
+    "total_score", "gap_days", "matched_on",
+    "predecessor.dot_number", "predecessor.legal_name", "predecessor.phy_street",
+    "predecessor.shutdown_date",
+    "successor.dot_number", "successor.legal_name", "successor.phy_street",
+    "successor.add_date",
+]
+
+
+def _band(score):
+    for lower, upper, label in SAMPLE_BANDS:
+        if lower <= score < upper:
+            return label
+    if score == SAMPLE_BANDS[-1][1]:
+        return SAMPLE_BANDS[-1][2]
+    return None
+
+
+def stratified_sample(pairs, per_band, seed):
+    """Up to per_band pairs from each band, chosen deterministically for a given seed.
+
+    Determinism matters here specifically: an unreproducible sample can never
+    be handed to a second reviewer to check agreement, which is the first
+    thing anyone will want to do with a small human-labelled set.
+    """
+    by_band = {}
+    for row in pairs:
+        label = _band(row.get("total_score") or 0.0)
+        if label is None:
+            continue
+        by_band.setdefault(label, []).append(row)
+
+    rng = random.Random(seed)
+    sample = []
+    for _, _, label in SAMPLE_BANDS:
+        bucket = by_band.get(label, [])
+        rng.shuffle(bucket)
+        sample.extend(bucket[:per_band])
+    return sample
+
+
+def build_review_row(pair):
+    """One JSON line a human reads and fills in. verdict starts null, always.
+
+    A default other than null would read as an answer nobody gave; None is
+    the same "not evaluable" distinction the rest of this codebase already
+    draws between an unscored signal and a scored zero.
+    """
+    return {
+        "predecessor": pair["predecessor"],
+        "successor": pair["successor"],
+        "total_score": pair["total_score"],
+        "gap_days": pair.get("gap_days"),
+        "matched_on": pair.get("matched_on"),
+        "verdict": None,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--pairs-index", required=True)
+    parser.add_argument("--per-band", type=int, default=15)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--host", default="http://localhost:9200")
+    parser.add_argument(
+        "--out", default="DOT-Commercial/data/precision/review-sample.jsonl"
+    )
+    args = parser.parse_args()
+
+    es = Elasticsearch(args.host)
+    hits = scan(
+        es,
+        index=args.pairs_index,
+        query={"query": {"match_all": {}}},
+        _source=SOURCE_FIELDS,
+        size=2000,
+    )
+    rows = [hit["_source"] for hit in hits]
+    sample = stratified_sample(rows, args.per_band, args.seed)
+
+    with open(args.out, "w") as handle:
+        for row in sample:
+            handle.write(json.dumps(build_review_row(row)) + "\n")
+
+    counts = {}
+    for row in sample:
+        label = _band(row["total_score"])
+        counts[label] = counts.get(label, 0) + 1
+    print("wrote {} pairs to {}: {}".format(len(sample), args.out, counts))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `.venv/bin/python -m pytest tests/test_sample_pairs_for_review.py -v`
+Expected: PASS, 6 tests.
+
+- [ ] **Step 5: Lint, test, commit**
+
+```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m pytest tests/ -q
+git add DOT-Commercial/scripts/sample_pairs_for_review.py tests/test_sample_pairs_for_review.py
+git commit -m "feat: add a stratified sample tool for human recall review
+
+Every metric this plan added measures precision-shaped properties; none can
+measure recall, since there is no list of known chameleon carriers to check
+against. This pulls a small sample stratified across score bands into a
+reviewable file — it produces a sample, not a verdict, because that judgment
+belongs to a human, not a heuristic.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01BmGiqBi59L8nj5x6eoqrkz"
+```
+
+- [ ] **Step 6: Draw the sample against the final sweep**
+
+Read-only against the cluster; no confirmation needed.
+
+```bash
+.venv/bin/python DOT-Commercial/scripts/sample_pairs_for_review.py \
+  --pairs-index "$(awk '/^task-5 /{print $2}' DOT-Commercial/data/precision/result-indexes.txt)"
+```
+
+Report the per-band counts it prints. **Do not adjudicate the sample yourself, and do not ask a subagent to.** `DOT-Commercial/data/precision/review-sample.jsonl` is gitignored (under `*/data/`) — hand its path to the human partner and let this task end without a verdict. Whatever precision-at-k number comes out of that review is a follow-up conversation, not a step in this plan.
+
+---
+
 ### Task 6: Close out
 
 - [ ] **Step 1: Verify the whole suite and the linter**
@@ -1424,8 +1809,10 @@ Only after the work is merged and the baselines are recorded. The accumulated da
 - **`AddressSignal` street parsing** (README open item 6). Real, but a second-order false-positive generator next to a top tier that is 65% temporally incoherent. Worth doing after Task 4's measurement shows how much of the remaining noise is address-shaped.
 - **Sourcing officer name / EIN / DUNS** (precision-fix item 5). Researched and recorded 2026-08-08: DUNS was retired federally on 2022-04-04 and survives only as a licensed commercial product; EIN is collected by FMCSA and not disseminated, and the IRS publishes it only for tax-exempt organizations; officer name exists only outside FMCSA, in 50 state registries, a paid aggregator, L&I's HTML-only interface, or FOIA. It remains the largest single lever and none of it is cheap. The one free probe — evaluating `boc3_agents.attn_to_or_title`, already indexed at 75.4% populated and used by no signal — is a filing agent's contact rather than a carrier officer, so it will be shared across a whole book of business, which is the exact false-positive shape this plan is trying to reduce. Not worth spending a task on until Tasks 2-4 are measured.
 - **Index retention policy** (README open item 5). Deliberately left open; see Task 6 Step 4.
-- **Framework-level items** in the top-level README (the `dot_number` type boundary, `csv_load_utils.py` leading zeros, `matching/` not being dataset-agnostic). None of them block this work.
+- **Framework-level items** in the top-level README (the `dot_number` type boundary, `csv_load_utils.py` leading zeros, `matching/` not being dataset-agnostic). None of them block this work. Task 1b and Task 2's `oos_path` config knob take a small step toward the dataset-agnostic item — the diff engine is now reusable, and one hardcoded field path became configurable — but neither closes it: `CarrierDoc.dot_number` and the FMCSA-literal sub-field names (`status`, `oos_date`, the `"REVOKED"` disposition) are untouched, and closing the item for real is a bigger, separate rewrite this plan does not attempt.
 
 ## What this plan cannot tell you
 
-Both validation scripts, and every metric in the harness, measure precision-shaped properties: whether a flagged pair is temporally coherent, whether the flagged population is riskier, whether the strongest known shape still surfaces. **None of them can measure recall.** There is no list of known chameleon carriers to check the sweep against, so a real chameleon the sweep never surfaced is invisible to all of it. The `within_10pct` tripwires on `vin_only`, `triage_bounded`, and `identical_name_triage` are proxies for recall, not measurements of it — they detect a change that destroys evidence shapes the sweep already found, not one that fails to find something new. A change that passes every gate here can still have made recall worse, and nothing in this repo would show it.
+Both validation scripts, and every metric in the harness, measure precision-shaped properties: whether a flagged pair is temporally coherent, whether the flagged population is riskier, whether the strongest known shape still surfaces. **None of them can measure recall.** There is no list of known chameleon carriers to check the sweep against, so a real chameleon the sweep never surfaced is invisible to all of it. The `within_10pct` tripwires on `vin_only`, `triage_bounded`, and `identical_name_triage` are proxies for recall, not measurements of it — they detect a change that destroys evidence shapes the sweep already found, not one that fails to find something new. A change that passes every gate here can still have made recall worse, and nothing automated in this plan would show it.
+
+Task 5b makes that gap cheaper to check, not closed. It hands a human a small, stratified, reproducible sample — it does not adjudicate a single pair. Whatever precision-at-k number comes out of that review depends entirely on how the review is actually run, and this plan does not run it.
