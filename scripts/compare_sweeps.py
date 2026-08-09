@@ -8,6 +8,7 @@ the thing in motion and resolving it would compare a run against itself.
 """
 
 import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -17,7 +18,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import scan
 
-from utils.sweep_compare import METRICS, compare, summarize
+from utils.sweep_compare import compare
+
+# DOT-Commercial/ cannot be a dotted import (`import DOT_Commercial...` is
+# invalid syntax because of the hyphen), and nothing else in this repo has
+# ever imported across that directory boundary — fetch_commercial_carriers.py,
+# the other module living there, is run as a script instead. Loaded by path
+# rather than inventing a rename or symlink, mirroring how
+# scripts/measure_chameleon_shape.py reaches DOT-Commercial/'s JSON config and
+# how tests/test_crash_lift.py and tests/test_profile_dataset.py already load
+# scripts/ modules that aren't part of an importable package.
+_PRECISION_METRICS = Path(__file__).resolve().parent.parent / "DOT-Commercial" / "precision_metrics.py"
+_spec = importlib.util.spec_from_file_location("precision_metrics", _PRECISION_METRICS)
+precision_metrics = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(precision_metrics)
+METRICS = precision_metrics.METRICS
+summarize = precision_metrics.summarize
 
 # Only the fields summarize() reads. A full pair _source carries the per-signal
 # contribution array, which is roughly ten times the bytes and is never used
