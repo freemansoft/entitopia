@@ -14,21 +14,21 @@
   "signals": [
     {
       "type": "name-phonetic",
-      "weight": 0.22,
+      "weight": 0.15,
       "fields": ["legal_name", "dba_name"],
       "subfield": "phonetic",
       "cross_field": true
     },
     {
       "type": "name-phonetic",
-      "weight": 0.13,
+      "weight": 0.09,
       "fields": ["legal_name", "dba_name"],
       "subfield": "phonetic_bm",
       "cross_field": true
     },
     {
       "type": "name-token",
-      "weight": 0.1,
+      "weight": 0.06,
       "fields": ["legal_name", "dba_name"],
       "subfield": "clean",
       "cross_field": true
@@ -43,7 +43,7 @@
     },
     {
       "type": "exact-identifier",
-      "weight": 0.12,
+      "weight": 0.19,
       "phone_fields": ["telephone", "fax"],
       "text_fields": ["email_address"]
     },
@@ -61,7 +61,7 @@
     },
     {
       "type": "vin-overlap",
-      "weight": 0.08,
+      "weight": 0.16,
       "conclusive": true,
       "max_shared_carriers": 5,
       "fields": [
