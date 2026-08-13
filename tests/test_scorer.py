@@ -296,3 +296,87 @@ def test_conclusive_signal_that_did_not_fire_does_not_override():
 def test_signals_are_not_conclusive_by_default():
     scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL], scoring())
     assert scorer.conclusive_types == set()
+
+
+TEMPORAL_SIGNAL = cfg(
+    type="temporal",
+    weight=0.5,
+    predecessor_date="out_of_service_orders.oos_date",
+    successor_date="add_date",
+    max_gap_days=365,
+)
+
+
+def dated_pair(oos_date, add_date):
+    """A pair that would score 1.0 on evidence, differing only in its timing.
+
+    Built on strong_pair() so the gate is the only thing that can reject it:
+    if one of these tests fails, the gap window is the cause, not a weakened
+    signal somewhere else in the fixture.
+    """
+    pred, cand = strong_pair()
+    pred.source["out_of_service_orders"] = [{"oos_date": oos_date}]
+    cand.source["add_date"] = add_date
+    return pred, cand
+
+
+def test_pair_outside_the_configured_gap_window_is_dropped():
+    # A successor registered years before the predecessor's shutdown is not a
+    # reincarnation by this project's own definition, however well its name
+    # and address match. 42.1% of the >= 0.70 tier had this shape.
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
+        scoring(min_gap_days=-180, max_gap_days=365),
+    )
+    pred, cand = dated_pair("2022-01-01", "2018-01-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is None
+
+
+def test_pair_inside_the_window_is_kept():
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
+        scoring(min_gap_days=-180, max_gap_days=365),
+    )
+    pred, cand = dated_pair("2022-01-01", "2022-02-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is not None
+
+
+def test_gap_window_edges_are_inclusive():
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
+        scoring(min_gap_days=-180, max_gap_days=365),
+    )
+    pred, cand = dated_pair("2022-01-01", "2023-01-01")  # exactly 365 days
+    assert scorer.score_pair(pred, cand, ScoringContext()) is not None
+
+
+def test_unparseable_dates_do_not_drop_the_pair():
+    # A pair whose dates cannot be read is "not evaluable", not "incoherent".
+    # Dropping it would silently discard every carrier with a malformed legacy
+    # date, which is a recall loss disguised as a precision gain.
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
+        scoring(min_gap_days=-180, max_gap_days=365),
+    )
+    pred, cand = dated_pair("NOT-A-DATE", "2022-02-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is not None
+
+
+def test_gate_is_off_when_unconfigured():
+    # Absent config must mean "no gate", so an existing deployment that has not
+    # opted in keeps its current population. scoring() ships no gap keys.
+    scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL], scoring())
+    pred, cand = dated_pair("2022-01-01", "2010-01-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is not None
+
+
+def test_gate_is_off_when_no_temporal_signal_is_configured():
+    # The gap comes from the temporal signal's own field paths, so a config
+    # with the window set but no temporal signal has nothing to read. Passing
+    # the pair through is the safe reading: the alternative is dropping every
+    # pair in the sweep on a config the operator thought was a tightening.
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL], scoring(min_gap_days=-180, max_gap_days=365)
+    )
+    pred, cand = dated_pair("2022-01-01", "2010-01-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is not None

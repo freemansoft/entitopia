@@ -217,6 +217,7 @@
         }
       },
       "out_of_service_orders": {
+        "type": "nested",
         "properties": {
           "dot_number": {
             "type": "long"

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 
 from matching.documents import CarrierDoc, ScoringContext
-from matching.signals import build_signal
+from matching.signals import _latest_date, build_signal
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +104,49 @@ class PairScorer:
         self.require_identity_signal = bool(
             getattr(scoring_config, "require_identity_signal", True)
         )
+        # A gap window the pair must fall inside to be emitted at all, rather
+        # than a 0.05-weighted signal it can simply outvote. The temporal
+        # signal carries at most ~0.053 of a 0.94 total while the three name
+        # signals carry 0.45, so a pair registered years before the shutdown
+        # still cleared 0.70 on name and address alone — 42.1% of the >= 0.70
+        # tier had exactly that shape and is not a reincarnation by the
+        # project's own definition. None on either bound leaves the gate off,
+        # so a deployment that has not opted in keeps its population.
+        self.min_gap_days = getattr(scoring_config, "min_gap_days", None)
+        self.max_gap_days = getattr(scoring_config, "max_gap_days", None)
+        # The raw config, not the built Signal: the gate needs the two field
+        # paths, and reading them from the same entry that produces the score
+        # is what stops the gate and the score from disagreeing about which
+        # dates a pair's gap is measured between.
+        self._temporal_config = next(
+            (c for c in signal_configs if getattr(c, "type", None) == "temporal"), None
+        )
 
-    def score_pair(
+    def _gap_outside_window(self, pred, cand):
+        """Whether this pair's timing puts it outside the configured window.
+
+        Returns False when either date is unparseable: that is "not evaluable",
+        not "incoherent", and dropping it would discard every carrier carrying
+        a malformed legacy date — a recall loss wearing a precision gain's
+        clothes. Same distinction the signals draw between None and 0.0.
+        """
+        if self.min_gap_days is None and self.max_gap_days is None:
+            return False
+        if self._temporal_config is None:
+            return False
+        shutdown = _latest_date(pred.value(self._temporal_config.predecessor_date))
+        registered = _latest_date(cand.value(self._temporal_config.successor_date))
+        if shutdown is None or registered is None:
+            return False
+        gap = (registered - shutdown).days
+        if self.min_gap_days is not None and gap < self.min_gap_days:
+            return True
+        return self.max_gap_days is not None and gap > self.max_gap_days
+
+    def score_pair(  # noqa: PLR0911 -- one guard clause per rejection reason is
+        # this module's whole design (see module and class docstrings); folding
+        # the new gap-window guard into an existing branch would hide a distinct
+        # rejection reason behind another one's return statement.
         self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext
     ) -> ScoredPair | None:
         """Run all signals over a pair, renormalize, and apply the guards.
@@ -119,6 +160,9 @@ class PairScorer:
         be evaluated.
         """
         if pred.dot_number == cand.dot_number:
+            return None
+
+        if self._gap_outside_window(pred, cand):
             return None
 
         contributions: list[SignalContribution] = []

@@ -50,24 +50,45 @@ class PredecessorSelector:
         self.oos_status = list(getattr(config, "oos_status", []) or [])
         self.oos_date_from = getattr(config, "oos_date_from", None)
         self.max_predecessors = getattr(config, "max_predecessors", None)
+        # Not "out_of_service_orders" as a literal: matching/ is framework
+        # code shared by every project (see the top-level README's open item
+        # 6 on hardcoded FMCSA field paths), and the nested array this
+        # selector's population lives under is exactly the kind of thing a
+        # different project's "shut down" concept would name differently.
+        # Defaults to the existing field name, so no current config needs to
+        # change to keep its current behavior.
+        self.oos_path = getattr(config, "oos_path", "out_of_service_orders")
 
     def _out_of_service_clause(self):
-        """Carriers with an out-of-service order, optionally narrowed further.
+        """Carriers with a single out-of-service order matching every filter.
 
-        Only oos_date is required; status and date-from are operator knobs
-        for tightening the sweep (e.g. only ACTIVE orders, only recent ones)
-        rather than fields every deployment needs to set.
+        Nested rather than a plain bool over dotted paths because an object
+        mapping matches each filter against the flattened union of all the
+        carrier's orders: a carrier with an ACTIVE 2015 order and an INACTIVE
+        2022 order satisfied status=ACTIVE and oos_date>=2020 from two
+        different orders and was swept even though no single order qualified.
+        That also let TemporalSignal report a shutdown_date from an order the
+        selector never intended to match, so gap_days on an emitted pair
+        described the wrong event.
+
+        Only oos_date is required; status and date-from are operator knobs for
+        tightening the sweep rather than fields every deployment sets.
         """
-        must = [{"exists": {"field": "out_of_service_orders.oos_date"}}]
+        must = [{"exists": {"field": "{}.oos_date".format(self.oos_path)}}]
         if self.oos_status:
-            must.append({"terms": {"out_of_service_orders.status": self.oos_status}})
+            must.append({"terms": {"{}.status".format(self.oos_path): self.oos_status}})
         if self.oos_date_from:
             # oos_date is mapped as keyword, but ISO dates sort lexicographically
             # so a range query still behaves correctly.
             must.append(
-                {"range": {"out_of_service_orders.oos_date": {"gte": self.oos_date_from}}}
+                {"range": {"{}.oos_date".format(self.oos_path): {"gte": self.oos_date_from}}}
             )
-        return {"bool": {"must": must}}
+        return {
+            "nested": {
+                "path": self.oos_path,
+                "query": {"bool": {"must": must}},
+            }
+        }
 
     def _revoked_clause(self):
         """Carriers whose authority was actually revoked, not merely filed against.

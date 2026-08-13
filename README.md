@@ -23,8 +23,13 @@ Adding a third dataset? Start with [docs/adding-a-dataset.md](docs/adding-a-data
 
 Every record count, distinct-value count, match count and percentage here is a
 **point-in-time measurement against one extract**, kept because the _magnitude_
-is what makes an argument concrete — "36,788 of 5,647,567 documents dropped"
-lands where "some documents dropped" does not.
+is what makes an argument concrete — "two different dates returned the same
+39,400 documents" lands where "some dates collided" does not.
+
+A precise number is not the same as a true one. This document has carried a
+retracted figure — "36,788 of 5,647,567 documents dropped" — for weeks, quoted
+across three files, because it was specific enough to sound measured and nobody
+checked it against a mapping. Cite the measurement _and_ how it was taken.
 
 They are not invariants. The source agencies republish on their own schedules,
 so row counts drift, placeholder values come and go, and a threshold tuned
@@ -271,14 +276,16 @@ This exists because the two halves were never compared. When the loader stopped 
 
 Elasticsearch infers a field's type from the first document that carries it. That inference is made under concurrency, so it is not even deterministic across runs — and once made, non-conforming values fail with `document_parsing_exception` and **the whole document is rejected**, not just the field.
 
-Observed failures:
+Observed failures, each verified against a mapping rather than inferred from a column's contents:
 
-- A numeric-looking ID column inferred as `float`; rows containing `'NONE'` or `'S00000030887'` dropped **36,788 of 5,647,567** documents (DOT-Commercial `insp_carrier_state_id`).
-- A ZIP column inferred as `long`; alphanumeric ZIPs dropped 62 rows and leading-zero ZIPs were mangled (`00602` → `602`) (CMS-Providers `ZIP Code`).
 - An ID inferred as `float` in one index and `keyword` in another made an enrichment policy match **zero** documents (DOT-Commercial `crashes.dot_number`).
 - Enriched object fields inferred as `text` rather than `keyword`, so `term`/`terms` queries matched nothing — an uppercase query value never matches the lowercased analyzed token (DOT-Commercial predecessor selectors).
 
 **The rule: pin every field you rely on in `index-mappings.json`.** Identifiers and codes are `keyword` even when they look numeric. Anything an enrich policy writes onto a document must be mapped explicitly, because the enriched value inherits the _target_ index's mapping, not the source's.
+
+**Two entries were removed from that list on 2026-08-12 because measurement contradicted them, and the reason they were wrong is worth more than the entries were.** Both claimed a mixed numeric/non-numeric column was inferred as a numeric type, dropping rows: 36,788 of 5,647,567 for DOT-Commercial `insp_carrier_state_id`, and 62 rows plus mangled leading zeros (`00602` → `602`) for CMS-Providers `ZIP Code`. Neither could happen through this loader even then. `pd.read_csv` was called with no `dtype`, so **pandas resolved each column's type once over the whole file before Elasticsearch saw a document.** A column that mixes types resolved to `str`, every value arrived as a JSON string, and dynamic mapping picked `text`, which accepts all of them. Measured at the time: `insp_carrier_state_id` inferred `str` and both the pre-fix and post-fix indexes held all 5,662,304 rows; `DAC_NationalDownloadableFile.csv`'s ZIP column inferred `str`, kept its 62 `…ND` values, and preserved all 294,151 leading-zero ZIPs unmangled.
+
+The pins stay — `keyword` is right for these columns regardless — but the danger was the opposite of what had been written down. **A column was at risk precisely when it was _uniformly_ numeric in the file pandas saw**, because pandas then handed Elasticsearch actual numbers: `Hospital_General_Information.csv`'s ZIP column inferred `int64`. A mixed column was self-protecting; a clean one was the trap. That is no longer a live hazard — the loader now reads every column with `dtype=str`, so the mappings do the typing and pandas types nothing (see the closed item on leading zeros). It is recorded because of how the wrong version survived: both retracted entries described plausible mechanics in convincing detail — a named exception, concurrency, row counts to five figures — and lasted across three documents for weeks because the inference was assumed from the data, never read from a mapping. Checking took two `curl`s.
 
 ### 2. Legacy date formats, and why mapping them as `date` is worse
 
