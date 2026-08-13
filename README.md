@@ -471,6 +471,14 @@ Framework-level. Dataset-specific items live in each project's README.
 
 ### Closed work items
 
+1. **Three phases in a row detected a real problem, logged below the level anyone reads, and returned success.** They are recorded together because the pattern matters more than any one of them: a phase that _knows_ something is wrong and still exits 0 turns a broken run into a clean-looking one, and the exit code is the only part of a long unattended run anybody checks. All three are now raises.
+
+   - `phase_enrichment_policies` logged `ERROR` for a drifted or unexecutable policy and continued — measured as six policies pointing at indexes twelve days superseded, six `ERROR` lines, exit 0, and a `carriers` index built from them.
+   - `phase_index_mappings` caught a refused `put_mapping` and logged it at **INFO**, then populated the index anyway. Elasticsearch cannot convert an existing object field to `nested`, so rerunning `carriers` after that change would have refused the mapping, indexed 2,085,534 documents under the old one, and reported success while the sweep's nested selector kept failing.
+   - The same enrichment fix then exposed a client-side timeout that had been swallowed underneath it (below).
+
+   **When a phase detects a problem it cannot fix, raise.** Logging is for things the operator may want to know; a wrong index is not one of them.
+
 1. **A policy rebuild that could not succeed logged `ERROR` and let the run exit 0.** Both ways enrichment goes quietly wrong were already _detected_ — a bound policy whose definition has drifted to an earlier day's index, and a policy executed against unrefreshed data that produces an empty enrich index — and both merely logged. Measured on a real reload: six drifted policies, six `ERROR` lines, exit code 0, and a `carriers` index built from them. The phase now collects failures and raises, so the step fails; collected rather than raised at the first, because reporting one of six would have left the operator to rediscover the rest a rerun at a time. A separate item claiming `NotFoundError` aborts the rebuild loop was **stale** — `_execute_policy` catches `Exception` broadly, so every policy is still attempted — and is dropped rather than carried forward.
 
    Making that raise immediately exposed a second defect it had been hiding: `execute_policy` reindexes the whole source, so it scales with the source rather than the request, and elasticsearch-py's default request timeout expired on the 9.6M-document policy while Elasticsearch went on to build all 9,632,353 documents successfully. The client gave up, not the server, and the run reported a failure that had not happened. Now given an hour, set on the `Elasticsearch` object — `EnrichClient` has no `options` of its own, and calling one on it fails only at runtime, on the long policy the timeout exists to protect.
