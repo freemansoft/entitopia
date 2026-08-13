@@ -17,7 +17,8 @@ never the problem.
 from types import SimpleNamespace
 
 import pytest
-from elasticsearch import BadRequestError, ConflictError
+from elasticsearch import BadRequestError, ConflictError, Elasticsearch
+from elasticsearch import client as es_client
 
 from phase_providers import phase_enrichment_policies
 from phase_providers.phase_enrichment_policies import PhaseEnrichmentPolicies
@@ -43,13 +44,6 @@ class FakeEnrichClient:
     def __init__(self, existing):
         self.existing = existing
         self.executed = []
-        self.timeout = None
-
-    def options(self, request_timeout):
-        # The real client returns a configured copy; returning self keeps the
-        # recorded call list in one place.
-        self.timeout = request_timeout
-        return self
 
     def delete_policy(self, name):
         raise BOUND
@@ -65,10 +59,21 @@ class FakeEnrichClient:
 
 
 class FakeEs:
-    """Counts used only to compare a source index against its enrich index."""
+    """Counts, plus the `options` call that carries the execute timeout.
+
+    `options` lives here rather than on the enrich client because that is where
+    elasticsearch-py puts it. A fake that offered it on the enrich client
+    instead let a broken call pass its test while failing against the real
+    client at runtime.
+    """
 
     def __init__(self, counts):
         self.counts = counts
+        self.request_timeout = None
+
+    def options(self, request_timeout):
+        self.request_timeout = request_timeout
+        return self
 
     def count(self, index):
         return {"count": self.counts.get(index, 0)}
@@ -183,12 +188,26 @@ def test_policy_execution_is_given_a_timeout_long_enough_for_a_large_source(monk
     happened, which is the mirror image of the silent-success problem and just
     as misleading -- and before this phase raised, it was swallowed entirely.
     """
-    phase, fake = build_phase(
+    phase, _ = build_phase(
         monkeypatch,
         configured={"big-enrichment-policy": policy("big-2026.08.13-000001")},
         existing={"big-enrichment-policy": policy(["big-2026.08.13-000001"])},
         counts={"big-2026.08.13-000001": 9632353, ".enrich-big-enrichment-policy": 9632353},
     )
     phase.handle()
-    assert fake.timeout == phase_enrichment_policies.EXECUTE_TIMEOUT_SECONDS
-    assert fake.timeout >= 1800, "a multi-million-document enrich build needs far more than the default"
+    assert phase.es.request_timeout == phase_enrichment_policies.EXECUTE_TIMEOUT_SECONDS
+    assert phase.es.request_timeout >= 1800, (
+        "a multi-million-document enrich build needs far more than the default"
+    )
+
+
+def test_the_enrich_client_itself_has_no_options_method():
+    """Pins why the timeout is set on the Elasticsearch object, not the sub-client.
+
+    Calling `.options()` on an EnrichClient raises AttributeError only at
+    runtime, on the multi-minute policy this timeout exists to protect -- the
+    slowest possible place to discover a typo. This asserts against the real
+    client rather than a fake, because a fake is exactly what hid it.
+    """
+    enrich = es_client.EnrichClient(Elasticsearch("http://localhost:9200"))
+    assert not hasattr(enrich, "options")

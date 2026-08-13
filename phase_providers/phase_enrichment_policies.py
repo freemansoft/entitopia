@@ -89,7 +89,14 @@ class PhaseEnrichmentPolicies:
             if not self._ensure_policy(enrich_client, phase_config.name, match_dicts):
                 failed.append(phase_config.name)
                 continue
-            if not self._execute_policy(enrich_client, phase_config.name, match_dicts):
+            # The timeout has to be set on the Elasticsearch object and a fresh
+            # namespaced client built from it: EnrichClient has no `options` of
+            # its own, and calling one on it fails only at runtime, on the long
+            # policy this exists to protect.
+            executing_client = client.EnrichClient(
+                self.es.options(request_timeout=EXECUTE_TIMEOUT_SECONDS)
+            )
+            if not self._execute_policy(executing_client, phase_config.name, match_dicts):
                 failed.append(phase_config.name)
 
         if failed:
@@ -197,9 +204,7 @@ class PhaseEnrichmentPolicies:
         resulting count against the source's turns that into a loud failure.
         """
         try:
-            enrich_client.options(request_timeout=EXECUTE_TIMEOUT_SECONDS).execute_policy(
-                name=name, wait_for_completion=True
-            )
+            enrich_client.execute_policy(name=name, wait_for_completion=True)
         except Exception as e:
             self.logger.error("Failed to execute policy {}: {}".format(name, e))
             return False
