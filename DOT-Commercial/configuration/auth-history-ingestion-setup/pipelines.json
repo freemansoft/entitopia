@@ -1,0 +1,12 @@
+{
+  "name": "auth-history-pipeline-000001",
+  "processors": [
+    {
+      "script": {
+        "description": "Normalize dot_number into the unpadded integer carriers uses, so auth-history-enrichment-policy can join. FMCSA zero-pads dot_number to eight characters in auth_history.csv ('00023680') and does not pad it in carriers.csv ('23680'). An enrich index coerces every field to keyword regardless of the source mapping, so the padded string is what the join compares -- and '00023680' never matches '23680'. This join previously worked only by accident: the loader inferred the column as int64 and discarded the padding before Elasticsearch saw it, so both sides happened to agree. Reading CSVs faithfully as strings removed that accident and took carriers' auth_history enrichment from 546,042 documents to zero, which is how this processor came to exist. Mirrors the crashes-pipeline script; strips at the decimal point too, since a NaN elsewhere in a column still widens it to float64.",
+        "source": "if (ctx.dot_number == null) { return; } String raw = String.valueOf(ctx.dot_number); int dot = raw.indexOf('.'); if (dot >= 0) { raw = raw.substring(0, dot); } if (raw.isEmpty()) { return; } ctx.dot_number = Long.parseLong(raw);",
+        "ignore_failure": true
+      }
+    }
+  ]
+}

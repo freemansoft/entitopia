@@ -7,6 +7,75 @@
       },
       "tow_away": {
         "type": "keyword"
+      },
+      "access_control_id": {
+        "type": "long"
+      },
+      "cargo_body_type_id": {
+        "type": "long"
+      },
+      "county_code": {
+        "type": "keyword"
+      },
+      "crash_carrier_id": {
+        "type": "long"
+      },
+      "crash_id": {
+        "type": "long"
+      },
+      "docket_number": {
+        "type": "long"
+      },
+      "fatalities": {
+        "type": "long"
+      },
+      "final_status_date": {
+        "type": "long"
+      },
+      "gvw_rating_id": {
+        "type": "long"
+      },
+      "injuries": {
+        "type": "long"
+      },
+      "light_condition_id": {
+        "type": "long"
+      },
+      "no_id_flag": {
+        "type": "long"
+      },
+      "report_date": {
+        "type": "long"
+      },
+      "report_seq_no": {
+        "type": "long"
+      },
+      "report_time": {
+        "type": "keyword"
+      },
+      "road_surface_condition_id": {
+        "type": "long"
+      },
+      "snet_sequence_id": {
+        "type": "long"
+      },
+      "trafficway_id": {
+        "type": "long"
+      },
+      "upload_dot_number": {
+        "type": "keyword"
+      },
+      "upload_first_byte": {
+        "type": "long"
+      },
+      "vehicle_configuration_id": {
+        "type": "long"
+      },
+      "vehicles_in_accident": {
+        "type": "long"
+      },
+      "weather_condition_id": {
+        "type": "long"
       }
     }
   }

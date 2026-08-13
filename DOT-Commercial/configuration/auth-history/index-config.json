@@ -13,6 +13,7 @@
     "disp_decided_date",
     "disp_served_date"
   ],
+  "pipeline": "auth-history-pipeline-000001",
   "num_rows": null,
   "skip_rows": 0
 }

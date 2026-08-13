@@ -10,6 +10,19 @@ from utils import elasticsearch_utils, file_utils
 # the one config asks for" apart from "a stale policy is squatting on the name".
 POLICY_IDENTITY_KEYS = ("indices", "match_field", "enrich_fields")
 
+# Executing a policy reindexes the whole source into a hidden enrich index, so
+# it scales with the source, not with the request. elasticsearch-py's default
+# request timeout expires long before a large one finishes: the 9.6M-document
+# inspections-per-unit policy raised "Connection timed out" while Elasticsearch
+# went on to build all 9,632,353 documents successfully. The client gave up, not
+# the server, so the run reported a failure that had not happened.
+#
+# An hour is chosen to be longer than any source this project loads rather than
+# tuned to one of them. Raising it costs nothing when policies are small, and a
+# policy that genuinely hangs still surfaces -- an hour late, but as a real
+# failure rather than as a routine timeout nobody can distinguish from one.
+EXECUTE_TIMEOUT_SECONDS = 3600
+
 
 class PhaseEnrichmentPolicies:
     """Rebuilds each configured enrich policy's backing index from current source data.
@@ -55,6 +68,11 @@ class PhaseEnrichmentPolicies:
         if not all_phase_config:
             return
 
+        # Collected rather than raised on the spot so one broken policy cannot
+        # hide the state of the rest: the real incident had six drifted
+        # policies, and stopping at the first would have reported one.
+        failed = []
+
         for phase_config in all_phase_config:
             elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
             enrich_client = client.EnrichClient(self.es)
@@ -69,8 +87,32 @@ class PhaseEnrichmentPolicies:
             )
 
             if not self._ensure_policy(enrich_client, phase_config.name, match_dicts):
+                failed.append(phase_config.name)
                 continue
-            self._execute_policy(enrich_client, phase_config.name, match_dicts)
+            # The timeout has to be set on the Elasticsearch object and a fresh
+            # namespaced client built from it: EnrichClient has no `options` of
+            # its own, and calling one on it fails only at runtime, on the long
+            # policy this exists to protect.
+            executing_client = client.EnrichClient(
+                self.es.options(request_timeout=EXECUTE_TIMEOUT_SECONDS)
+            )
+            if not self._execute_policy(executing_client, phase_config.name, match_dicts):
+                failed.append(phase_config.name)
+
+        if failed:
+            # Raised, not logged. Every one of these paths already logged an
+            # ERROR explaining itself and the run still exited 0, so a reload
+            # finished with carriers enriched from a superseded index while
+            # every phase reported success -- the silent-wrong-output failure
+            # this codebase keeps hitting. The exit code is the only part of a
+            # long unattended run anyone actually checks.
+            raise RuntimeError(
+                "Enrichment policies could not be rebuilt: {}. Anything enriched from "
+                "them would read the wrong source, so the run is stopped rather than "
+                "left to produce a healthy-looking result. See the errors above; a "
+                "policy bound to a pipeline needs that pipeline deleted and the step "
+                "rerun.".format(", ".join(failed))
+            )
 
     def _ensure_policy(self, enrich_client, name, match_dicts) -> bool:
         """Make the named policy match config, returning whether it is safe to execute.
@@ -151,7 +193,7 @@ class PhaseEnrichmentPolicies:
         )
         return True
 
-    def _execute_policy(self, enrich_client, name, match_dicts) -> None:
+    def _execute_policy(self, enrich_client, name, match_dicts) -> bool:
         """Rebuild the policy's enrich index and confirm it actually received data.
 
         The verification is the point: an enrich policy executed against a
@@ -165,7 +207,7 @@ class PhaseEnrichmentPolicies:
             enrich_client.execute_policy(name=name, wait_for_completion=True)
         except Exception as e:
             self.logger.error("Failed to execute policy {}: {}".format(name, e))
-            return
+            return False
 
         source_count = self._count(match_dicts.get("indices"))
         enrich_count = self._count(".enrich-{}".format(name))
@@ -179,13 +221,14 @@ class PhaseEnrichmentPolicies:
                     name, match_dicts.get("indices"), source_count
                 )
             )
-            return
+            return False
 
         self.logger.info(
             "Policy {} executed: {} documents in enrich index (source {})".format(
                 name, enrich_count, source_count
             )
         )
+        return True
 
     def _count(self, index) -> int:
         """Document count for an index, or 0 when it cannot be counted.

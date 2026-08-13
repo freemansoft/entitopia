@@ -1,0 +1,12 @@
+{
+  "name": "boc3-agents-pipeline-000001",
+  "processors": [
+    {
+      "script": {
+        "description": "Normalize dot_number into the unpadded integer carriers uses, so boc3-agents-enrichment-policy can join. Same defect and same remedy as auth-history-pipeline: FMCSA zero-pads dot_number to eight characters here and not in carriers.csv, an enrich index compares the value as a keyword, and '00023680' never matches '23680'. Measured when the loader stopped discarding the padding: carriers' boc3_agents enrichment fell from 565,299 documents to zero. The BOC-3 shared-agent signal depends on this join, so a silent zero here removes evidence the matcher is built to use rather than merely losing a field.",
+        "source": "if (ctx.dot_number == null) { return; } String raw = String.valueOf(ctx.dot_number); int dot = raw.indexOf('.'); if (dot >= 0) { raw = raw.substring(0, dot); } if (raw.isEmpty()) { return; } ctx.dot_number = Long.parseLong(raw);",
+        "ignore_failure": true
+      }
+    }
+  ]
+}

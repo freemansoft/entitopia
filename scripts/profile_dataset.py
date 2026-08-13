@@ -2,11 +2,15 @@
 """Profile a CSV before configuring an entitopia index for it.
 
 Every mapping decision in this project depends on facts about the data that are
-invisible until measured: whether a column mixes numeric and non-numeric values
-(which makes dynamic type inference drop documents), whether a code column has
-leading zeros (which a numeric type destroys), whether a candidate key is
-actually unique, and whether a field has enough distinct values to carry a
-matching signal at all.
+invisible until measured: whether a code column has leading zeros (which a
+numeric mapping destroys), whether a column mixes numeric and non-numeric
+values, whether a candidate key is actually unique, and whether a field has
+enough distinct values to carry a matching signal at all.
+
+This profiles the file alone. To find out what a column will actually become
+once loaded, run scripts/check_mapping_coverage.py, which compares these
+columns against the project's index-mappings.json -- an unpinned column lands
+as `text` no matter what its values look like.
 
 Those measurements were previously done ad hoc, one throwaway snippet at a time,
 and the same mistakes kept surfacing. This runs them all in one pass so the
@@ -136,25 +140,31 @@ class ColumnProfile:
         out = []
         numeric = self.n_int + self.n_float
 
-        if numeric and self.n_other:
+        if self.n_leading_zero:
+            out.append(
+                "LEADING ZEROS: {:,} values like '0...'. Pin as keyword. Any numeric "
+                "mapping discards the padding (00602 -> 602), and if this is the "
+                "id_field that also corrupts every document's _id.".format(
+                    self.n_leading_zero
+                )
+            )
+        elif numeric and self.n_other:
             out.append(
                 "MIXED TYPES: {:,} numeric and {:,} non-numeric values (e.g. {}). "
-                "Dynamic mapping infers a numeric type from whichever it sees first, "
-                "then every non-conforming row fails to index and the document is "
-                "dropped. Pin as keyword.".format(
+                "Nothing is dropped — the loader reads every column as a string, so "
+                "this lands as text. Pin as keyword if you need term queries or a "
+                "join on it, since an uppercase value never matches an analyzed "
+                "token.".format(
                     numeric, self.n_other, ", ".join(repr(v) for v in self.example_non_numeric)
                 )
             )
-        elif self.n_leading_zero:
-            out.append(
-                "LEADING ZEROS: {:,} values like '0...' would become integers and lose "
-                "them (00602 -> 602). Pin as keyword.".format(self.n_leading_zero)
-            )
         elif numeric and not self.n_other and self.populated:
             out.append(
-                "ALL-NUMERIC: infers as a numeric type. If this is an identifier or "
-                "code rather than a quantity, pin as keyword — a join between a "
-                "numeric and a keyword field matches nothing."
+                "ALL-NUMERIC: pin it explicitly. Unpinned it lands as text, so range "
+                "queries and aggregations stop working; pinned as `float` it loses "
+                "precision above 2^24 (20250919 and 20250920 become the same value). "
+                "Use `long` for whole numbers, `double` if the column is fractional, "
+                "`keyword` if it is an identifier or code rather than a quantity."
             )
 
         if self.n_oracle_date or self.n_us_date:
