@@ -2,51 +2,106 @@
   "steps": [
     {
       "name": "crashes-ingestion-setup",
-      "phases": ["pipelines"]
+      "phases": [
+        "pipelines"
+      ]
     },
     {
       "name": "crashes",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
     },
     {
       "name": "inspections-per-unit",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
     },
     {
       "name": "inspections-ingestion-setup",
-      "phases": ["enrichment-policies", "pipelines"]
+      "phases": [
+        "enrichment-policies",
+        "pipelines"
+      ]
     },
     {
       "name": "inspections",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
+    },
+    {
+      "name": "auth-history-ingestion-setup",
+      "phases": [
+        "pipelines"
+      ]
     },
     {
       "name": "auth-history",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
     },
     {
       "name": "out-of-service-orders",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
+    },
+    {
+      "name": "boc3-agents-ingestion-setup",
+      "phases": [
+        "pipelines"
+      ]
     },
     {
       "name": "boc3-agents",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
     },
     {
       "name": "carriers-ingestion-setup",
-      "phases": ["enrichment-policies", "pipelines"]
+      "phases": [
+        "enrichment-policies",
+        "pipelines"
+      ]
     },
     {
       "name": "carriers",
-      "phases": ["index-create", "index-map", "index-populate"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "index-populate"
+      ]
     },
     {
       "name": "chameleon-detection",
-      "phases": ["index-create", "index-map", "entity-match"]
+      "phases": [
+        "index-create",
+        "index-map",
+        "entity-match"
+      ]
     },
     {
       "name": "chameleon-validation",
-      "phases": ["index-create", "index-map"]
+      "phases": [
+        "index-create",
+        "index-map"
+      ]
     }
   ],
   "all_phases": [

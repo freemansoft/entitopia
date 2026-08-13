@@ -3,6 +3,7 @@
   "alias": "boc3-agents-000001",
   "source": "boc3_agents.csv",
   "id_field": "docket_number",
+  "pipeline": "boc3-agents-pipeline-000001",
   "num_rows": null,
   "skip_rows": 0
 }
