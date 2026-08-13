@@ -43,6 +43,13 @@ class FakeEnrichClient:
     def __init__(self, existing):
         self.existing = existing
         self.executed = []
+        self.timeout = None
+
+    def options(self, request_timeout):
+        # The real client returns a configured copy; returning self keeps the
+        # recorded call list in one place.
+        self.timeout = request_timeout
+        return self
 
     def delete_policy(self, name):
         raise BOUND
@@ -165,3 +172,23 @@ def test_no_configured_policies_is_not_a_failure(monkeypatch):
         FakeEs({}), "AnyProject", "any-step", SimpleNamespace(configurationDir="configuration")
     )
     phase.handle()
+
+
+def test_policy_execution_is_given_a_timeout_long_enough_for_a_large_source(monkeypatch):
+    """A 9.6M-document policy outlives elasticsearch-py's default request timeout.
+
+    Observed: executing the inspections-per-unit policy returned "Connection
+    timed out" after the client's default while Elasticsearch went on to
+    finish the job successfully. The run then reported a failure that had not
+    happened, which is the mirror image of the silent-success problem and just
+    as misleading -- and before this phase raised, it was swallowed entirely.
+    """
+    phase, fake = build_phase(
+        monkeypatch,
+        configured={"big-enrichment-policy": policy("big-2026.08.13-000001")},
+        existing={"big-enrichment-policy": policy(["big-2026.08.13-000001"])},
+        counts={"big-2026.08.13-000001": 9632353, ".enrich-big-enrichment-policy": 9632353},
+    )
+    phase.handle()
+    assert fake.timeout == phase_enrichment_policies.EXECUTE_TIMEOUT_SECONDS
+    assert fake.timeout >= 1800, "a multi-million-document enrich build needs far more than the default"

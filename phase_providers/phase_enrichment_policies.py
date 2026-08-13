@@ -10,6 +10,19 @@ from utils import elasticsearch_utils, file_utils
 # the one config asks for" apart from "a stale policy is squatting on the name".
 POLICY_IDENTITY_KEYS = ("indices", "match_field", "enrich_fields")
 
+# Executing a policy reindexes the whole source into a hidden enrich index, so
+# it scales with the source, not with the request. elasticsearch-py's default
+# request timeout expires long before a large one finishes: the 9.6M-document
+# inspections-per-unit policy raised "Connection timed out" while Elasticsearch
+# went on to build all 9,632,353 documents successfully. The client gave up, not
+# the server, so the run reported a failure that had not happened.
+#
+# An hour is chosen to be longer than any source this project loads rather than
+# tuned to one of them. Raising it costs nothing when policies are small, and a
+# policy that genuinely hangs still surfaces -- an hour late, but as a real
+# failure rather than as a routine timeout nobody can distinguish from one.
+EXECUTE_TIMEOUT_SECONDS = 3600
+
 
 class PhaseEnrichmentPolicies:
     """Rebuilds each configured enrich policy's backing index from current source data.
@@ -184,7 +197,9 @@ class PhaseEnrichmentPolicies:
         resulting count against the source's turns that into a loud failure.
         """
         try:
-            enrich_client.execute_policy(name=name, wait_for_completion=True)
+            enrich_client.options(request_timeout=EXECUTE_TIMEOUT_SECONDS).execute_policy(
+                name=name, wait_for_completion=True
+            )
         except Exception as e:
             self.logger.error("Failed to execute policy {}: {}".format(name, e))
             return False
