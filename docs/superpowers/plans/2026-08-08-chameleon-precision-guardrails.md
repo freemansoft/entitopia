@@ -1409,6 +1409,12 @@ Same alias mechanics. On success, update `DOT-Commercial/README.md` open item 3 
 
 ### Task 5: Pin `insp_carrier_state_id` and reload inspections
 
+> **Outcome, 2026-08-12: the defect this task exists to fix does not exist.** Steps 1-3 ran as written and the pin is committed. Step 4's inspections reload ran; Step 5 passed (5,662,304 docs, exactly the CSV's row count). But the pre-fix index passes the same check: it mapped the field `text` + `.keyword`, not `float`, and holds the same 5,662,304 documents with the field present on the same 1,082,951 of them. **Zero rows were recovered**, because `utils/csv_load_utils.py` calls `pd.read_csv` without `dtype`, so pandas resolves the mixed column to `str` before Elasticsearch sees anything and dynamic mapping picks `text`, which accepts every value.
+>
+> Steps 4 (carriers half), 6 and 7 were therefore **not executed as written**, and this is a deviation from the plan, not a completion of it. The carriers rebuild was skipped because the field is absent from the inspections enrich policy (`dot_number`, `inspection_id`, `units.insp_unit_vehicle_id_number`) and from every matching config and code path, so hours of rebuild would have reproduced the same index. Step 6's re-baseline was skipped because its premise — "the corpus changed" — is false; it would also have overwritten the task-4 baseline, which already occupies `chameleon-candidates-2026.08.12-000001`. Step 7 was replaced: open item 1 moved to closed as a **retraction with the measurement**, not as a fix with a recovered-row count, and the same retraction was applied to the top-level README, where a CMS-Providers ZIP claim resting on the identical misdiagnosis was measured and removed too.
+>
+> Read the steps below as the plan's original intent. The reasoning they encode about `keyword` being the right type still holds; the failure they promise to fix does not.
+
 Closes README open item 1. Last, and outside the A/B chain, because it is the one change that alters the underlying data — after it, every baseline above describes a different corpus. **Do not batch this with Tasks 2-4**; doing so would confound a mapping fix with a data change and make both unmeasurable. (This reverses the batching-for-efficiency reading: batching saves a rebuild but costs the ability to attribute any movement, and attribution is the point of this plan.)
 
 **Files:**
