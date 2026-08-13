@@ -8,27 +8,57 @@
       "legal_name": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" },
-          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
         }
       },
       "dba_name": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" },
-          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
         }
       },
       "phy_street": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "street_clean" },
-          "tokens": { "type": "text", "analyzer": "street_tokens" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
         }
       },
       "phy_city": {
@@ -54,9 +84,17 @@
       "mailing_street": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "street_clean" },
-          "tokens": { "type": "text", "analyzer": "street_tokens" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
         }
       },
       "mailing_city": {
@@ -103,83 +141,227 @@
         "type": "date",
         "format": "strict_date_optional_time||yyyy-MM-dd"
       },
-      "phy_zip": { "type": "keyword" },
-      "mailing_zip": { "type": "keyword" },
+      "phy_zip": {
+        "type": "keyword"
+      },
+      "mailing_zip": {
+        "type": "keyword"
+      },
       "fax": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "phone_clean" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "phone_clean"
+          }
         }
       },
       "boc3_agents": {
         "properties": {
-          "dot_number": { "type": "long" },
-          "docket_number": { "type": "keyword" },
+          "dot_number": {
+            "type": "long"
+          },
+          "docket_number": {
+            "type": "keyword"
+          },
           "co_name": {
             "type": "text",
             "fields": {
-              "keyword": { "type": "keyword" },
-              "clean": { "type": "text", "analyzer": "name_clean" },
-              "phonetic": { "type": "text", "analyzer": "name_phonetic" }
+              "keyword": {
+                "type": "keyword"
+              },
+              "clean": {
+                "type": "text",
+                "analyzer": "name_clean"
+              },
+              "phonetic": {
+                "type": "text",
+                "analyzer": "name_phonetic"
+              }
             }
           },
-          "attn_to_or_title": { "type": "keyword" },
+          "attn_to_or_title": {
+            "type": "keyword"
+          },
           "street_po": {
             "type": "text",
             "fields": {
-              "keyword": { "type": "keyword" },
-              "clean": { "type": "text", "analyzer": "street_clean" },
-              "tokens": { "type": "text", "analyzer": "street_tokens" }
+              "keyword": {
+                "type": "keyword"
+              },
+              "clean": {
+                "type": "text",
+                "analyzer": "street_clean"
+              },
+              "tokens": {
+                "type": "text",
+                "analyzer": "street_tokens"
+              }
             }
           },
-          "city": { "type": "keyword" },
-          "state_code": { "type": "keyword" },
-          "zip_code": { "type": "keyword" },
-          "ctry_code": { "type": "keyword" }
+          "city": {
+            "type": "keyword"
+          },
+          "state_code": {
+            "type": "keyword"
+          },
+          "zip_code": {
+            "type": "keyword"
+          },
+          "ctry_code": {
+            "type": "keyword"
+          }
         }
       },
       "out_of_service_orders": {
         "type": "nested",
         "properties": {
-          "dot_number": { "type": "long" },
-          "oos_date": { "type": "keyword" },
-          "oos_reason": { "type": "keyword" },
-          "status": { "type": "keyword" },
-          "rescind_date": { "type": "keyword" }
+          "dot_number": {
+            "type": "long"
+          },
+          "oos_date": {
+            "type": "keyword"
+          },
+          "oos_reason": {
+            "type": "keyword"
+          },
+          "status": {
+            "type": "keyword"
+          },
+          "rescind_date": {
+            "type": "keyword"
+          }
         }
       },
       "auth_history": {
         "properties": {
-          "dot_number": { "type": "long" },
-          "docket_number": { "type": "keyword" },
-          "sub_number": { "type": "keyword" },
-          "mod_col_1": { "type": "keyword" },
-          "original_action_desc": { "type": "keyword" },
-          "orig_served_date": { "type": "keyword" },
-          "disp_action_desc": { "type": "keyword" },
-          "disp_decided_date": { "type": "keyword" },
-          "disp_served_date": { "type": "keyword" }
+          "dot_number": {
+            "type": "long"
+          },
+          "docket_number": {
+            "type": "keyword"
+          },
+          "sub_number": {
+            "type": "keyword"
+          },
+          "mod_col_1": {
+            "type": "keyword"
+          },
+          "original_action_desc": {
+            "type": "keyword"
+          },
+          "orig_served_date": {
+            "type": "keyword"
+          },
+          "disp_action_desc": {
+            "type": "keyword"
+          },
+          "disp_decided_date": {
+            "type": "keyword"
+          },
+          "disp_served_date": {
+            "type": "keyword"
+          }
         }
       },
       "crashes": {
         "properties": {
-          "dot_number": { "type": "long" },
-          "report_number": { "type": "keyword" },
-          "report_seq_no": { "type": "keyword" },
-          "vehicle_identification_number": { "type": "keyword" }
+          "dot_number": {
+            "type": "long"
+          },
+          "report_number": {
+            "type": "keyword"
+          },
+          "report_seq_no": {
+            "type": "keyword"
+          },
+          "vehicle_identification_number": {
+            "type": "keyword"
+          }
         }
       },
       "inspections": {
         "properties": {
-          "dot_number": { "type": "long" },
-          "inspection_id": { "type": "keyword" },
+          "dot_number": {
+            "type": "long"
+          },
+          "inspection_id": {
+            "type": "keyword"
+          },
           "units": {
             "properties": {
-              "insp_unit_vehicle_id_number": { "type": "keyword" }
+              "insp_unit_vehicle_id_number": {
+                "type": "keyword"
+              }
             }
           }
         }
+      },
+      "authorized_for_hire": {
+        "type": "boolean"
+      },
+      "driver_total": {
+        "type": "long"
+      },
+      "exempt_for_hire": {
+        "type": "boolean"
+      },
+      "federal_government": {
+        "type": "boolean"
+      },
+      "hm_flag": {
+        "type": "boolean"
+      },
+      "indian_tribe": {
+        "type": "boolean"
+      },
+      "local_government": {
+        "type": "boolean"
+      },
+      "mcs150_mileage": {
+        "type": "long"
+      },
+      "mcs150_mileage_year": {
+        "type": "long"
+      },
+      "migrant": {
+        "type": "boolean"
+      },
+      "nbr_power_unit": {
+        "type": "long"
+      },
+      "pc_flag": {
+        "type": "boolean"
+      },
+      "private_only": {
+        "type": "boolean"
+      },
+      "private_passenger_business": {
+        "type": "boolean"
+      },
+      "private_passenger_nonbusiness": {
+        "type": "boolean"
+      },
+      "private_property": {
+        "type": "boolean"
+      },
+      "recent_mileage": {
+        "type": "long"
+      },
+      "recent_mileage_year": {
+        "type": "long"
+      },
+      "state_government": {
+        "type": "boolean"
+      },
+      "us_mail": {
+        "type": "boolean"
+      },
+      "vmt_source_id": {
+        "type": "long"
       }
     }
   }

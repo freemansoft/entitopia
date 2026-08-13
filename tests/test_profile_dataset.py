@@ -6,8 +6,8 @@ guard rail without removing the advice. Each test below pins one hazard the
 profiler claims to catch, using a fixture that embeds the real failures this
 project has already hit:
 
-    carrier_state_id  mixes numeric and non-numeric values, the shape that
-                      dropped 36,788 of 5,647,567 rows from a production load
+    carrier_state_id  mixes numeric and non-numeric values, which lands as
+                      text and needs a keyword pin to be term-queryable
     dot_number        zero-padded identifiers, which a numeric type destroys
     effective_date    Oracle dd-MMM-yy dates, which dynamic detection misses
     cancel_date       blank on every still-active row
@@ -56,9 +56,10 @@ def test_profile_reads_every_row_and_column():
 
 
 def test_mixed_numeric_and_text_column_is_flagged(columns):
-    # The failure that dropped 36,788 documents: dynamic mapping infers a
-    # numeric type from whichever value arrives first, then every
-    # non-conforming row fails to index and the whole document is rejected.
+    # Nothing is dropped here -- the loader reads every column as a string, so
+    # a mixed column lands as text. The warning exists because text is rarely
+    # what you want for a code: an uppercase value never matches the lowercased
+    # analyzed token, so term queries and joins silently return nothing.
     kinds = _warning_kinds(columns["carrier_state_id"])
     assert "MIXED TYPES" in kinds
 

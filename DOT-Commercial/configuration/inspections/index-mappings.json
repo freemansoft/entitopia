@@ -8,8 +8,71 @@
       "inspection_id": {
         "type": "long"
       },
+      "census_source_id": {
+        "type": "long"
+      },
+      "county_code": {
+        "type": "keyword"
+      },
+      "docket_number": {
+        "type": "long"
+      },
+      "driver_oos_total": {
+        "type": "long"
+      },
+      "driver_viol_total": {
+        "type": "long"
+      },
+      "drug_intrdctn_arrests": {
+        "type": "long"
+      },
+      "gross_comb_veh_wt": {
+        "type": "long"
+      },
+      "hazmat_oos_total": {
+        "type": "long"
+      },
+      "hazmat_viol_total": {
+        "type": "long"
+      },
       "insp_carrier_state_id": {
         "type": "keyword"
+      },
+      "insp_date": {
+        "type": "long"
+      },
+      "insp_end_time": {
+        "type": "keyword"
+      },
+      "insp_level_id": {
+        "type": "long"
+      },
+      "insp_start_time": {
+        "type": "keyword"
+      },
+      "oos_total": {
+        "type": "long"
+      },
+      "registration_date": {
+        "type": "long"
+      },
+      "snet_sequence_id": {
+        "type": "long"
+      },
+      "upload_dot_number": {
+        "type": "keyword"
+      },
+      "upload_first_byte": {
+        "type": "long"
+      },
+      "vehicle_oos_total": {
+        "type": "long"
+      },
+      "vehicle_viol_total": {
+        "type": "long"
+      },
+      "viol_total": {
+        "type": "long"
       }
     }
   }
