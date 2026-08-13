@@ -51,4 +51,23 @@ class PhaseIndexMappings:
                 )
 
             except BadRequestError as e:
-                self.logger.info("Failed to create or update index: {}".format(e))
+                # Raised, not logged. This was an INFO line -- below the level
+                # anyone scans a long run for -- and the load then proceeded
+                # into whatever mapping the index already had, exiting 0.
+                #
+                # The case that forced this: `carriers` already existed with
+                # out_of_service_orders as an object, and Elasticsearch cannot
+                # convert an existing object field to `nested`. Rerunning the
+                # step refused the mapping, indexed 2,085,534 documents anyway,
+                # and reported success, while the sweep's nested selector kept
+                # failing with "failed to find nested object under path". A
+                # mapping that did not apply is not a warning about the future,
+                # it is a wrong index now, and populating it costs more than
+                # stopping does.
+                raise RuntimeError(
+                    "Elasticsearch refused the mapping for index {}: {}. Nothing has "
+                    "been loaded. An existing index cannot have a field's type "
+                    "changed -- notably object to nested -- so delete that index and "
+                    "rerun the step rather than populating it under the mapping it "
+                    "already has.".format(index_mapping_config.index, e)
+                ) from e
