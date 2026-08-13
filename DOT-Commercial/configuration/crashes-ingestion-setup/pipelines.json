@@ -3,8 +3,8 @@
   "processors": [
     {
       "script": {
-        "description": "Coerce dot_number to a real JSON integer in _source so the crashes-enrichment-policy's internal enrich index stores a clean '2975796' instead of a float-suffixed '2975796.0' that would never term-match carriers' integer dot_number. A 'convert' processor (type: long) was rejected because Elasticsearch's convert-to-long calls Long.parseLong() on the value's string form, which throws on decimal-point strings like '3240797.0'; a Painless '(long)' cast does not have this limitation.",
-        "source": "if (ctx.dot_number != null) { ctx.dot_number = (long) ctx.dot_number }",
+        "description": "Coerce dot_number to a real JSON integer in _source so the crashes-enrichment-policy's internal enrich index stores a clean '2975796' rather than a value that would not term-match carriers' dot_number. Handles a String because the loader now reads every CSV column with dtype=str; the earlier '(long) ctx.dot_number' cast worked only on the float pandas used to produce and threw ClassCastException on a String, which ignore_failure then swallowed, leaving the field untouched and this processor a silent no-op. A 'convert' processor (type: long) is still wrong here: it calls Long.parseLong() on the string form, which throws on a decimal-point value like '3240797.0' -- the shape this sees whenever a source column carries a NaN and pandas widens it to float64. Stripping at the decimal point covers both shapes.",
+        "source": "if (ctx.dot_number == null) { return; } String raw = String.valueOf(ctx.dot_number); int dot = raw.indexOf('.'); if (dot >= 0) { raw = raw.substring(0, dot); } if (raw.isEmpty()) { return; } ctx.dot_number = Long.parseLong(raw);",
         "ignore_failure": true
       }
     }
