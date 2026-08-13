@@ -254,6 +254,19 @@ It reports, per column: distinct count, blank rate, detected date formats, and t
 
 These measurements were previously done ad hoc, one throwaway snippet at a time, which is why the same mistakes recurred across datasets. Run it before configuring; act on every WARNING it prints.
 
+### Then check the config against the data
+
+Profiling tells you what a column contains. It cannot tell you what that column will _become_, because that depends on the mappings — and **an unpinned column is indexed as `text` regardless of what its values look like**, since the loader hands Elasticsearch strings so the mappings can do the typing. `scripts/check_mapping_coverage.py` compares the two:
+
+```bash
+.venv/bin/python scripts/check_mapping_coverage.py --project=DOT-Commercial
+.venv/bin/python scripts/check_mapping_coverage.py --project=CMS-Providers --step=hospitals
+```
+
+For each step it reports columns with no pin (and the type their own values argue for), pins naming a column the CSV no longer has, and non-ISO date columns — which are the one case where neither `text` nor a naive `date` pin is right. It exits non-zero when anything is unpinned, so it can gate a reload.
+
+This exists because the two halves were never compared. When the loader stopped inferring types, 66 fields across three DOT-Commercial datasets silently changed type, with no error anywhere; the four datasets that were already fully pinned moved not one field. Run both scripts before configuring, and again before any reload.
+
 ### 1. Dynamic type inference silently drops or breaks documents
 
 Elasticsearch infers a field's type from the first document that carries it. That inference is made under concurrency, so it is not even deterministic across runs — and once made, non-conforming values fail with `document_parsing_exception` and **the whole document is rejected**, not just the field.
@@ -439,7 +452,6 @@ This is a work in progress.
 Framework-level. Dataset-specific items live in each project's README.
 
 1. **Every dataset joins to `carriers.dot_number` across a type boundary.** `carriers` maps `dot_number` as `keyword`, while `crashes`, `inspections`, `auth-history`, `out-of-service-orders`, and `boc3-agents` all map their own as `long`. The enrichment policies work today only through Elasticsearch's implicit coercion between the two. This is not currently broken, but it is the same shape as the `crashes.dot_number` bug already recorded in the closed items below — a `float`/`keyword` mismatch there produced **zero** enrich matches with no error. Any future change to either side's mapping, or a value that does not coerce cleanly, reintroduces that failure silently. Fix by aligning all six datasets on one type, which requires retyping five mappings and a full reload. Surfaced while evaluating a candidate sixth dataset; nobody had noticed it across the whole matching build.
-1. **`csv_load_utils.py` strips leading zeros from identifier columns before Elasticsearch ever sees them, and a `keyword` mapping cannot prevent it.** `pd.read_csv` is called without `dtype`, so an all-numeric column is inferred as `int64` in the loader. Confirmed live: CMS `Facility ID` is mapped `keyword` and CMS facility IDs are zero-padded six digits, yet `010001` indexes as `10001`. Because that column is also the `id_field`, every affected document gets a wrong `_id`, and any join against a source that preserved the padding fails. The same mechanism affects `ZIP Code` (also `keyword`-mapped, also inferred `int64`) and any zero-padded key in a future dataset. Fix by reading with `dtype=str` so Elasticsearch's mappings do the typing — numeric-mapped fields still coerce correctly from strings — or at minimum by reading columns pinned as `keyword` as strings.
 1. Cleaning up on exit
 1. Enrichment policies bound to a live pipeline still cannot be **deleted**, so a policy whose _definition_ needs to change (different source index, different `enrich_fields`) still requires deleting the pipeline by hand. The dangerous half is fixed — the policy is now always re-executed, and one whose definition disagrees with config is refused with a loud error instead of being executed blind — but changing a bound policy's shape remains a manual, ordered operation. A real fix deletes and recreates the dependent pipelines around the policy rebuild.
 1. `phase_enrichment_policies.py` aborts the whole policy-rebuild loop on a missing source index. `execute_policy` sits in a `try` that catches only `BadRequestError`, while `delete_policy` above it catches both `ConflictError` and `NotFoundError`. So if a dated source index is absent — which happens when a run crosses midnight and earlier steps created indexes under yesterday's date — the `NotFoundError` escapes and every policy _after_ the failing one in the list is never rebuilt. Those policies keep serving their previous snapshot, which is the same stale-enrichment failure described above, reached by a different route. It fails loudly with a traceback rather than silently, but an unattended overnight run can still finish with several policies quietly out of date. Fix by catching `NotFoundError` around `execute_policy`, logging which policy and index were missing, and continuing to the next policy.
@@ -452,6 +464,16 @@ Framework-level. Dataset-specific items live in each project's README.
 1. Add support for target specific processors
 
 ### Closed work items
+
+1. **The loader stripped leading zeros before Elasticsearch ever saw them, and a `keyword` mapping could not prevent it.** `pd.read_csv` was called without `dtype`, so pandas typed each column by inspecting it and an all-numeric column became `int64`. Confirmed live at the time: CMS `Facility ID` is pinned `keyword` and CMS facility IDs are zero-padded six digits, yet `010001` indexed as `10001` — in `_source` and, because that column is the `id_field`, in the document `_id` too. Fixed by reading with `dtype=str` so the mappings do the typing; Elasticsearch coerces strings into numeric fields, so nothing is lost by deferring the decision. Rebuilding hospitals afterwards gives `_id` `'010001'`.
+
+   **It reached DOT-Commercial as well, which the item never recorded**: `crashes.report_time` (`0046` → `46`, 124,272 of 333,120 rows), `inspections.insp_start_time` and `insp_end_time`, `county_code` in both (`013` → the float `13.0`, since a NaN in the column also widened it to float64), `upload_dot_number`, and `auth_history.dot_number`, zero-padded eight wide on every row. None is read by a matching signal, so no score ever depended on them, but the data was wrong on disk.
+
+   Two consequences worth keeping, because neither was obvious before the fix was made:
+
+   **Every unpinned field becomes `text`.** Inference used to hide the gap — an unpinned numeric column still arrived numeric, so nobody had to notice it was unpinned. Measured across a capped end-to-end run, 66 fields moved: 21 in carriers, 23 in crashes, 22 in inspections, and **zero** in the four datasets that were already fully pinned. One of the 66 was `report_date`, which `utils/crash_lift.py` documents as depending on a `long` mapping. That is what `scripts/check_mapping_coverage.py` now exists to catch, before a reload rather than after.
+
+   **`float` is 32-bit, and this data exceeds it.** Restoring the old types blindly would have been wrong twice over: `county_code` was `float` _because_ `013` had already become `13.0`, and pinning it back numeric would re-destroy the padding. Worse, integers above 2^24 round to even, so on the pre-fix cluster `term final_status_date=20250919` and `=20250920` returned **the same 39,400 documents**, and querying the 17th returned the 16th's records. The same exposure applied to `mcs150_mileage` (max 6,854,256,455), `crashes.docket_number` and `registration_date`. Not one of the 66 columns contains a decimal point, so all 44 non-padded ones are pinned `long`, 8 zero-padded ones `keyword`, and 14 flags `boolean`. **Prefer `long`/`double` over `float` for anything that might exceed seven significant digits.**
 
 1. Add support for multiple policies in a policy phase.
 1. Add support for --step command line argument to run a single step.
