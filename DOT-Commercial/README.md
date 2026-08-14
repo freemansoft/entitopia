@@ -145,6 +145,25 @@ Dataset-specific. Framework-level items are in the [top-level README](../README.
 
    Kept on the primary check and the guarded comparison: `chameleon-candidates-000001` now points at the reweighted sweep, measured 2026-08-12.
 
+   **The first sweep over a corpus the loader no longer corrupts, measured 2026-08-13, and the reviewable set did not move at all.** Every dataset was reloaded after `csv_load_utils.py` stopped inferring column types (top-level README, closed items): leading zeros are preserved, 66 previously-unpinned fields are typed explicitly, `float` is gone from every mapping, and `auth_history` / `boc3_agents` join through new normalization pipelines. `carriers` was rebuilt against the `nested` mapping. This is a **data** change, not a scoring change — nothing under `matching/` or in `entity-match.json` differs from the run above:
+
+   |                          | before |  after |
+   | ------------------------ | -----: | -----: |
+   | pairs emitted            | 77,237 | 75,537 |
+   | `pairs_ge_070`           |    611 |    584 |
+   | `coherent_share_ge_070`  |   100% |   100% |
+   | `vin_only`               |      1 |      1 |
+   | `vin_only_identity`      |    207 |    208 |
+   | `triage_unbounded`       |    302 |    302 |
+   | `triage_bounded`         |    197 |    197 |
+   | `identical_name_triage`  |    145 |    145 |
+   | `canary`                 |     11 |     11 |
+   | predecessors with a pair | 23,247 | 23,040 |
+
+   `scripts/compare_sweeps.py` exit code 0, no guarded metric regressed. **What did not move is the result.** `triage_bounded`, `identical_name_triage`, `triage_unbounded` and `canary` are identical, and **98.4% of the pair drop (1,673 of 1,700) sits below 0.70** — entirely inside the band this item already calls noise. A reload that changed the type of 66 fields and rewrote two join keys cost no evidence in the tier anyone reviews, which is where damage would show first.
+
+   Read it as _no measurable effect_, not as an improvement: nothing here targeted precision, and the plan's own rule is that a smaller pair population proves nothing by itself. The residual churn is most plausibly the shared-value `ignore_values` lists recomputing against the reloaded corpus, since they are derived from the live index at sweep time. Two controls support the comparison being like-for-like: **48,540 predecessors**, the same figure every run above reports, and analysis fingerprint `0595ca890d9ec6fb`, unchanged — so no part of the movement is differently-analyzed tokens. Recorded as `task-6` in `data/precision/result-indexes.txt`, with the summary in `data/precision/baseline-post-reload.json` as the reference point for future work.
+
    Item 5 has no home elsewhere in this list, so it is recorded here. Items 1, 2 and 3 have now been measured, above; items 4 and 5 have not, and the ordering among the remainder is still an expectation, not a measurement — re-run both validation scripts after each to find out.
 
    **On item 5 specifically, researched 2026-08-08 and recorded so it is not re-researched.** The three ARCHI identifiers are not equally available, and two of them are not available at all:
