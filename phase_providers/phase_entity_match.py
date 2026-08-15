@@ -5,6 +5,7 @@ loud failure. Every bug documented in this repo's README is of that shape: a
 phase logs acknowledged/True, nothing errors, and the output is quietly wrong.
 """
 
+import dataclasses
 import datetime
 import json
 import logging
@@ -33,6 +34,29 @@ DEFAULT_SHARED_LIMIT = 5
 # because every filing service and corporate parent contributes one.
 SUPPRESSION_TERMS_SIZE = 2000
 BULK_THREAD_COUNT = 2
+
+
+@dataclasses.dataclass(frozen=True)
+class RunProvenance:
+    """What every pair from one sweep needs in order to stay interpretable later.
+
+    Grouped into one object because these four values are decided once per run
+    and travel together onto every document; passing them individually pushed
+    _generate_actions past the argument limit and, more to the point, invited a
+    future field to be added to the document but not to the generator that
+    fills it.
+
+    analysis_fingerprint is the stamp read off the *source* index, not one
+    computed from config, because the question a stored pair has to answer is
+    which analyzers actually produced its tokens. None means the source index
+    predates the stamp — unknown, and left off the document rather than
+    guessed.
+    """
+
+    run_id: str
+    generated_at: str
+    source_index: str
+    analysis_fingerprint: str | None = None
 
 
 class PhaseEntityMatch:
@@ -88,15 +112,21 @@ class PhaseEntityMatch:
         )
         selector = PredecessorSelector(self.es, source_index, config.predecessors)
 
-        if not self._preflight(
+        ok, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
-        ):
+        )
+        if not ok:
             return
 
         ctx = self._build_context(source_index, config.signals, config)
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
-        run_id = uuid.uuid4().hex
-        generated_at = datetime.datetime.now(datetime.UTC).isoformat()
+        provenance = RunProvenance(
+            run_id=uuid.uuid4().hex,
+            generated_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            source_index=source_index,
+            analysis_fingerprint=source_fingerprint,
+        )
+        self._stamp_provenance(index_config.index, source_index, source_fingerprint)
 
         stats = {
             "predecessors": 0,
@@ -108,7 +138,7 @@ class PhaseEntityMatch:
 
         actions = self._generate_actions(
             selector, finder, scorer, ctx, index_config.index, max_pairs,
-            run_id, generated_at, stats,
+            provenance, stats,
         )
 
         indexed = 0
@@ -151,17 +181,23 @@ class PhaseEntityMatch:
         Running against an older carriers index that lacks .phonetic_bm would
         make _mtermvectors return nothing for that field, turn every phonetic
         score into None, and produce an empty result set with no error anywhere.
+
+        Returns (ok, source_fingerprint). The fingerprint is returned rather
+        than only logged because it is what the emitted pairs are stamped with,
+        and this is the only place the source index's mapping is read — reading
+        it twice would let the value checked and the value recorded drift apart
+        on a long sweep.
         """
         try:
             self.es.indices.refresh(index=source_index)
         except Exception as e:
             self.logger.error("Cannot refresh source index {}: {}".format(source_index, e))
-            return False
+            return False, None
 
         count = self.es.count(index=source_index)["count"]
         if count == 0:
             self.logger.error("Source index {} is empty; nothing to sweep".format(source_index))
-            return False
+            return False, None
         self.logger.info("Sweeping against {} ({} documents)".format(source_index, count))
 
         mapping = self.es.indices.get_mapping(index=source_index)
@@ -189,8 +225,45 @@ class PhaseEntityMatch:
                 "reload the carriers index with the updated index-settings.json "
                 "and index-mappings.json.".format(source_index, ", ".join(missing))
             )
-            return False
-        return True
+            return False, stored_fingerprint
+        return True, stored_fingerprint
+
+    def _stamp_provenance(self, target_index, source_index, source_fingerprint):
+        """Record on the candidates index which index's tokens its pairs were scored from.
+
+        The pairs are the durable artifact and the fingerprint check above is
+        only a log line, so without this a pair on disk cannot answer "which
+        analyzers produced these scores?" once the run's log is gone — and the
+        published figures that cite a fingerprint stop being verifiable the
+        moment the source index is pruned, silently, because the scores still
+        look fine.
+
+        Stamped here rather than by phase_index_creation because the candidates
+        index has no analyzers of its own to hash; the value is borrowed from
+        the source index, which is why it is stored under source_* keys. A
+        reader that took it for this index's own analysis fingerprint would
+        compare it against the wrong config and report a mismatch on every run.
+
+        Deliberately not fatal: an unstamped index is worse than a stamped one
+        but far better than discarding a sweep that takes hours, and every pair
+        carries the same value in its own document anyway.
+        """
+        meta = {"source_index": source_index}
+        if source_fingerprint:
+            meta["source_analysis_fingerprint"] = source_fingerprint
+        try:
+            self.es.indices.put_mapping(index=target_index, meta=meta)
+            self.logger.info(
+                "Stamped {} with source index {} (analysis fingerprint {})".format(
+                    target_index, source_index, source_fingerprint or "unknown"
+                )
+            )
+        except Exception as e:
+            self.logger.error(
+                "Could not stamp source provenance onto {} ({}); the index will not "
+                "record which analyzers scored its pairs, though the pair "
+                "documents still will".format(target_index, e)
+            )
 
     def _check_analysis_fingerprint(self, source_index, stored, expected):
         """Report, without blocking, that the index's tokens predate the analyzers.
@@ -450,7 +523,7 @@ class PhaseEntityMatch:
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,
-        run_id, generated_at, stats,
+        provenance, stats,
     ):
         """Yield bulk-index actions for every kept pair, one predecessor at a time.
 
@@ -499,15 +572,23 @@ class PhaseEntityMatch:
                     continue
                 seen_pairs.add(key)
                 stats["pairs"] += 1
-                yield self._to_action(pair, target_index, run_id, generated_at)
+                yield self._to_action(pair, target_index, provenance)
 
-    def _to_action(self, pair, target_index, run_id, generated_at):
+    def _to_action(self, pair, target_index, provenance):
         """Build one bulk-index action for a scored pair.
 
         _id is deterministic (predecessor+successor DOT numbers) so re-running
         a sweep overwrites the same pair's document instead of accumulating
         duplicates across runs, matching how index-populate keys carrier
         documents.
+
+        source_index/analysis_fingerprint travel on the document, not only on
+        the index, because a pair is routinely read on its own — pulled by _id,
+        exported into a review sample, quoted in a README — and at that point
+        the index's _meta is not in the reader's hands. A pair with no
+        fingerprint is a pair whose source index predates the stamp, which is
+        unknown rather than wrong, so the field is omitted rather than filled
+        with a placeholder that would later read as a real value.
         """
         pred = pair.predecessor
         succ = pair.successor
@@ -537,9 +618,12 @@ class PhaseEntityMatch:
                 }
                 for c in pair.signals
             ],
-            "run_id": run_id,
-            "generated_at": generated_at,
+            "run_id": provenance.run_id,
+            "generated_at": provenance.generated_at,
+            "source_index": provenance.source_index,
         }
+        if provenance.analysis_fingerprint:
+            document["analysis_fingerprint"] = provenance.analysis_fingerprint
         return {
             "_index": target_index,
             "_id": id_utils.compute_id(
