@@ -180,7 +180,7 @@ Dataset-specific. Framework-level items are in the [top-level README](../README.
 
 1. **Nothing here measures recall, and the one artifact that could is drawn but unread.** Every metric in this file measures a precision-shaped property — temporal coherence, corroboration, the canary shape, crash lift. None can measure recall, because there is no list of known chameleon carriers to check the sweep against, so **a real chameleon the sweep never surfaced is invisible to all of it.** The `within_10pct` tripwires on `vin_only`, `triage_bounded` and `identical_name_triage` are proxies: they detect a change that destroys evidence shapes the sweep already found, not one that fails to find something new.
 
-   `DOT-Commercial/scripts/sample_pairs_for_review.py` exists to make the missing judgment cheap rather than to supply it. A 60-pair stratified sample — 15 in each of `0.35-0.50`, `0.50-0.70`, `0.70-0.90`, `0.90-1.00` — was drawn 2026-08-12 and **all 60 verdicts are still `null`**. Adjudicating them is a human's job: it means weighing a byte-identical name, a shared address and a plausible timeline the way the sanity anchors above do, which is exactly the judgment this project has refused to put behind a heuristic. No subagent, and no automated rule, should fill that field in.
+   `DOT-Commercial/scripts/sample_pairs_for_review.py` exists to make the missing judgment cheap rather than to supply it. A 60-pair stratified sample — 15 in each of `0.35-0.50`, `0.50-0.70`, `0.70-0.90`, `0.90-1.00` — was redrawn 2026-08-15 against the `task-6` index (`chameleon-candidates-2026.08.13-000001`, 75,537 pairs scanned, scores spanning 0.350315 to 0.99926) and **all 60 verdicts are `null`**. Adjudicating them is a human's job: it means weighing a byte-identical name, a shared address and a plausible timeline the way the sanity anchors above do, which is exactly the judgment this project has refused to put behind a heuristic. No subagent, and no automated rule, should fill that field in.
 
    The sample file is gitignored under `*/data/`, so **do not treat it as the artifact of record** — regenerate it, which is why the sampler takes a seed and shuffles deterministically:
 
@@ -189,7 +189,7 @@ Dataset-specific. Framework-level items are in the [top-level README](../README.
      --pairs-index "$(awk '/^task-6 /{print $2}' DOT-Commercial/data/precision/result-indexes.txt)"
    ```
 
-   The same seed against the same index reproduces the same 60 pairs, which is also what lets a second reviewer check agreement — the first thing anyone will want to do with a small hand-labelled set. Note the sample on disk was drawn against the `task-4` index; the command above draws against `task-6`, the post-reload sweep, which is the current state. Whatever precision-at-k comes out of the review belongs in this item, beside the figures it is finally able to qualify.
+   The same seed against the same index reproduces the same 60 pairs, which is also what lets a second reviewer check agreement — the first thing anyone will want to do with a small hand-labelled set. That is also why the redraw above cost nothing: the sample it replaced held no verdicts, and re-running the command reproduces the current one exactly. Whatever precision-at-k comes out of the review belongs in this item, beside the figures it is finally able to qualify.
 
 ### Closed work items
 
