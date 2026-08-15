@@ -7,6 +7,20 @@ reindex, and every address score is computed from stale tokens with no error
 anywhere — the silent-wrong-output failure this repo keeps hitting. Callers use
 this to make that mismatch visible; it is deliberately not a mechanism for
 preventing it.
+
+**It hashes tokenization and nothing else, which is narrower than it reads.**
+Outside the hash: `normalizer` bindings on keyword fields, ingest pipelines,
+enrichment policies, and the whole of `entity-match.json` — every weight,
+threshold and `min_signals`. So a matching fingerprint means the tokens are
+current. It does **not** mean a pair count is reproducible, because every
+scoring knob that decides how many pairs come out lives outside it. Quoting an
+unchanged fingerprint as evidence that two sweeps are comparable is only ever
+an argument about tokens; anything else about those runs has to be established
+separately.
+
+One more trap for anyone comparing stamps across history: commit `d51cca3`
+changed the algorithm itself, folding in mapping bindings. Hashes stamped
+before and after it are not comparable even when the analyzers are identical.
 """
 
 import hashlib
