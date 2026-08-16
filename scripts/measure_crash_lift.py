@@ -51,9 +51,14 @@ def successor_scores(client, pairs_index, limit=None):
     taken in Elasticsearch via a composite aggregation, which pages
     deterministically and never splits a bucket across pages.
 
-    Keys are strings because `successor.dot_number` is `keyword` here but
-    `long` on the crashes index; normalizing at every boundary is what stops
-    the two sides silently intersecting to nothing.
+    Keys are strings because this script intersects DOT numbers drawn from
+    three indexes, and normalizing at every boundary is what stops two sides
+    silently intersecting to nothing. That mattered more when `dot_number` was
+    `keyword` here and `long` on the crashes index; the six datasets have since
+    been aligned on the canonical string, so the coercion this defends against
+    should no longer arise — the normalization stays because a composite
+    aggregation returns whatever the mapping says, and the cost of being wrong
+    is an empty intersection reported as a real measurement.
     """
     scores = {}
     after = None

@@ -32,21 +32,25 @@ def compute_id(record, id_field):
     An all-empty *composite* key fails the other way and is caught by the same
     fallback: joining empties yields one constant string, so every such row
     would collapse onto a single document rather than each getting its own.
+
+    A *partially* empty composite key is still discriminating, so it keeps the
+    join and renders the empty components as nothing. It used to render an
+    absent one as `str(None)`, which put a Python repr in the key space and,
+    worse, gave a row whose column genuinely held the string `"None"` the same
+    `_id` as one where the column was missing — two different rows silently
+    overwriting each other. Blankness is judged by `_is_blank` here and for the
+    all-empty fallback above, so a component cannot be blank enough to hash the
+    row but not blank enough to render as empty.
     """
     fields = id_field if isinstance(id_field, list) else [id_field]
     values = [record[field] for field in fields]
-    # Emptiness is judged on the values, not on the joined string, so that the
-    # join itself is left exactly as it was. A partially empty composite key
-    # renders a None component as the literal "None" (56.1% of the live
-    # out-of-service-orders index is keyed that way, since rescind_date is
-    # usually absent); rendering it as "" instead would be tidier but would
-    # re-key 221,812 existing documents into duplicates on the next reload
-    # into an existing index. Only an *entirely* empty key is unusable, and
-    # that one has no documents to preserve.
+    # Emptiness is judged on the values rather than on the joined string,
+    # because only an *entirely* empty key is unusable; a partially empty one
+    # still addresses a document and hashing it would throw away a usable key.
     if all(_is_blank(value) for value in values):
         return blank_key_id(record)
     if isinstance(id_field, list):
-        return "|".join(str(value) for value in values)
+        return "|".join("" if _is_blank(value) else str(value) for value in values)
     return values[0]
 
 

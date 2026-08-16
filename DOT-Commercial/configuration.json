@@ -52,6 +52,12 @@
       ]
     },
     {
+      "name": "out-of-service-orders-ingestion-setup",
+      "phases": [
+        "pipelines"
+      ]
+    },
+    {
       "name": "out-of-service-orders",
       "phases": [
         "index-create",

@@ -189,7 +189,7 @@ Dataset-specific. Framework-level items are in the [top-level README](../README.
      --pairs-index "$(awk '/^task-6 /{print $2}' DOT-Commercial/data/precision/result-indexes.txt)"
    ```
 
-   The same seed against the same index reproduces the same 60 pairs, which is also what lets a second reviewer check agreement — the first thing anyone will want to do with a small hand-labelled set. That is also why the redraw above cost nothing: the sample it replaced held no verdicts, and re-running the command reproduces the current one exactly. Whatever precision-at-k comes out of the review belongs in this item, beside the figures it is finally able to qualify.
+   The same seed against the same index reproduces the same 60 pairs, which is also what lets a second reviewer check agreement — the first thing anyone will want to do with a small hand-labelled set. That is also why the redraw above cost nothing: the sample it replaced held no verdicts, and re-running the command reproduces the current one exactly. That last claim is now tested rather than asserted — a redraw against the same index on 2026-08-15 produced a byte-identical file — which matters because it is the only thing making it safe to regenerate a file that may by then hold someone's hand-written verdicts. Whatever precision-at-k comes out of the review belongs in this item, beside the figures it is finally able to qualify.
 
 ### Closed work items
 
@@ -264,23 +264,27 @@ Double-metaphone collides spelling variants exactly (`SMITH`/`SMYTH`); Beider-Mo
 
 ## Processing Steps
 
-This data set is loaded and configured in 11 steps.
+This data set is loaded and configured in 15 steps. Every dataset carriers enriches from is preceded by its own `-ingestion-setup` step, whose only job is the pipeline that normalizes `dot_number` into the canonical string the join compares — see the framework README's item on that contract for why each one exists and what happens when one is missing.
 
-1. `crashes-ingestion-setup` - create a pipeline that coerces `dot_number` to a real integer in `_source` (fixes the enrich-match bug described in the design spec)
+1. `crashes-ingestion-setup` - create a pipeline that normalizes `dot_number` in `_source` (fixes the enrich-match bug described in the design spec)
 1. `crashes` - create an index and load the crash data
 1. `inspections-per-unit` - create an index and load the per-unit VIN/vehicle data (FMCSA `wt8s-2hbx`)
-1. `inspections-ingestion-setup` - create the enrichment index on `inspections-per-unit` and an ingestion pipeline that uses it
+1. `inspections-ingestion-setup` - create the enrichment index on `inspections-per-unit`, and an ingestion pipeline that uses it and normalizes `dot_number`
 1. `inspections` - create an index and load the vehicle inspections data, enriched with per-unit VIN data via the pipeline from `inspections-ingestion-setup`
+1. `auth-history-ingestion-setup` - create a pipeline that normalizes `dot_number`, which FMCSA zero-pads to eight characters in this file
 1. `auth-history` - create an index and load authority grant/revocation history (FMCSA `9mw4-x3tu`)
+1. `out-of-service-orders-ingestion-setup` - create a pipeline that normalizes `dot_number`
 1. `out-of-service-orders` - create an index and load out-of-service order history (FMCSA `p2mt-9ige`)
+1. `boc3-agents-ingestion-setup` - create a pipeline that normalizes `dot_number`, zero-padded in this file as well
 1. `boc3-agents` - create an index and load BOC-3 legal process agent history (FMCSA `2emp-mxtb`)
 1. `carriers-ingestion-setup` - create the enrichment indexes on `crashes`, `inspections`, `auth-history`, `out-of-service-orders`, and `boc3-agents`, and an ingestion pipeline that uses them
 1. `carriers` - create an index and load the carriers data using the pipeline to enrich `carriers` with data from `crashes`, `inspections`, `auth-history`, `out-of-service-orders`, and `boc3-agents`
 1. `chameleon-detection` - sweep shut-down carriers for likely successors and write ranked suspect pairs to `chameleon-candidates`
+1. `chameleon-validation` - create the index the validation scripts persist their measured runs to
 
 We could have combined some of the setup and indexing steps and used the phase boundaries but this seemed to be an easier partitioning scheme to use just needing the `--step` parameter for partial work
 
-The first ten steps **load data**; `chameleon-detection` **looks for fraud**. They are independent: the sweep reads only `carriers-000001` and touches no CSV, so retuning thresholds, weights, or seeding means rerunning that one step — no reload. Conversely, a defect in the load is invisible to the sweep, which will happily score whatever is in the index and report a confident result.
+The first thirteen steps **load data**; `chameleon-detection` **looks for fraud**. They are independent: the sweep reads only `carriers-000001` and touches no CSV, so retuning thresholds, weights, or seeding means rerunning that one step — no reload. Conversely, a defect in the load is invisible to the sweep, which will happily score whatever is in the index and report a confident result.
 
 **Refresh before every `*-ingestion-setup` step.** Enrich policy execution only sees _searchable_ documents, and Elasticsearch's 1-second default refresh interval means documents indexed moments earlier are invisible. Running the whole project in one `--project=DOT-Commercial` call reproduces this as a timing-dependent silent failure: every phase logs success and the carriers come out with no enrichment at all.
 
@@ -354,8 +358,11 @@ flowchart LR
         per-unit-step[inspections-per-unit]
         inspections-ingestion-setup-step[inspections ingestion setup]
         inspections-step[inspections]
+        auth-history-ingestion-setup-step[auth-history ingestion setup]
         auth-history-step[auth-history]
+        oos-ingestion-setup-step[out-of-service-orders ingestion setup]
         oos-step[out-of-service-orders]
+        boc3-ingestion-setup-step[boc3-agents ingestion setup]
         boc3-step[boc3-agents]
         carriers-step[carriers]
         carriers-ingestion-setup-step[carriers ingestion setup]
@@ -405,6 +412,21 @@ flowchart LR
         inspections-pipeline
     end
 
+    subgraph auth-history-pipelines[ auth-history pipelines]
+        direction LR
+        auth-history-pipeline
+    end
+
+    subgraph oos-pipelines[ out-of-service-orders pipelines]
+        direction LR
+        oos-pipeline
+    end
+
+    subgraph boc3-pipelines[ boc3-agents pipelines]
+        direction LR
+        boc3-pipeline
+    end
+
     subgraph carriers-pipelines[ carriers pipelines]
         direction LR
         enriching-pipeline
@@ -417,11 +439,11 @@ flowchart LR
     inspections-step -->|index-map| inspections-index
     inspections-step -->|index-populate| inspections-pipeline
     auth-history-step -->|index-map| auth-history-index
-    auth-history-step -->|index-populate| auth-history-index
+    auth-history-step -->|index-populate| auth-history-pipeline
     oos-step -->|index-map| oos-index
-    oos-step -->|index-populate| oos-index
+    oos-step -->|index-populate| oos-pipeline
     boc3-step -->|index-map| boc3-index
-    boc3-step -->|index-populate| boc3-index
+    boc3-step -->|index-populate| boc3-pipeline
     carriers-step --> | index-map | carriers-index
     carriers-step --> | index-populate| enriching-pipeline
 
@@ -435,6 +457,9 @@ flowchart LR
 
     crashes-pipeline -->|populate| crashes-index
     inspections-pipeline -->|populate| inspections-index
+    auth-history-pipeline -->|populate| auth-history-index
+    oos-pipeline -->|populate| oos-index
+    boc3-pipeline -->|populate| boc3-index
 
     per-unit-enrichment-index -.->|enrich-policies| inspections-pipeline
     inspections-ingestion-setup-step -.->|enrichment-policies| per-unit-enrichment-index
@@ -448,6 +473,9 @@ flowchart LR
     enriching-pipeline -->|populate| carriers-index
 
     crashes-ingestion-setup-step -.->|"pipelines (create)"| crashes-pipeline
+    auth-history-ingestion-setup-step -.->|"pipelines (create)"| auth-history-pipeline
+    oos-ingestion-setup-step -.->|"pipelines (create)"| oos-pipeline
+    boc3-ingestion-setup-step -.->|"pipelines (create)"| boc3-pipeline
 
     carriers-ingestion-setup-step -.->|enrichment-policies| crashes-enrichment-index
     carriers-ingestion-setup-step -.->|enrichment-policies| inspections-enrichment-index

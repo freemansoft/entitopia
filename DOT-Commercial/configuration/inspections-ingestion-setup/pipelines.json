@@ -2,6 +2,13 @@
   "name": "inspections-pipeline-000001",
   "processors": [
     {
+      "script": {
+        "description": "Normalize dot_number into the canonical unpadded string carriers uses, so inspections-enrichment-policy can join. inspections.csv is not zero-padded today, so this converts nothing and is deliberately kept anyway: the join compares the string an enrich index renders from _source, and until this existed inspections was relying on FMCSA never padding this column, with a silent zero-match as the failure. The same reliance broke auth-history and boc3-agents (546,042 and 565,299 enriched documents to zero, no error) once the loader stopped discarding padding for them. Identical script to the other four dot_number pipelines.",
+        "source": "if (ctx.dot_number == null) { return; } String raw = String.valueOf(ctx.dot_number); int dot = raw.indexOf('.'); if (dot >= 0) { raw = raw.substring(0, dot); } if (raw.isEmpty()) { return; } ctx.dot_number = String.valueOf(Long.parseLong(raw));",
+        "ignore_failure": true
+      }
+    },
+    {
       "enrich": {
         "description": "slipstream unit-level VIN/vehicle data",
         "policy_name": "inspections-per-unit-enrichment-policy",

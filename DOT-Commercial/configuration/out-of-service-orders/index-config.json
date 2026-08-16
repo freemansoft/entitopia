@@ -3,6 +3,7 @@
   "alias": "out-of-service-orders-000001",
   "source": "out_of_service_orders.csv",
   "id_field": ["dot_number", "oos_date", "oos_reason", "status", "rescind_date"],
+  "pipeline": "out-of-service-orders-pipeline-000001",
   "num_rows": null,
   "skip_rows": 0
 }
