@@ -32,16 +32,32 @@ class PhaseIndexingPopulate:
         ingestion_pipeline,
         id_field,
         num_rows,
+        blank_keys=None,
     ):
+        """Yield one bulk action per CSV row.
+
+        `blank_keys` is a mutable counter the caller reads after the load,
+        rather than a return value, because this is a generator consumed by
+        parallel_bulk — there is no other moment at which the count and the
+        caller are both in scope. It exists so a keyless row is reported once
+        with a total instead of either being silent (the original bug) or
+        emitting a log line per row on a dataset where the column is mostly
+        empty.
+        """
         records = data.to_dict(orient="records")
         for record in islice(records, num_rows):
             # support _id being specified and not, pipeline used and not
             # seems cumbersome but is clear
             try:
-                doc = {"_id": self.compute_id(record, id_field), "_source": record}
+                doc_id = self.compute_id(record, id_field)
+                if blank_keys is not None and str(doc_id).startswith(
+                    id_utils.BLANK_KEY_PREFIX
+                ):
+                    blank_keys["count"] += 1
+                doc = {"_id": doc_id, "_source": record}
                 if ingestion_pipeline:
                     doc = {
-                        "_id": self.compute_id(record, id_field),
+                        "_id": doc_id,
                         "_source": record,
                         "pipeline": ingestion_pipeline,
                     }
@@ -122,6 +138,7 @@ class PhaseIndexingPopulate:
                 id_field = index_config.id_field
 
             failure_count = 0
+            blank_keys = {"count": 0}
             for success, response in parallel_bulk(
                 client=self.es,
                 thread_count=8,
@@ -131,6 +148,7 @@ class PhaseIndexingPopulate:
                     pipeline,
                     id_field,
                     num_rows,
+                    blank_keys,
                 ),
                 raise_on_error=False,
                 raise_on_exception=False,
@@ -140,6 +158,25 @@ class PhaseIndexingPopulate:
                     if failure_count <= MAX_LOGGED_FAILURES:
                         self.logger.error("Failed to index document: {}".format(response))
                 prog_meter.update(1)
+
+            # Warned rather than raised: the fallback id is deterministic, so
+            # the row is loaded correctly and a reload overwrites it. What the
+            # operator still has to decide is whether a keyless row belongs in
+            # the source at all, and that needs the count and the field name.
+            if blank_keys["count"]:
+                self.logger.warning(
+                    "id_field {} was blank on {} of {} rows loaded into {}; those rows "
+                    "were keyed by a hash of the whole row ('{}' prefix) so a reload "
+                    "overwrites them instead of appending a fresh copy each "
+                    "run. Byte-identical keyless rows collapse onto one "
+                    "document.".format(
+                        id_field,
+                        blank_keys["count"],
+                        len(data),
+                        index_config.index,
+                        id_utils.BLANK_KEY_PREFIX,
+                    )
+                )
 
             if failure_count:
                 self.logger.error(
