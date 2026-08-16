@@ -1,0 +1,12 @@
+{
+  "name": "out-of-service-orders-pipeline-000001",
+  "processors": [
+    {
+      "script": {
+        "description": "Normalize dot_number into the canonical unpadded string carriers uses, so out-of-service-orders-enrichment-policy can join. This dataset had no pipeline at all, which is why it was the one putting an untouched CSV string into its enrich index while crashes, auth-history and boc3-agents put a JSON integer into theirs -- two shapes that happen to agree digit for digit, which is what hid that nothing was enforcing the join key. out_of_service_orders.csv is not zero-padded today, so this converts nothing; it exists so that the day FMCSA pads it, or a NaN widens the column to float64, the value is repaired rather than silently ceasing to match. The predecessor selector reads this join, so a silent zero here empties the sweep's input rather than merely losing a field. Identical script to the other four dot_number pipelines.",
+        "source": "if (ctx.dot_number == null) { return; } String raw = String.valueOf(ctx.dot_number); int dot = raw.indexOf('.'); if (dot >= 0) { raw = raw.substring(0, dot); } if (raw.isEmpty()) { return; } ctx.dot_number = String.valueOf(Long.parseLong(raw));",
+        "ignore_failure": true
+      }
+    }
+  ]
+}

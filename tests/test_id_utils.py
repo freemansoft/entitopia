@@ -74,10 +74,29 @@ def test_partially_blank_composite_key_is_kept_as_is():
     assert got == "1||3"
 
 
-def test_a_none_component_still_renders_as_the_literal_None():
-    # Not a nicety being preserved for its own sake: 56.1% of the live
-    # out-of-service-orders index (221,812 of 395,269 documents) is keyed this
-    # way, and rendering None as "" instead would re-key every one of them into
-    # a duplicate on the next reload into an existing index.
+def test_a_missing_component_renders_as_empty_not_as_the_repr_None():
+    # A Python repr must not reach the key space: `_id` is an operator-facing
+    # value, quoted in review samples and queried by hand, and "None" reads as
+    # data rather than as absence. An empty string component already rendered
+    # this way (see the test above), so this is what makes the two agree.
     got = id_utils.compute_id({"a": "1", "b": None, "c": "3"}, ["a", "b", "c"])
-    assert got == "1|None|3"
+    assert got == "1||3"
+
+
+def test_a_genuine_None_string_does_not_collide_with_a_missing_component():
+    # The reason the repr mattered rather than merely being ugly: while the
+    # missing component rendered as "None", a row whose column really holds the
+    # string "None" was indistinguishable from one where it was absent, and the
+    # two silently overwrote each other.
+    missing = id_utils.compute_id({"a": "1", "b": None, "c": "3"}, ["a", "b", "c"])
+    literal = id_utils.compute_id({"a": "1", "b": "None", "c": "3"}, ["a", "b", "c"])
+    assert missing != literal
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_every_blank_component_renders_the_same_way(blank):
+    # Blankness is judged by one rule (_is_blank) for the all-blank fallback,
+    # so the partial case has to use the same one or a component can be blank
+    # enough to hash the row but not blank enough to render as empty.
+    got = id_utils.compute_id({"a": "1", "b": blank, "c": "3"}, ["a", "b", "c"])
+    assert got == "1||3"

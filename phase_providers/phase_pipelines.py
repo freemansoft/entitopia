@@ -50,4 +50,16 @@ class PhasePipelines:
                 )
 
             except BadRequestError as e:
-                self.logger.info("Failed to update pipeline: {} ".format(e))
+                # Raise rather than log: a refused pipeline does not stop the
+                # load that follows it, and that load succeeds and looks right.
+                # A dot_number pipeline only normalizes a join key, so losing it
+                # costs no documents and no errors -- just an enrichment that
+                # matches nothing, the failure that twice emptied carriers'
+                # auth_history and boc3_agents without a single ERROR line.
+                # Same call the mapping and policy phases now make, for the same
+                # reason: the phase cannot fix this, so it must not hide it.
+                raise RuntimeError(
+                    "Elasticsearch refused pipeline {}: {}".format(
+                        pipeline_config.name, e
+                    )
+                ) from e

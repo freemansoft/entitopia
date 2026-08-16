@@ -3,7 +3,7 @@
   "mappings": {
     "properties": {
       "dot_number": {
-        "type": "long"
+        "type": "keyword"
       },
       "docket_number": {
         "type": "keyword"
