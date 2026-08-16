@@ -38,10 +38,28 @@ BULK_THREAD_COUNT = 2
 
 @dataclasses.dataclass(frozen=True)
 class RunProvenance:
-    """What every pair from one sweep needs in order to stay interpretable later.
+    """Where a stored pair came from: which sweep, when, and over which tokens.
 
-    Grouped into one object because these four values are decided once per run
-    and travel together onto every document; passing them individually pushed
+    Provenance in the archival sense — the record of origin. A pair carries it
+    so that a reader months later can still say what its score means without
+    the run that produced it being reconstructable. On its own a total_score of
+    0.83 is unfalsifiable: nothing on the document says which sweep emitted it,
+    whether the index behind it still exists, or whether today's analyzers
+    would even produce those tokens. Each field answers one of the questions a
+    stored pair actually gets asked:
+
+    - run_id — which sweep emitted it, so its siblings can be found and two
+      runs compared. One value per sweep, not per pair.
+    - generated_at — when that sweep ran, since the corpus moves underneath.
+    - source_index — which index it was swept from, resolved to the concrete
+      name. See for_sweep below: the configured name is usually an alias, and
+      an alias does not pin anything.
+    - source_alias — the name configuration asked for, when that differs.
+    - analysis_fingerprint — which analyzers tokenized that index, since a name
+      or address score means nothing apart from the tokens behind it.
+
+    Grouped into one object because these values are decided once per run and
+    travel together onto every document; passing them individually pushed
     _generate_actions past the argument limit and, more to the point, invited a
     future field to be added to the document but not to the generator that
     fills it.
@@ -56,7 +74,38 @@ class RunProvenance:
     run_id: str
     generated_at: str
     source_index: str
+    source_alias: str | None = None
     analysis_fingerprint: str | None = None
+
+    @classmethod
+    def for_sweep(cls, configured_index, resolved_index, analysis_fingerprint):
+        """Identity for one sweep, keyed to the index actually read.
+
+        entity-match.json names `carriers-000001`, which is an **alias**, and
+        every rebuild repoints it at a new dated index. Stamping that name
+        would answer "which index produced this pair?" with something that
+        means a different index next month — the exact ambiguity the stamp
+        exists to remove. The concrete name comes free from the mapping read in
+        _preflight, so it is what lands on the document, with the configured
+        name kept alongside as source_alias.
+
+        source_alias is omitted when the two agree, rather than duplicated: a
+        project may legitimately configure a concrete index, and a field that
+        merely repeats its neighbour trains readers to skip both.
+
+        Falls back to the configured name when resolution produced nothing —
+        an unresolvable source index is a wrong answer, but a blank one is
+        worse, since it leaves a pair unable to say even which name was asked
+        for.
+        """
+        resolved = resolved_index or configured_index
+        return cls(
+            run_id=uuid.uuid4().hex,
+            generated_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            source_index=resolved,
+            source_alias=configured_index if resolved != configured_index else None,
+            analysis_fingerprint=analysis_fingerprint,
+        )
 
 
 class PhaseEntityMatch:
@@ -112,7 +161,7 @@ class PhaseEntityMatch:
         )
         selector = PredecessorSelector(self.es, source_index, config.predecessors)
 
-        ok, source_fingerprint = self._preflight(
+        ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
         )
         if not ok:
@@ -120,13 +169,10 @@ class PhaseEntityMatch:
 
         ctx = self._build_context(source_index, config.signals, config)
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
-        provenance = RunProvenance(
-            run_id=uuid.uuid4().hex,
-            generated_at=datetime.datetime.now(datetime.UTC).isoformat(),
-            source_index=source_index,
-            analysis_fingerprint=source_fingerprint,
+        provenance = RunProvenance.for_sweep(
+            source_index, resolved_index, source_fingerprint
         )
-        self._stamp_provenance(index_config.index, source_index, source_fingerprint)
+        self._stamp_provenance(index_config.index, provenance)
 
         stats = {
             "predecessors": 0,
@@ -182,28 +228,46 @@ class PhaseEntityMatch:
         make _mtermvectors return nothing for that field, turn every phonetic
         score into None, and produce an empty result set with no error anywhere.
 
-        Returns (ok, source_fingerprint). The fingerprint is returned rather
-        than only logged because it is what the emitted pairs are stamped with,
-        and this is the only place the source index's mapping is read — reading
-        it twice would let the value checked and the value recorded drift apart
-        on a long sweep.
+        Returns (ok, resolved_index, source_fingerprint). Both are returned
+        rather than only logged because they are what the emitted pairs are
+        stamped with, and this is the only place the source index's mapping is
+        read — reading it twice would let the values checked and the values
+        recorded drift apart on a long sweep.
         """
         try:
             self.es.indices.refresh(index=source_index)
         except Exception as e:
             self.logger.error("Cannot refresh source index {}: {}".format(source_index, e))
-            return False, None
+            return False, None, None
 
         count = self.es.count(index=source_index)["count"]
         if count == 0:
             self.logger.error("Source index {} is empty; nothing to sweep".format(source_index))
-            return False, None
+            return False, None, None
         self.logger.info("Sweeping against {} ({} documents)".format(source_index, count))
 
         mapping = self.es.indices.get_mapping(index=source_index)
         properties = {}
         stored_fingerprint = None
-        for index_mapping in mapping.body.values():
+        resolved_index = None
+        # The response is keyed by *concrete* index name even when queried
+        # through an alias, which is the only place that name is available
+        # without a second round trip — and the configured name is normally an
+        # alias, so it is the concrete one the pairs need.
+        if len(mapping.body) > 1:
+            # A source alias fanning out over several indexes is the accumulated
+            # -alias bug the creation phase's retain_aliases flag exists to
+            # avoid, not a supported configuration: the sweep reads all of them
+            # but can only attribute its pairs to one.
+            self.logger.warning(
+                "Source {} resolves to {} indexes ({}); pairs will be attributed to "
+                "the first alone. An alias spanning several indexes is normally "
+                "left over from a previous load.".format(
+                    source_index, len(mapping.body), ", ".join(sorted(mapping.body))
+                )
+            )
+        for concrete_index, index_mapping in mapping.body.items():
+            resolved_index = concrete_index
             properties = index_mapping.get("mappings", {}).get("properties", {})
             stored_fingerprint = (
                 index_mapping.get("mappings", {}).get("_meta", {}).get("analysis_fingerprint")
@@ -225,10 +289,10 @@ class PhaseEntityMatch:
                 "reload the carriers index with the updated index-settings.json "
                 "and index-mappings.json.".format(source_index, ", ".join(missing))
             )
-            return False, stored_fingerprint
-        return True, stored_fingerprint
+            return False, resolved_index, stored_fingerprint
+        return True, resolved_index, stored_fingerprint
 
-    def _stamp_provenance(self, target_index, source_index, source_fingerprint):
+    def _stamp_provenance(self, target_index, provenance):
         """Record on the candidates index which index's tokens its pairs were scored from.
 
         The pairs are the durable artifact and the fingerprint check above is
@@ -246,16 +310,20 @@ class PhaseEntityMatch:
 
         Deliberately not fatal: an unstamped index is worse than a stamped one
         but far better than discarding a sweep that takes hours, and every pair
-        carries the same value in its own document anyway.
+        carries the same values in its own document anyway.
         """
-        meta = {"source_index": source_index}
-        if source_fingerprint:
-            meta["source_analysis_fingerprint"] = source_fingerprint
+        meta = {"source_index": provenance.source_index}
+        if provenance.source_alias:
+            meta["source_alias"] = provenance.source_alias
+        if provenance.analysis_fingerprint:
+            meta["source_analysis_fingerprint"] = provenance.analysis_fingerprint
         try:
             self.es.indices.put_mapping(index=target_index, meta=meta)
             self.logger.info(
                 "Stamped {} with source index {} (analysis fingerprint {})".format(
-                    target_index, source_index, source_fingerprint or "unknown"
+                    target_index,
+                    provenance.source_index,
+                    provenance.analysis_fingerprint or "unknown",
                 )
             )
         except Exception as e:
@@ -582,13 +650,13 @@ class PhaseEntityMatch:
         duplicates across runs, matching how index-populate keys carrier
         documents.
 
-        source_index/analysis_fingerprint travel on the document, not only on
-        the index, because a pair is routinely read on its own — pulled by _id,
-        exported into a review sample, quoted in a README — and at that point
-        the index's _meta is not in the reader's hands. A pair with no
-        fingerprint is a pair whose source index predates the stamp, which is
-        unknown rather than wrong, so the field is omitted rather than filled
-        with a placeholder that would later read as a real value.
+        The provenance fields travel on the document, not only on the index,
+        because a pair is routinely read on its own — pulled by _id, exported
+        into a review sample, quoted in a README — and at that point the index's
+        _meta is not in the reader's hands. A pair with no fingerprint is a pair
+        whose source index predates the stamp, which is unknown rather than
+        wrong, so the field is omitted rather than filled with a placeholder
+        that would later read as a real value.
         """
         pred = pair.predecessor
         succ = pair.successor
@@ -622,6 +690,8 @@ class PhaseEntityMatch:
             "generated_at": provenance.generated_at,
             "source_index": provenance.source_index,
         }
+        if provenance.source_alias:
+            document["source_alias"] = provenance.source_alias
         if provenance.analysis_fingerprint:
             document["analysis_fingerprint"] = provenance.analysis_fingerprint
         return {

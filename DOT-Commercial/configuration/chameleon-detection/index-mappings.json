@@ -9,6 +9,7 @@
       "generated_at": { "type": "date" },
       "run_id": { "type": "keyword" },
       "source_index": { "type": "keyword" },
+      "source_alias": { "type": "keyword" },
       "analysis_fingerprint": { "type": "keyword" },
       "predecessor": {
         "properties": {
