@@ -42,10 +42,7 @@ _SHIPPED = list(_shipped_config_files())
 
 @pytest.mark.parametrize("path", _SHIPPED, ids=lambda p: str(p.relative_to(_ROOT)))
 def test_shipped_config_validates(path):
-    kind = _KIND_BY_FILENAME[path.name]
-    if kind == "entity-match":
-        pytest.xfail("entity-match schema arrives in Task 3 of this plan")
-    assert config_schema.validate_file(kind, str(path)) == []
+    assert config_schema.validate_file(_KIND_BY_FILENAME[path.name], str(path)) == []
 
 
 def test_the_sweep_reaches_every_shipped_file():

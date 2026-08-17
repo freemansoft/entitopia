@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/entity-match.schema.json",
+  "title": "entitopia entity-match",
+  "description": "The analysis configuration: which records are swept, what counts as evidence, and what a pair must clear to be emitted. This is where an operator writing a new project spends their time, and where a typo is most expensive — a signal that silently fails to fire costs recall with nothing reported.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_index", "entity", "population", "candidates", "signals", "scoring"],
+  "properties": {
+    "source_index": {
+      "type": "string",
+      "description": "Usually an alias. The sweep resolves it to the concrete index and stamps that on every pair, because an alias means a different index after the next rebuild."
+    },
+    "source_settings_step": {
+      "type": "string",
+      "description": "Step whose index-settings define the analyzers this config's subfields depend on. Used to compute the expected analysis fingerprint."
+    },
+
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "The column this project calls its entity's identity. Framework code cannot know it, which is why it is configuration."
+        },
+        "key_label": {
+          "type": "string",
+          "description": "Optional second name for the same value on the emitted pair, so existing project scripts and committed baselines keep working after the generic entity_key was introduced."
+        },
+        "summary_fields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Human-facing fields carried onto each side of a pair. A field named here but absent from a record is emitted as null, so a reviewer can tell 'asked for and empty' from 'never asked for'."
+        }
+      }
+    },
+
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shutdown_date", "registration_date"],
+      "description": "OPTIONAL. Its absence is how a duplicate-detection project is expressed: a dataset with no dated events can find that two records resemble each other but cannot claim one succeeded the other. Present, it is the single source of the dates both the temporal signal and the emitted gap_days are measured between — they used to hold separate copies with nothing checking they agreed.",
+      "properties": {
+        "shutdown_date": { "type": "string" },
+        "registration_date": { "type": "string" },
+        "shutdown_reason": { "type": "string" }
+      }
+    },
+
+    "population": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "enum": ["lifecycle", "all-entities"],
+          "description": "lifecycle selects records carrying a shutdown-shaped event. all-entities sweeps everything and makes no succession claim."
+        },
+        "sort_field": {
+          "type": "string",
+          "description": "Stable total order for search_after paging under a point-in-time. A sort on a field the index lacks fails the search outright, hours into a sweep."
+        },
+        "max_records": { "type": ["integer", "null"], "minimum": 1 },
+        "selector": {
+          "type": "string",
+          "description": "Which named selector defines the population. Required in lifecycle mode; ignored in all-entities."
+        },
+        "selectors": {
+          "type": "object",
+          "description": "Named population queries, assembled from a closed clause menu. Kept closed and code-backed rather than admitting arbitrary Elasticsearch query DSL.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "maxProperties": 1,
+            "description": "Exactly one clause kind. Two would be ambiguous, and silently picking one would change the swept population without anything reporting it.",
+            "properties": {
+              "nested-exists": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path", "require"],
+                "description": "Records having a SINGLE array element matching every filter. One primitive rather than three composable ones because flattening is a known defect: under an object mapping, an ACTIVE 2015 order and an INACTIVE 2022 order jointly satisfied filters no single order met, and the temporal signal then reported a date from an element the selector never intended to match.",
+                "properties": {
+                  "path": { "type": "string" },
+                  "require": { "type": "string" },
+                  "terms": {
+                    "type": "object",
+                    "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                  },
+                  "range": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "gte": { "type": "string" },
+                        "gt": { "type": "string" },
+                        "lte": { "type": "string" },
+                        "lt": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              },
+              "term": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 1,
+                "additionalProperties": { "type": ["string", "number", "boolean"] }
+              },
+              "all": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "any": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            }
+          }
+        }
+      }
+    },
+
+    "candidates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_candidates": { "type": "integer", "minimum": 1 },
+        "seed_signals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Signal TYPES trusted to retrieve, not merely to score. This sets the ceiling on recall: a pair the seed query never returns cannot be scored at any threshold. Declining to seed on a rare, decisive field silently caps recall at zero for an entire fraud profile."
+        }
+      }
+    },
+
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type", "weight"],
+        "properties": {
+          "type": {
+            "enum": [
+              "name-phonetic",
+              "name-token",
+              "address",
+              "exact-identifier",
+              "rarity-weighted-value",
+              "temporal",
+              "shared-token"
+            ],
+            "description": "Must be a name matching/signals.py registers. An unregistered type raises at build time; listing them here catches it before the sweep starts rather than after the preflight."
+          },
+          "weight": { "type": "number", "minimum": 0 },
+          "name": {
+            "type": "string",
+            "description": "The operator's own label for this signal instance, carried onto every emitted contribution. Framework type names are generic, so this is what tells a reader of one pair what the evidence actually was."
+          },
+          "conclusive": {
+            "type": "boolean",
+            "description": "When it fires, the pair is emitted even below min_total_score. A guard, not a weight: averaging cannot express 'this one fact settles it', and raising the weight enough to clear the floor unaided would make the signal dominate every other pair it touches."
+          },
+          "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "subfield": { "type": "string" },
+          "cross_field": { "type": "boolean" },
+          "exact_subfield": { "type": "string" },
+          "fuzzy_subfield": { "type": "string" },
+          "fuzzy_scale": { "type": "number", "minimum": 0, "maximum": 1 },
+          "phone_fields": { "type": "array", "items": { "type": "string" } },
+          "text_fields": { "type": "array", "items": { "type": "string" } },
+          "name_field": { "type": "string" },
+          "max_gap_days": { "type": "number" },
+          "max_shared_entities": { "type": "integer", "minimum": 1 }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "type": { "enum": ["name-phonetic", "name-token"] } },
+              "required": ["type"]
+            },
+            "then": {
+              "required": ["fields", "subfield"],
+              "additionalProperties": false,
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "fields": true,
+                "subfield": true,
+                "cross_field": true
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "address" } }, "required": ["type"] },
+            "then": {
+              "required": ["fields", "exact_subfield", "fuzzy_subfield"],
+              "additionalProperties": false,
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "fields": true,
+                "exact_subfield": true,
+                "fuzzy_subfield": true,
+                "fuzzy_scale": true
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "type": { "const": "exact-identifier" } },
+              "required": ["type"]
+            },
+            "then": {
+              "anyOf": [{ "required": ["phone_fields"] }, { "required": ["text_fields"] }],
+              "additionalProperties": false,
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "phone_fields": true,
+                "text_fields": true
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": { "type": { "const": "rarity-weighted-value" } },
+              "required": ["type"]
+            },
+            "then": {
+              "required": ["name_field"],
+              "additionalProperties": false,
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "name_field": true
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "temporal" } }, "required": ["type"] },
+            "then": {
+              "required": ["max_gap_days"],
+              "additionalProperties": false,
+              "description": "predecessor_date and successor_date are deliberately absent: they moved to the lifecycle block so the signal and the emitted gap_days cannot disagree about which dates a pair spans.",
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "max_gap_days": true
+              }
+            }
+          },
+          {
+            "if": { "properties": { "type": { "const": "shared-token" } }, "required": ["type"] },
+            "then": {
+              "required": ["fields"],
+              "additionalProperties": false,
+              "properties": {
+                "type": true,
+                "weight": true,
+                "name": true,
+                "conclusive": true,
+                "fields": true,
+                "max_shared_entities": true
+              }
+            }
+          }
+        ]
+      }
+    },
+
+    "ignore_values": {
+      "type": "object",
+      "description": "Field path -> values that carry no evidence on that field. Keyed by field rather than globally because a value meaningless in one attribute is valid in another: '0' is a junk vehicle identifier and a real street number. The key '*' applies everywhere.",
+      "additionalProperties": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+    },
+
+    "max_shared_records": {
+      "type": "object",
+      "description": "Field path -> how many records may share a value before it stops identifying anything. A field whose premise is worldwide uniqueness has no defensible score once the premise is false.",
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_total_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "min_signals": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Counts DISTINCT evidence sources, not signal instances: several arms reading one field collapse to one."
+        },
+        "require_identity_signal": { "type": "boolean" },
+        "max_pairs_per_predecessor": { "type": "integer", "minimum": 1 },
+        "min_gap_days": {
+          "type": "number",
+          "description": "Requires a lifecycle block to have any effect. Set without one, the gate is silently off — an operator's tightening that does nothing."
+        },
+        "max_gap_days": { "type": "number" }
+      }
+    }
+  }
+}
