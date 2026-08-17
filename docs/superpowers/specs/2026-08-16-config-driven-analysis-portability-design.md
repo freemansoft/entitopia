@@ -387,16 +387,31 @@ resolved every marker.
 
 This is what makes the portability claim falsifiable.
 
+### What CMS-Providers was originally for, and why it cannot do it
+
+The project was started to find the healthcare version of the chameleon
+pattern: a medical clinic shut down for fraud reopening at the same address, or
+under the same ownership, with a near-miss name. That is structurally the same
+hunt DOT-Commercial runs, and it is **not** what this spec has CMS doing.
+
+The reason is the data, not the domain. All three downloaded extracts are
+**directories** — who practices where, which facilities they affiliate with.
+A directory describes a present state. None of the three records an _event_:
+there is no enrollment date, termination date, exclusion date, or reinstatement
+date in any of them. Per `docs/adding-a-dataset.md`, similarity without lifecycle
+timing yields duplicate detection but not succession, and succession is the
+entire fraud pattern.
+
+So the original goal is deferred rather than abandoned, and the follow-on that
+restores it is recorded below. What CMS validates _here_ is narrower and should
+be described that way in its README: that the framework runs on a second dataset
+by configuration alone, and that `mode: "all-entities"` works.
+
 **What CMS already has.** `CMS-Providers/configuration/hospitals/index-mappings.json`
 already declares exactly the subfields the signal vocabulary references:
 `Facility Name.clean` and `.phonetic`, `Address.clean` and `.tokens`,
 `Telephone Number.clean`, backed by the full street-suffix synonym set in
 `index-settings.json`. No mapping or analyzer work is required.
-
-**What CMS lacks.** No dates in any of the three datasets. Hospitals is seven
-columns and none is temporal. Per `docs/adding-a-dataset.md`, that makes CMS a
-duplicate-detection project: it can find the same facility behind two records
-but cannot assert succession. This is exactly why `mode: "all-entities"` exists.
 
 **What gets added:** a `hospital-duplicates` step with `index-create`,
 `index-map`, `validate`, and `entity-match` phases, plus an `entity-match.json`
@@ -432,6 +447,34 @@ facilities than fraud. The value here is proving the framework runs, not
 producing an accusation — and CMS should carry no `precision_metrics` analogue
 implying otherwise. Its `metrics.json` records population shape only: pair
 counts by score band and signal mix.
+
+### Follow-on: the healthcare succession project
+
+Recorded here so the deferred goal is not rediscovered from scratch, and
+explicitly **out of scope for this work**.
+
+The healthcare succession sweep needs two sources the project does not currently
+download, filling the two roles DOT-Commercial already has filled:
+
+| Role                               | DOT-Commercial          | Healthcare candidate                                                                                                |
+| ---------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Shutdown event, dated              | `out-of-service-orders` | OIG **LEIE** — excluded individuals and entities, with an exclusion date, plus the separate reinstatement file      |
+| Entity record with a creation date | `carriers`              | NPPES NPI registry (enumeration and deactivation dates), or CMS Medicare fee-for-service public provider enrollment |
+| Corroborating join                 | `boc3-agents`           | `facillity-affiliations`, already downloaded                                                                        |
+
+**This mapping is from recollection and has not been measured.** Before any of it
+is planned, each candidate must be run through `scripts/profile_dataset.py` and
+checked for the three things that decide whether it works at all: whether it
+carries a usable date, whether it carries identity fields worth matching on, and
+whether it shares a key with the others — `docs/adding-a-dataset.md` flags a
+dataset with no shared key as needing a fuzzy pre-join, which is substantially
+larger work. Treat the table as a starting point for that investigation, not as
+a finding.
+
+**Why this follow-on matters beyond CMS.** It is the only planned work that
+would combine a `lifecycle` block with a non-FMCSA field vocabulary. Until it
+exists, the lifecycle path is configured by exactly one dataset — the one it was
+extracted from — which is the sharpest limitation of this design.
 
 ## Testing and the compatibility gate
 
@@ -542,6 +585,12 @@ Each step leaves the tree green and the DOT sweep runnable.
 - Any change to scoring arithmetic, weights, or thresholds.
 - Fuzzy joins for datasets with no shared key. `docs/adding-a-dataset.md`
   already flags this as a separate and substantially larger piece of work.
+- The healthcare succession project. Its source datasets are not downloaded, its
+  field mapping is unmeasured, and it needs its own design conversation. It is
+  recorded above so the original CMS intent survives, not so it can be attempted
+  here.
+- Hardening `download_cms_provider.sh`'s non-empty guard against implausibly
+  small downloads.
 
 ## Known limitations
 
@@ -550,10 +599,15 @@ Each step leaves the tree green and the DOT sweep runnable.
   extend framework code — which is the correct outcome, but it means "onboarding
   is pure configuration" holds for datasets resembling the two examples and is
   an untested claim beyond them.
-- **Two projects is a thin basis for a generalization.** CMS exercises the
-  no-lifecycle path and DOT exercises everything else, so no configuration
-  combines a lifecycle with a non-FMCSA field vocabulary. The third project is
-  where the abstraction is genuinely tested.
+- **The lifecycle path is configured by exactly one dataset — the one it was
+  extracted from.** This is the sharpest limitation here. CMS exercises the
+  no-lifecycle path and DOT exercises everything else, so nothing combines a
+  `lifecycle` block with a non-FMCSA field vocabulary, and an abstraction with a
+  single instance is indistinguishable from a rename. Extracting `lifecycle`
+  from `phase_entity_match.py` is still worth doing on its own merits — it
+  removes a genuine two-sources-of-truth defect — but the _portability_ claim
+  for that block is unproven until the healthcare succession follow-on, or
+  something like it, configures it differently.
 - **`all-entities` mode has no recall story.** It sweeps every record and relies
   entirely on `seed_signals` to bound the candidate space. On a large corpus with
   a weak seed that is an unanswered performance question. The CMS hospitals
