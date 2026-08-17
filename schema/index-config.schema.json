@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/index-config.schema.json",
+  "title": "entitopia index-config",
+  "description": "Per-dataset load settings. Every key here is read by entitopia itself, so unknown keys are rejected: a typo that is merely ignored lets a setting fall back to its default with nothing reported, which is this repository's recurring failure shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["alias", "index"],
+  "dependentRequired": {
+    "id_field": ["source"],
+    "num_rows": ["source"],
+    "skip_rows": ["source"],
+    "pipeline": ["source"]
+  },
+  "properties": {
+    "alias": {
+      "type": "string",
+      "description": "Stable read name. Reads through an alias naming more than one index return each document once per attached index, which is silent rather than an error."
+    },
+    "index": {
+      "type": "string",
+      "description": "Concrete index name, usually carrying a {now/d} stamp so a reload lands in a fresh index rather than overwriting the same day's run."
+    },
+    "source": {
+      "type": "string",
+      "description": "CSV filename, resolved under the project's data directory. Absent for an index a phase WRITES rather than loads — the chameleon-candidates and chameleon-validation indexes have no source file. That is why `source` is not unconditionally required: instead, any key that only means something while loading (id_field, num_rows, skip_rows, pipeline) requires it, so a real dataset config cannot omit it while an output index can."
+    },
+    "id_field": {
+      "description": "Natural key. A list composes a deterministic composite id. Absent means Elasticsearch generates one, which duplicates every row on rerun.",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      ]
+    },
+    "num_rows": {
+      "description": "Row cap. null loads everything. A committed non-null value is the validation-sample-left-on-in-production hazard: a 'full' load silently truncates.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "skip_rows": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Leading rows to skip past the header."
+    },
+    "pipeline": {
+      "type": "string",
+      "description": "Ingest pipeline to route documents through on load."
+    }
+  }
+}
