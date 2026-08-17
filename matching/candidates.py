@@ -28,7 +28,13 @@ class CandidateFinder:
     """
 
     def __init__(
-        self, es, source_index, candidates_config, signal_configs, entity_config=None
+        self,
+        es,
+        source_index,
+        candidates_config,
+        signal_configs,
+        entity_config=None,
+        lifecycle=None,
     ):
         """Bind to the ES client/index and the configured signals.
 
@@ -49,7 +55,10 @@ class CandidateFinder:
         self.signal_configs = list(signal_configs)
         # Built from the same configs scorer.py uses, so retrieval and scoring
         # can never disagree about what a signal reads.
-        self.signals = [build_signal(c) for c in self.signal_configs]
+        # lifecycle is threaded through even though no dated signal seeds a
+        # candidate query: the signals are built from the whole config list, so
+        # a temporal entry is constructed here too and would refuse without it.
+        self.signals = [build_signal(c, lifecycle) for c in self.signal_configs]
 
     def scored_subfields(self) -> set[str]:
         """Every "field.subfield" the configured signals read tokens from."""

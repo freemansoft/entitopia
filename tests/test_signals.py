@@ -379,41 +379,54 @@ def test_agent_blank_names_never_match():
     assert signal.score(pred, cand, ScoringContext()) is None
 
 
+# The dates a pair's gap is measured between, in one place. Both the
+# temporal signal and the scorer's gap-window gate read this block, which is
+# what makes it impossible for them to disagree about which event a gap
+# describes -- they used to hold separate copies of these two paths.
+LIFECYCLE = SimpleNamespace(
+    shutdown_date="out_of_service_orders.oos_date",
+    registration_date="add_date",
+)
+
+
 def temporal_cfg(**overrides):
     base = {
         "type": "temporal",
         "weight": 0.05,
-        "predecessor_date": "out_of_service_orders.oos_date",
-        "successor_date": "add_date",
         "max_gap_days": 365,
     }
     base.update(overrides)
     return cfg(**base)
 
 
+def build_signal_dated(config):
+    """build_signal for a signal that needs dated events."""
+    return build_signal(config, LIFECYCLE)
+
+
 def test_temporal_same_day_reopen_scores_one():
-    signal = build_signal(temporal_cfg())
+    signal = build_signal_dated(temporal_cfg())
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2022-01-01"})
     assert signal.score(pred, cand, ScoringContext()) == 1.0
 
 
 def test_temporal_decays_linearly_over_the_window():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2022-02-20"})  # 50 days
     assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.5)
 
 
 def test_temporal_beyond_the_window_scores_zero():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2024-01-01"})
     assert signal.score(pred, cand, ScoringContext()) == 0.0
 
 
 def test_temporal_uses_the_latest_shutdown_date():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(
         source={"out_of_service_orders": [{"oos_date": "2010-01-01"}, {"oos_date": "2022-01-01"}]}
     )
@@ -425,21 +438,21 @@ def test_temporal_pre_registered_shell_scores_at_half_weight():
     # Registering the successor before the shutdown is a real tactic, but
     # weaker evidence than registering right after. 90 days before is halfway
     # through the 180-day backward window, scaled by 0.5 => 0.25.
-    signal = build_signal(temporal_cfg(max_gap_days=365))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=365))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
     earlier = make_doc(source={"add_date": "2022-04-02"})  # 90 days before
     assert signal.score(pred, earlier, ScoringContext()) == pytest.approx(0.25)
 
 
 def test_temporal_beyond_the_backward_window_scores_zero():
-    signal = build_signal(temporal_cfg(max_gap_days=365))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=365))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
     earlier = make_doc(source={"add_date": "2021-01-01"})  # far before the window
     assert signal.score(pred, earlier, ScoringContext()) == 0.0
 
 
 def test_temporal_returns_none_when_a_date_is_missing():
-    signal = build_signal(temporal_cfg())
+    signal = build_signal_dated(temporal_cfg())
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     assert signal.score(pred, make_doc(), ScoringContext()) is None
 

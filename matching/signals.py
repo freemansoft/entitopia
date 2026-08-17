@@ -494,17 +494,34 @@ class AgentSignal(Signal):
 class TemporalSignal(Signal):
     """Closeness between the predecessor's shutdown and the successor's registration.
 
-    A chameleon carrier typically re-registers under a new DOT number soon
-    after being ordered out of service, to resume operating with minimal
-    downtime. A short gap is therefore corroborating evidence of
-    reincarnation; a gap of years is more likely coincidence.
+    A successor entity typically re-registers soon after its predecessor is
+    shut down, to resume operating with minimal downtime. A short gap is
+    therefore corroborating evidence of reincarnation; a gap of years is more
+    likely coincidence.
+
+    Reads its two date paths from the lifecycle block rather than from its own
+    config entry. They used to be duplicated -- here, and again where the
+    phase computes the gap_days it emits -- with nothing checking the two
+    agreed, so a pair could be scored on one pair of dates and reported with a
+    gap measured between another.
     """
 
     type_names = ("temporal",)
 
+    def __init__(self, config, lifecycle=None):
+        super().__init__(config)
+        if lifecycle is None:
+            raise ValueError(
+                "temporal signal requires a lifecycle block naming shutdown_date "
+                "and registration_date; without one this signal would find no "
+                "dates on any pair, score every one of them unevaluable, and "
+                "report nothing at all"
+            )
+        self.lifecycle = lifecycle
+
     def score(self, pred, cand, ctx):
-        shutdown = _latest_date(pred.value(self.config.predecessor_date))
-        registered = _latest_date(cand.value(self.config.successor_date))
+        shutdown = _latest_date(pred.value(self.lifecycle.shutdown_date))
+        registered = _latest_date(cand.value(self.lifecycle.registration_date))
         if shutdown is None or registered is None:
             return None
 
@@ -673,12 +690,16 @@ _register(TemporalSignal)
 _register(SharedTokenSignal)
 
 
-def build_signal(config) -> Signal:
+def build_signal(config, lifecycle=None) -> Signal:
     """Construct the Signal a config entry names, by its `type` string.
 
     Keeps config decoupled from Python import paths: adding a signal means
     registering it via _register, not changing how scorer.py builds its
     signal list from config.
+
+    `lifecycle` is threaded to the signals that need dated events, so the
+    paths a signal scores on and the paths the phase reports a gap from are
+    the same object rather than two copies nothing compares.
     """
     signal_class = SIGNAL_TYPES.get(config.type)
     if signal_class is None:
@@ -687,4 +708,6 @@ def build_signal(config) -> Signal:
                 config.type, ", ".join(sorted(SIGNAL_TYPES))
             )
         )
+    if issubclass(signal_class, TemporalSignal):
+        return signal_class(config, lifecycle)
     return signal_class(config)

@@ -132,6 +132,10 @@ class PhaseEntityMatch:
         # pair document built from an empty block carries only entity_key,
         # which is a degraded document rather than a crash.
         self.entity_config = SimpleNamespace()
+        # Same reason as entity_config: _to_action reads it. None is the
+        # honest default -- a project with no dated events emits gap_days
+        # null rather than a fabricated zero.
+        self.lifecycle = None
 
     def handle(self):
         self.logger.info(
@@ -167,13 +171,15 @@ class PhaseEntityMatch:
         # through the generator would put a config object in the signature of
         # every intermediate method.
         self.entity_config = getattr(config, "entity", SimpleNamespace())
-        scorer = PairScorer(config.signals, config.scoring)
+        self.lifecycle = getattr(config, "lifecycle", None)
+        scorer = PairScorer(config.signals, config.scoring, lifecycle=self.lifecycle)
         finder = CandidateFinder(
             self.es,
             source_index,
             config.candidates,
             config.signals,
             entity_config=self.entity_config,
+            lifecycle=self.lifecycle,
         )
         selector = PopulationSelector(self.es, source_index, config.population)
 
@@ -555,7 +561,7 @@ class PhaseEntityMatch:
 
     def _build_context(self, source_index, signal_configs, config=None):
         """Gather corpus statistics once per sweep: agent rarity and ignored values."""
-        signals = [build_signal(c) for c in signal_configs]
+        signals = [build_signal(c, self.lifecycle) for c in signal_configs]
         declared_ignored = self._declared_ignored_values(config) if config else {}
         limits = self._shared_limits(config) if config else {}
         suppressed = self._suppressed_values(source_index, signals, limits)
@@ -677,8 +683,15 @@ class PhaseEntityMatch:
         pred = pair.predecessor
         succ = pair.successor
 
-        shutdown = _latest_iso(pred.value("out_of_service_orders.oos_date"))
-        registered = _latest_iso(succ.value("add_date"))
+        # Read from the same lifecycle block TemporalSignal scores from. These
+        # were literals here, duplicating the signal's own config with nothing
+        # comparing the two, so a pair could be scored on one pair of dates and
+        # reported with a gap measured between another.
+        shutdown = None
+        registered = None
+        if self.lifecycle is not None:
+            shutdown = _latest_iso(pred.value(self.lifecycle.shutdown_date))
+            registered = _latest_iso(succ.value(self.lifecycle.registration_date))
         gap_days = None
         if shutdown and registered:
             gap_days = (
@@ -689,10 +702,14 @@ class PhaseEntityMatch:
         succ_extra = {}
         if shutdown is not None:
             pred_extra["shutdown_date"] = shutdown
-            reason = pred.value("out_of_service_orders.oos_reason")
-            pred_extra["shutdown_reason"] = (
-                reason[0] if isinstance(reason, list) else reason
-            )
+            # Optional: a project may date its shutdowns without recording a
+            # reason for them, and an absent path must not invent a null key.
+            reason_path = getattr(self.lifecycle, "shutdown_reason", None)
+            if reason_path:
+                reason = pred.value(reason_path)
+                pred_extra["shutdown_reason"] = (
+                    reason[0] if isinstance(reason, list) else reason
+                )
         if registered is not None:
             succ_extra["add_date"] = registered
 

@@ -6,6 +6,11 @@
     "key_label": "dot_number",
     "summary_fields": ["legal_name", "dba_name", "phy_street", "phy_city", "phy_state"]
   },
+  "lifecycle": {
+    "shutdown_date": "out_of_service_orders.oos_date",
+    "registration_date": "add_date",
+    "shutdown_reason": "out_of_service_orders.oos_reason"
+  },
   "population": {
     "mode": "lifecycle",
     "sort_field": "dot_number",
@@ -73,8 +78,6 @@
     {
       "type": "temporal",
       "weight": 0.05,
-      "predecessor_date": "out_of_service_orders.oos_date",
-      "successor_date": "add_date",
       "max_gap_days": 365
     },
     {

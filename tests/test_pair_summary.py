@@ -122,10 +122,12 @@ def test_emitted_pair_document_under_the_shipped_dot_config():
     the only check that the document a reviewer reads still carries what it
     carried before the summary became configuration.
     """
-    entity = json.loads(
-        json.dumps(json.loads(_DOT_ENTITY_MATCH.read_text())["entity"]),
-        object_hook=lambda d: SimpleNamespace(**d),
-    )
+    shipped = json.loads(_DOT_ENTITY_MATCH.read_text())
+
+    def _ns(block):
+        return json.loads(
+            json.dumps(block), object_hook=lambda d: SimpleNamespace(**d)
+        )
 
     phase_instance = phase.PhaseEntityMatch(
         es=None,
@@ -133,7 +135,11 @@ def test_emitted_pair_document_under_the_shipped_dot_config():
         one_step="chameleon-detection",
         project_config=None,
     )
-    phase_instance.entity_config = entity
+    phase_instance.entity_config = _ns(shipped["entity"])
+    # The dated fields below (shutdown_date, add_date, gap_days) come from the
+    # lifecycle block, so loading only `entity` would test a document the
+    # shipped config never produces.
+    phase_instance.lifecycle = _ns(shipped["lifecycle"])
 
     pred = EntityDoc(
         entity_key="1",
