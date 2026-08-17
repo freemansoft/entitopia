@@ -6,11 +6,24 @@
     "key_label": "dot_number",
     "summary_fields": ["legal_name", "dba_name", "phy_street", "phy_city", "phy_state"]
   },
-  "predecessors": {
+  "population": {
+    "mode": "lifecycle",
+    "sort_field": "dot_number",
+    "max_records": null,
     "selector": "out-of-service",
-    "oos_status": ["ACTIVE"],
-    "oos_date_from": "2020-01-01",
-    "max_predecessors": null
+    "selectors": {
+      "out-of-service": {
+        "nested-exists": {
+          "path": "out_of_service_orders",
+          "require": "oos_date",
+          "terms": { "status": ["ACTIVE"] },
+          "range": { "oos_date": { "gte": "2020-01-01" } }
+        }
+      },
+      "revoked-authority": { "term": { "auth_history.disp_action_desc": "REVOKED" } },
+      "both": { "all": ["out-of-service", "revoked-authority"] },
+      "either": { "any": ["out-of-service", "revoked-authority"] }
+    }
   },
   "candidates": {
     "max_candidates": 500,

@@ -16,7 +16,7 @@ from elasticsearch.helpers import parallel_bulk
 
 from matching.candidates import CandidateFinder
 from matching.documents import ScoringContext
-from matching.predecessors import PredecessorSelector
+from matching.population import PopulationSelector
 from matching.scorer import PairScorer
 from matching.signals import build_signal, parse_flexible_date
 from utils import analysis_fingerprint, elasticsearch_utils, file_utils, id_utils
@@ -112,8 +112,8 @@ class RunProvenance:
 class PhaseEntityMatch:
     """Sweeps shut-down carriers for likely successors and writes ranked pairs.
 
-    This is the phase Tasks 1-12 were built for: PredecessorSelector picks the
-    "shut down" population, CandidateFinder retrieves and tokenizes candidate
+    This is the phase Tasks 1-12 were built for: PopulationSelector picks the
+    starting population, CandidateFinder retrieves and tokenizes candidate
     successors, PairScorer turns each pair into a scored, explainable verdict,
     and this class is the only piece that ties them to a live index and
     writes the result. Everything else in matching/ is a pure library with no
@@ -175,7 +175,7 @@ class PhaseEntityMatch:
             config.signals,
             entity_config=self.entity_config,
         )
-        selector = PredecessorSelector(self.es, source_index, config.predecessors)
+        selector = PopulationSelector(self.es, source_index, config.population)
 
         ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
