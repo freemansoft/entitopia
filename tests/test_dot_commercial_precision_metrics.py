@@ -78,8 +78,8 @@ def test_gap_days_none_is_not_coherent():
 
 def test_vin_only_requires_vin_to_be_the_sole_evidence():
     rows = [
-        pair(matched_on=["vin-overlap"]),
-        pair(matched_on=["vin-overlap", "address"], succ="3"),
+        pair(matched_on=["shared-token"]),
+        pair(matched_on=["shared-token", "address"], succ="3"),
     ]
     assert summarize(rows)["vin_only"] == 1
 
@@ -90,8 +90,8 @@ def test_vin_only_identity_tolerates_corroborating_signals():
     # 0.35 floor. The strict metric excludes it; this one does not, and the
     # two disagreed by 156 pairs on the baseline index.
     rows = [
-        pair(matched_on=["vin-overlap", "temporal"]),
-        pair(matched_on=["vin-overlap", "address"], succ="3"),
+        pair(matched_on=["shared-token", "temporal"]),
+        pair(matched_on=["shared-token", "address"], succ="3"),
     ]
     result = summarize(rows)
     assert result["vin_only"] == 0
@@ -100,7 +100,7 @@ def test_vin_only_identity_tolerates_corroborating_signals():
 
 def test_triage_unbounded_admits_pre_shutdown_pairs():
     # The 906-style filter as actually run: bounded above only.
-    rows = [pair(score=0.7, gap=-2000, matched_on=["vin-overlap"])]
+    rows = [pair(score=0.7, gap=-2000, matched_on=["shared-token"])]
     assert summarize(rows)["triage_unbounded"] == 1
     assert summarize(rows)["triage_bounded"] == 0
 

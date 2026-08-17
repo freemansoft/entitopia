@@ -97,6 +97,46 @@ class Signal:
         # rather than collapsing together with every other such signal.
         return frozenset(names) or frozenset({self.signal_type})
 
+    @property
+    def signal_name(self) -> str | None:
+        """The operator's label for this signal instance, or None.
+
+        Carried onto every emitted contribution. Framework type names are
+        deliberately generic, which leaves a reader of one pair unable to say
+        what a `shared-token` signal actually read — the old `vin-overlap`
+        type name was doing that explaining. A project labels its own
+        instances instead, so no domain vocabulary re-enters the registry.
+
+        Optional: `fields_read` below answers the same question from data and
+        needs nobody to have remembered to set anything.
+        """
+        return getattr(self.config, "name", None)
+
+    def fields_read(self) -> list[str]:
+        """The config field paths this signal reads, in config order.
+
+        Emitted on each contribution so a pair says what kind of evidence
+        fired without depending on a label having been set. Derived from the
+        same config keys `evidence_key` uses, so it cannot drift from what the
+        signal actually reads.
+
+        A list rather than the frozenset `evidence_key` returns, because order
+        is meaningful to a reader and de-duplication would hide that a signal
+        reads the same field twice.
+
+        **Paths, never values.** A matched identifier belongs to a flagged
+        entity, and writing it into the pair document would put an identifying
+        value next to an allegation.
+        """
+        names: list[str] = []
+        for key in _FIELD_CONFIG_KEYS:
+            value = getattr(self.config, key, None)
+            if isinstance(value, str):
+                names.append(value)
+            elif isinstance(value, list):
+                names.extend(value)
+        return names
+
     def score(self, pred: EntityDoc, cand: EntityDoc, ctx: ScoringContext) -> float | None:
         """Score one carrier pair. Subclasses implement; see the class
         docstring for the None-vs-0.0 contract every implementation must honor.
@@ -568,20 +608,24 @@ MAX_SEED_TOKENS = 512
 class SharedTokenSignal(Signal):
     """Any shared globally-unique token. Binary — one match is damning.
 
-    Registered as both "vin-overlap" and "shared-token" because the logic is
-    not about vehicles: it is "these two records name the same physical thing,
-    and that name is unique worldwide". A VIN is one instance; a container
-    number, aircraft tail number, serial number or NPI behaves identically.
-    Only the `fields` config is domain-specific, which is where domain
-    knowledge belongs. The "vin-overlap" name is retained so existing
-    DOT-Commercial configuration keeps working.
+    The logic is not about vehicles: it is "these two records name the same
+    physical thing, and that name is unique worldwide". A VIN is one instance;
+    a container number, aircraft tail number, serial number or NPI behaves
+    identically. Only the `fields` config is domain-specific, which is where
+    domain knowledge belongs.
+
+    This was registered under "vin-overlap" as well, so a project's config
+    could name the strategy after the one field it happened to use. That name
+    is gone. What it was really providing was an explanation to whoever read
+    the emitted pair, and `signal_name` in project config now carries that
+    without the framework having to know the word.
 
     Unlike the name and address signals, this one is worth seeding on: a token
     that is unique worldwide has no false-positive rate to speak of, so a
-    terms clause on it retrieves the right carrier or nothing at all.
+    terms clause on it retrieves the right record or nothing at all.
     """
 
-    type_names = ("vin-overlap", "shared-token")
+    type_names = ("shared-token",)
 
     def score(self, pred, cand, ctx):
         pred_tokens = self._tokens(pred.value, ctx)

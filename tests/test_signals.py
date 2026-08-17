@@ -482,7 +482,7 @@ def test_temporal_returns_none_when_a_date_is_missing():
 
 def vin_cfg():
     return cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
     )
@@ -526,7 +526,7 @@ def test_agent_signal_declines_to_seed():
 def test_shared_token_signal_seeds_a_terms_clause_per_field():
     signal = build_signal(
         SimpleNamespace(
-            type="vin-overlap",
+            type="shared-token",
             weight=0.08,
             fields=["crashes.vin", "inspections.units.vin"],
         )
@@ -548,7 +548,7 @@ def test_shared_token_signal_seeds_a_terms_clause_per_field():
 
 def test_shared_token_signal_seeds_nothing_without_tokens():
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     assert signal.seed_clauses({}) == []
 
@@ -557,7 +557,7 @@ def test_shared_token_seed_tokens_are_capped_and_sorted():
     # An unbounded terms clause on a large fleet would slow the whole sweep.
     vins = ["VIN{:05d}".format(i) for i in range(MAX_SEED_TOKENS + 50)]
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     clauses = signal.seed_clauses({"crashes": [{"vin": v} for v in vins]})
     terms = clauses[0]["terms"]["crashes.vin"]
@@ -565,9 +565,13 @@ def test_shared_token_seed_tokens_are_capped_and_sorted():
     assert terms == sorted(terms)
 
 
-def test_shared_token_registered_under_neutral_alias():
+def test_shared_token_is_registered_only_under_its_neutral_name():
     # The logic is "same globally-unique token", not anything about vehicles.
-    assert SIGNAL_TYPES["shared-token"] is SIGNAL_TYPES["vin-overlap"]
+    # This used to assert the class was reachable under both "shared-token"
+    # and "vin-overlap"; the domain-flavoured half of that pair is gone, so
+    # the assertion is now that it stayed gone.
+    assert "shared-token" in SIGNAL_TYPES
+    assert "vin-overlap" not in SIGNAL_TYPES
 
 
 def test_name_signal_seeds_and_declares_its_token_subfields():
@@ -608,7 +612,7 @@ def test_shared_token_seeds_preserve_case_for_keyword_fields():
     # matched nothing against a keyword mapping, so the signal silently
     # retrieved no candidates at all.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     clauses = signal.seed_clauses({"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     assert clauses[0]["terms"]["crashes.vin"] == ["1FUJGLDR0CSBP9784"]
@@ -618,7 +622,7 @@ def test_shared_token_score_still_normalizes_case():
     # Seeding uses raw values; scoring compares normalized ones, so a
     # case difference between two records still scores as a match.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     pred = make_doc(source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     cand = make_doc(entity_key="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
@@ -630,7 +634,7 @@ def test_suppressed_token_is_not_evaluable_rather_than_zero():
     # carriers both filing it share nothing, so the signal must report "no
     # usable evidence" (None), not "evaluated, matched" (1.0).
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}]})
@@ -640,7 +644,7 @@ def test_suppressed_token_is_not_evaluable_rather_than_zero():
 
 def test_suppression_leaves_real_tokens_alone():
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}, {"vin": "1FUJGLDR0CSBP9784"}]})
@@ -651,7 +655,7 @@ def test_suppression_leaves_real_tokens_alone():
 def test_suppressed_tokens_are_not_seeded():
     # Seeding on "GGGG" would retrieve all 158 carriers that recorded it.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"gggg"}})
     clauses = signal.seed_clauses({"crashes": [{"vin": "GGGG"}]}, ctx)
@@ -750,7 +754,7 @@ def test_exact_identifier_declares_keyword_agg_fields():
 def test_shared_token_aggregates_on_the_field_itself():
     # VIN fields are keyword-mapped, so there is no subfield to aggregate.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     assert signal.exact_evidence_fields() == [("crashes.vin", "crashes.vin")]
 

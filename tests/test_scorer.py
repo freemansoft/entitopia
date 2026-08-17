@@ -37,7 +37,7 @@ NAME_SIGNAL = cfg(
     type="name-phonetic", weight=0.5, fields=["legal_name"], subfield="phonetic"
 )
 VIN_SIGNAL = cfg(
-    type="vin-overlap", weight=0.5, fields=["crashes.vehicle_identification_number"]
+    type="shared-token", weight=0.5, fields=["crashes.vehicle_identification_number"]
 )
 AGENT_SIGNAL = cfg(
     type="rarity-weighted-value", weight=0.5, name_field="boc3_agents.co_name"
@@ -65,7 +65,7 @@ def test_scores_a_strong_pair():
     assert result is not None
     assert result.total_score == pytest.approx(1.0)
     assert result.signals_present == 2
-    assert set(result.matched_on) == {"name-phonetic", "vin-overlap"}
+    assert set(result.matched_on) == {"name-phonetic", "shared-token"}
 
 
 def test_renormalizes_over_available_signals():
@@ -166,7 +166,7 @@ def test_shared_vin_alone_satisfies_the_identity_guard():
     )
     pair = scorer.score_pair(pred, cand, ScoringContext())
     assert pair is not None
-    assert pair.matched_on == ["vin-overlap"]
+    assert pair.matched_on == ["shared-token"]
 
 
 def test_returns_none_when_no_signal_is_evaluable():
@@ -247,7 +247,7 @@ def test_conclusive_signal_overrides_the_score_floor():
     # trucks. Raising the weight enough to clear the floor (~0.46) would make
     # the signal dominate every pair, so the override is a guard, not a weight.
     conclusive_vin = cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
         conclusive=True,
@@ -266,12 +266,12 @@ def test_conclusive_signal_overrides_the_score_floor():
     pair = scorer.score_pair(pred, cand, ScoringContext())
     assert pair is not None
     assert pair.total_score < 0.35
-    assert pair.matched_on == ["vin-overlap"]
+    assert pair.matched_on == ["shared-token"]
 
 
 def test_conclusive_signal_that_did_not_fire_does_not_override():
     conclusive_vin = cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
         conclusive=True,

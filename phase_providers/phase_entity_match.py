@@ -746,13 +746,24 @@ class PhaseEntityMatch:
             "gap_days": gap_days,
             "signals_present": pair.signals_present,
             "matched_on": pair.matched_on,
+            # signal_name is omitted rather than written as null when a project
+            # sets no label, matching how the provenance fields treat "unknown"
+            # -- an absent key cannot later be quoted as a value the pair had.
+            # `fields` carries paths only; see SignalContribution on why never
+            # values.
             "signals": [
                 {
-                    "signal_type": c.signal_type,
-                    "subfield": c.subfield,
-                    "weight": c.weight,
-                    "score": round(c.score, 6),
-                    "contribution": round(c.contribution, 6),
+                    key: value
+                    for key, value in {
+                        "signal_type": c.signal_type,
+                        "signal_name": c.signal_name,
+                        "fields": c.fields,
+                        "subfield": c.subfield,
+                        "weight": c.weight,
+                        "score": round(c.score, 6),
+                        "contribution": round(c.contribution, 6),
+                    }.items()
+                    if value is not None
                 }
                 for c in pair.signals
             ],

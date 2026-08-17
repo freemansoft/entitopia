@@ -24,7 +24,6 @@ IDENTITY_SIGNAL_TYPES = frozenset(
         "name-token",
         "address",
         "exact-identifier",
-        "vin-overlap",
         "shared-token",
     }
 )
@@ -44,6 +43,14 @@ class SignalContribution:
     weight: float
     score: float
     contribution: float
+    # The operator's label for this signal instance, when one is configured.
+    # The framework's type names are generic, so without this a reader of one
+    # pair cannot tell what a `shared-token` signal read.
+    signal_name: str | None = None
+    # The config field paths this signal reads. Paths only, never values: a
+    # matched identifier belongs to a flagged entity, and writing it here
+    # would put an identifying value next to an allegation.
+    fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -179,6 +186,8 @@ class PairScorer:
             contributions.append(
                 SignalContribution(
                     signal_type=signal.signal_type,
+                    signal_name=signal.signal_name,
+                    fields=signal.fields_read(),
                     subfield=getattr(signal.config, "subfield", None),
                     weight=signal.weight,
                     score=score,
