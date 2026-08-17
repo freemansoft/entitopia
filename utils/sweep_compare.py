@@ -10,8 +10,9 @@ Deciding what a "metric" means for a given project (what to count, what
 DOT-Commercial/precision_metrics.py for the chameleon-detection version.
 
 Kept free of Elasticsearch imports on purpose: anything here must be callable
-from a test with plain dicts, the same split that keeps utils/crash_lift.py
-testable while scripts/measure_crash_lift.py stays integration-shaped.
+from a test with plain dicts, the same split that keeps
+DOT-Commercial/crash_lift.py testable while its measure_crash_lift.py stays
+integration-shaped.
 """
 
 from dataclasses import dataclass

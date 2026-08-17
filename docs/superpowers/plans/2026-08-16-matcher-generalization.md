@@ -1981,11 +1981,22 @@ vin_only 1, vin_only_identity 208
 
 ```bash
 .venv/bin/python scripts/compare_pair_ids.py \
-  --baseline-index <the pre-refactor candidates index> \
+  --baseline-index chameleon-candidates-2026.08.13-000001 \
   --candidate-index <the index from step 7>
 ```
 
 Expected: exit 0, no differences.
+
+**Verified 2026-08-16 that the baseline is diffable:**
+`chameleon-candidates-2026.08.13-000001` holds 75,537 documents, matching
+`baseline-post-reload.json`'s `pairs` exactly, and `carriers-000001` resolves to
+`carriers-2026.08.13-000001` stamped `0595ca890d9ec6fb`. That index carries no
+`_meta` of its own — it predates provenance stamping, which is expected and
+irrelevant here, since this check compares ids rather than provenance.
+
+**Do not sweep twice in one day.** `index-create` stamps `{now/d}`, so a second
+run on the same date writes into the same index as the first and the comparison
+target is destroyed. The baseline is safe only because it is dated 08-13.
 
 - [ ] **Step 10: If anything differs, stop and diagnose**
 

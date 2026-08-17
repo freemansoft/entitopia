@@ -12,7 +12,7 @@ must register AFTER the predecessor's shutdown. `gap_days` (successor
 every emitted pair, so this needs no labelled outcome and no new data: a
 negative `gap_days` at a high score is a direct, unambiguous miss.
 
-The gap bands (`utils.crash_lift.GAP_BANDS`) are anchored to
+The gap bands (`DOT-Commercial/crash_lift.py`'s GAP_BANDS) are anchored to
 `matching/signals.py`'s own `BACKWARD_WINDOW_DAYS = 180`, not an arbitrary
 round number: that is the pre-shutdown window the `temporal` signal itself
 scores as plausible pre-positioning, so a pair outside it is implausible by
@@ -33,23 +33,38 @@ import argparse
 import sys
 from pathlib import Path
 
-# Runs as `.venv/bin/python scripts/measure_chameleon_shape.py`, which puts
-# scripts/ on sys.path rather than the repo root, so utils.crash_lift is
-# unimportable without this. Same fix as measure_crash_lift.py.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Runs as `.venv/bin/python DOT-Commercial/scripts/measure_chameleon_shape.py`,
+# which puts DOT-Commercial/scripts/ on sys.path rather than the repo root, so
+# the framework packages (utils, matching) are unimportable without this. Same
+# fix as measure_crash_lift.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+import importlib.util
 
 from elasticsearch import Elasticsearch
 
-from utils.crash_lift import GAP_BANDS, SCORE_BANDS
 from utils.file_utils import load_from_file
+
+# crash_lift.py sits in DOT-Commercial/, which can never be a dotted module
+# because of the hyphen, so the bands are loaded by path rather than imported.
+_CRASH_LIFT = Path(__file__).resolve().parent.parent / "crash_lift.py"
+_spec = importlib.util.spec_from_file_location("crash_lift", _CRASH_LIFT)
+_crash_lift = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_crash_lift)
+
+GAP_BANDS = _crash_lift.GAP_BANDS
+SCORE_BANDS = _crash_lift.SCORE_BANDS
 
 # Default location of the live scoring config, so load_signal_weights() reads
 # the weights actually driving the sweep instead of a copy pasted into this
 # script that would go stale silently the next time entity-match.json is
 # retuned.
+# parent.parent is DOT-Commercial/ now that this script lives inside it, so the
+# project name is no longer a path component. It was a literal here when this
+# ran from scripts/ at the repo root; leaving it would have resolved to
+# DOT-Commercial/DOT-Commercial/configuration and failed to find the config.
 DEFAULT_ENTITY_MATCH_CONFIG = (
     Path(__file__).resolve().parent.parent
-    / "DOT-Commercial"
     / "configuration"
     / "chameleon-detection"
     / "entity-match.json"
@@ -64,7 +79,7 @@ NAME_SIGNAL_TYPES = ("name-phonetic", "name-token")
 
 # One definition of the gap-band edges as an Elasticsearch range spec, reused
 # by both the score/gap matrix and the temporal-signal check below. Elastic's
-# `range` aggregation and `gap_band()` in utils/crash_lift.py express the same
+# `range` aggregation and `gap_band()` in DOT-Commercial/crash_lift.py express the same
 # four boundaries in two different syntaxes (a range agg has no equivalent of
 # gap_band()'s sequential "first limit you're under" loop); keeping the
 # derivation in one place is what stops the two definitions drifting apart if
@@ -75,7 +90,7 @@ GAP_RANGES.append({"from": GAP_BANDS[-1][0]})
 GAP_LABELS = [label for _, label in GAP_BANDS] + ["1y+ after"]
 
 # Same idea for score bands: SCORE_BANDS is half-open with the top band closed
-# (see band_for's docstring in utils/crash_lift.py), so the last range is left
+# (see band_for's docstring in DOT-Commercial/crash_lift.py), so the last range is left
 # open-ended rather than bounded at 1.0, letting a perfect score still land
 # somewhere instead of falling off the end of the last bucket.
 SCORE_RANGES = [{"from": lower, "to": upper} for lower, upper, _ in SCORE_BANDS[:-1]]

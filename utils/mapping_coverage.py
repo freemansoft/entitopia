@@ -7,7 +7,7 @@ notice it was unpinned. Once the loader reads every column as a string --
 necessary, because inference destroyed leading zeros before Elasticsearch was
 reached -- an unpinned column becomes `text` instead. Measured when that change
 was made: 66 fields across three DOT-Commercial datasets changed type silently,
-one of them a field utils/crash_lift.py documents as depending on `long`.
+one of them a field DOT-Commercial/crash_lift.py documents as depending on `long`.
 
 The four datasets that were already fully pinned moved not one field. That is
 the whole argument for this check: "pin every field you rely on" is the

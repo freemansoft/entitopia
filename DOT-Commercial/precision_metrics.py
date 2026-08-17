@@ -8,8 +8,9 @@ compared against a number chosen in advance rather than one rationalized after
 the fact.
 
 Kept free of Elasticsearch imports on purpose: anything here must be callable
-from a test with plain dicts, the same split that keeps utils/crash_lift.py
-testable while scripts/measure_crash_lift.py stays integration-shaped.
+from a test with plain dicts, the same split that keeps
+DOT-Commercial/crash_lift.py testable while its measure_crash_lift.py stays
+integration-shaped.
 
 Lives in DOT-Commercial/ rather than utils/ (which keeps only the generic diff
 engine, utils.sweep_compare.compare()) because "coherent", "triage", and

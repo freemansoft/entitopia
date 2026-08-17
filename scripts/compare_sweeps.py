@@ -25,7 +25,7 @@ from utils.sweep_compare import compare
 # ever imported across that directory boundary — fetch_commercial_carriers.py,
 # the other module living there, is run as a script instead. Loaded by path
 # rather than inventing a rename or symlink, mirroring how
-# scripts/measure_chameleon_shape.py reaches DOT-Commercial/'s JSON config and
+# DOT-Commercial/scripts/measure_chameleon_shape.py reaches its project's JSON config and
 # how tests/test_crash_lift.py and tests/test_profile_dataset.py already load
 # scripts/ modules that aren't part of an importable package.
 _PRECISION_METRICS = Path(__file__).resolve().parent.parent / "DOT-Commercial" / "precision_metrics.py"
