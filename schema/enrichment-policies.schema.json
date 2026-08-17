@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/enrichment-policies.schema.json",
+  "title": "entitopia enrichment-policies",
+  "description": "A top-level ARRAY of policies, not an object. Each entry names one policy and carries its Elasticsearch policy body under its type key.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["name"],
+    "minProperties": 2,
+    "description": "One policy: its name plus exactly one policy-type body. Elasticsearch supports match, geo_match and range; only `match` is used here, and the others are declared so a future project does not have to edit this schema to be legal.",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "Policy id. A policy bound to a live pipeline cannot be deleted, so changing a policy's definition means deleting the dependent pipeline by hand first — see the README's open item."
+      },
+      "match": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["indices", "match_field", "enrich_fields"],
+        "properties": {
+          "indices": {
+            "description": "Source index for the enrich index. Goes stale silently: a policy still points at whatever index it was executed against, so a full reload can leave every policy sourcing from indexes days superseded.",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+            ]
+          },
+          "match_field": {
+            "type": "string",
+            "description": "The join key. An enrich index maps every field as keyword and reindexes _source verbatim, so what decides a match is the string each side's _source renders to, not either mapping."
+          },
+          "enrich_fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "description": "Fields carried onto the target document. A field omitted here is silently absent downstream rather than an error."
+          }
+        }
+      },
+      "geo_match": { "type": "object" },
+      "range": { "type": "object" }
+    }
+  }
+}

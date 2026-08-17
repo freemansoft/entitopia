@@ -91,6 +91,58 @@ def test_an_unknown_schema_kind_raises():
         config_schema.validate_mapping("not-a-kind", {}, "test.json")
 
 
+def test_an_unrecognized_phase_name_is_rejected():
+    # The highest-value check in the project schema. An unknown phase reaches
+    # the dispatcher's else branch, logs an error, and lets the run continue
+    # having silently skipped that work -- a green run missing a whole phase.
+    raw = {
+        "steps": [{"name": "carriers", "phases": ["index-create", "index-popluate"]}],
+        "configurationDir": "configuration",
+        "dataDir": "data",
+    }
+    errors = config_schema.validate_mapping("configuration", raw, "test.json")
+    assert any("index-popluate" in e for e in errors)
+
+
+def test_a_step_with_no_phases_is_rejected():
+    # An empty phase list is a step that does nothing, which reads as
+    # configured work and performs none.
+    raw = {
+        "steps": [{"name": "carriers", "phases": []}],
+        "configurationDir": "configuration",
+        "dataDir": "data",
+    }
+    assert config_schema.validate_mapping("configuration", raw, "test.json")
+
+
+def test_enrichment_policies_must_be_an_array():
+    # The file is a top-level list. An object here would load as a single
+    # policy-shaped thing and enrich nothing.
+    raw = {"name": "p", "match": {}}
+    assert config_schema.validate_mapping("enrichment-policies", raw, "test.json")
+
+
+def test_an_enrichment_policy_missing_its_join_key_is_rejected():
+    raw = [{"name": "p", "match": {"indices": "i", "enrich_fields": ["a"]}}]
+    errors = config_schema.validate_mapping("enrichment-policies", raw, "test.json")
+    assert any("match_field" in e for e in errors)
+
+
+def test_a_pipeline_with_no_processors_is_rejected():
+    # Creating a pipeline with an empty processor list succeeds and does
+    # nothing, so every document routed through it passes untouched.
+    raw = {"name": "p", "processors": []}
+    assert config_schema.validate_mapping("pipelines", raw, "test.json")
+
+
+def test_the_envelope_schemas_do_not_police_elasticsearch_dsl():
+    # Deliberate: what is under `mappings` is Elasticsearch's, and a stale
+    # schema over it would reject valid config. This asserts the boundary
+    # rather than leaving it to be assumed from an absence of tests.
+    raw = {"index": "a-000001", "mappings": {"properties": {"anything": {"type": "wat"}}}}
+    assert config_schema.validate_mapping("index-mappings", raw, "test.json") == []
+
+
 def test_unreadable_json_is_reported_as_a_finding_not_an_exception():
     # A file that will not parse is a validation failure like any other; making
     # the caller handle it separately would split the report in two.

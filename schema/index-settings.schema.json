@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/index-settings.schema.json",
+  "title": "entitopia index-settings envelope",
+  "description": "Envelope only, for the same reason as index-mappings: `settings` is Elasticsearch's own DSL, including the analysis chain, and the cluster rejects a bad one outright — index creation fails without the analysis-icu and analysis-phonetic plugins the analyzers require. An analyzer that is well-formed but names a column the data no longer has is the failure worth catching, and no schema can see that; the validate phase's live-cluster tier is where it belongs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index", "settings"],
+  "properties": {
+    "index": {
+      "type": "string",
+      "description": "Must name the same index as this step's index-config."
+    },
+    "settings": {
+      "type": "object",
+      "description": "Passed to Elasticsearch untouched."
+    }
+  }
+}
