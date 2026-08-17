@@ -430,13 +430,22 @@ and 2,260,194 lines. Five records cannot validate anything, and the file is
 gitignored under `*/data/`, so this is a local-checkout problem rather than a
 committed one.
 
-It will not self-correct. `download_cms_provider.sh` guards each download with
-`if [ -s "$dest" ]` — non-empty — and a five-row file is non-empty, so the
-script skips it on every future run. That is precisely the failure its own
-header comment warns about: the guard was hardened against a 404 HTML page being
-written into the CSV, but a short-but-valid file defeats it the same way. The
-recovery is to delete the file and re-run the script. Hardening the guard
-against implausibly small downloads is worth doing but is not part of this work.
+`CMS-Providers/README.md` records the genuine extract at **5,432 rows**, so the
+local file is a corruption rather than a smaller republication.
+
+It would not have self-corrected. `download_cms_provider.sh` guarded each
+download with `if [ -s "$dest" ]` — non-empty — and a five-row file is
+non-empty, so the script would have skipped it on every future run: precisely
+the failure its own header comment warns about, one layer down. The guard was
+hardened against a 404 HTML page being written into the CSV, and a
+short-but-valid file defeated it the same way.
+
+Fixed ahead of this work rather than inside it, since it blocks the download
+regardless: the guard now tests plausibility rather than existence, and a file
+below a 50-line floor is re-downloaded. Recorded as validation finding 6 in
+`CMS-Providers/README.md`. **The operator still has to re-run
+`bash download_cms_provider.sh`** — the fix prevents recurrence, it does not
+repair the file already on disk.
 
 Until that file is replaced, no claim about what a CMS sweep finds — including
 its runtime or candidate-space behavior — is measurable.

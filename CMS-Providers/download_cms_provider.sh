@@ -17,6 +17,24 @@ set -euo pipefail
 
 METASTORE_URL="https://data.cms.gov/provider-data/api/1/metastore/schemas/dataset/items?show-reference-ids=true"
 
+# The "already present" guard below tests plausibility, not mere existence.
+#
+# `[ -s "$dest" ]` alone -- non-empty -- is the same shape as the `[ ! -f ]`
+# guard this script was written to replace, and fails the same way against a
+# different corruption. Measured 2026-08-16: a checkout carried a
+# Hospital_General_Information.csv holding a header and five rows in place of
+# the 5,432-row extract. Being non-empty, it satisfied the guard and would have
+# been skipped on every future run, exactly as the 404 HTML page was cached
+# forever by the old one.
+#
+# The smallest real file here is hospitals at ~5,400 lines, so this threshold is
+# two orders of magnitude below the genuine article and cannot reject a real
+# download; it exists to catch a stub or a truncated transfer, not to validate
+# row counts. A file that fails it is re-downloaded rather than reported,
+# because there is nothing an operator would do with the warning except delete
+# the file and re-run.
+MIN_PLAUSIBLE_LINES=50
+
 # target-data-dir : source filename (the filename each config's index-config.json expects)
 DATASETS=(
     "doctors-clinicians:DAC_NationalDownloadableFile.csv"
@@ -33,8 +51,13 @@ for entry in "${DATASETS[@]}"; do
     dest="data/${dir}/${filename}"
 
     if [ -s "$dest" ]; then
-        echo "Skipping $dest (already present)"
-        continue
+        existing_lines="$(wc -l < "$dest" | tr -d '[:space:]')"
+        if [ "$existing_lines" -ge "$MIN_PLAUSIBLE_LINES" ]; then
+            echo "Skipping $dest (already present, $existing_lines lines)"
+            continue
+        fi
+        echo "Re-downloading $dest: $existing_lines lines is below the $MIN_PLAUSIBLE_LINES-line"
+        echo "  plausibility floor, so the file on disk is a stub or a truncated transfer"
     fi
 
     # Pull the current downloadURL whose path ends in this filename out of the catalog.
