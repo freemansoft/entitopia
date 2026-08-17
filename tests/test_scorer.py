@@ -39,7 +39,9 @@ NAME_SIGNAL = cfg(
 VIN_SIGNAL = cfg(
     type="vin-overlap", weight=0.5, fields=["crashes.vehicle_identification_number"]
 )
-AGENT_SIGNAL = cfg(type="agent", weight=0.5, name_field="boc3_agents.co_name")
+AGENT_SIGNAL = cfg(
+    type="rarity-weighted-value", weight=0.5, name_field="boc3_agents.co_name"
+)
 
 
 def strong_pair():

@@ -16,13 +16,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.documents import EntityDoc, ScoringContext
+from matching.documents import EntityDoc, FieldRarityTable, ScoringContext
 from matching.signals import (
     MAX_SEED_TOKENS,
     SIGNAL_TYPES,
     build_signal,
     parse_flexible_date,
 )
+
+# The field the rarity-weighted signal reads in these tests. Rarity is keyed by
+# field path now, so the lookup and the table must name the same one -- a
+# mismatch silently scores every value as unseen, which is the 1.0 fallback and
+# therefore looks like strong evidence rather than like a bug.
+AGENT_FIELD = "boc3_agents.co_name"
 
 
 def make_doc(entity_key="1", source=None, tokens=None):
@@ -84,13 +90,17 @@ def test_value_missing_path_is_none():
 def test_agent_rarity_common_agent_scores_low():
     # The real top BOC-3 filer: 134,283 of 1,426,508 filings (9.4%).
     # Normalized IDF puts it at ~0.167.
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("BIG FILER") < 0.20
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "BIG FILER") < 0.20
 
 
 def test_agent_rarity_rare_agent_scores_high():
-    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("TINY FILER") > 0.94
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"TINY FILER": 2}, 1426508)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "TINY FILER") > 0.94
 
 
 def test_agent_rarity_ranks_common_below_rare():
@@ -98,15 +108,16 @@ def test_agent_rarity_ranks_common_below_rare():
     # below a rare one. 1 - count/N would put both above 0.9 and rank them
     # nearly equal, which is why that formula was rejected.
     ctx = ScoringContext(
-        agent_counts={"BIG FILER": 134283, "TINY FILER": 2},
-        total_agent_carriers=1426508,
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283, "TINY FILER": 2}, 1426508)}
     )
-    assert ctx.agent_rarity("BIG FILER") < ctx.agent_rarity("TINY FILER") - 0.5
+    assert ctx.rarity(AGENT_FIELD, "BIG FILER") < ctx.rarity(AGENT_FIELD, "TINY FILER") - 0.5
 
 
 def test_agent_rarity_unknown_agent_is_maximally_rare():
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=1000)
-    assert ctx.agent_rarity("UNSEEN") == 1.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 1000)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "UNSEEN") == 1.0
 
 
 def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
@@ -114,16 +125,20 @@ def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
     # not a neutral midpoint. Returning 1.0 (the "unseen agent" value) would
     # misrepresent an unmeasured agent as a known-rare one; a shared agent
     # under a missing corpus is real evidence the signal simply can't weigh.
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=0)
-    assert ctx.agent_rarity("ANY") == 0.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 0)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "ANY") == 0.0
 
 
 def test_agent_rarity_with_single_agent_corpus_does_not_raise():
     # total_agent_carriers == 1 makes log(N) == log(1) == 0, so the naive
     # log(N/count)/log(N) division is 0/0. This must return the same floor
     # value as the no-corpus case rather than raising ZeroDivisionError.
-    ctx = ScoringContext(agent_counts={"ONLY FILER": 1}, total_agent_carriers=1)
-    assert ctx.agent_rarity("ONLY FILER") == 0.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"ONLY FILER": 1}, 1)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "ONLY FILER") == 0.0
 
 
 def cfg(**kwargs):
@@ -322,7 +337,7 @@ def test_parse_flexible_date_returns_none_for_junk():
 
 def agent_cfg():
     return cfg(
-        type="agent",
+        type="rarity-weighted-value",
         weight=0.04,
         name_field="boc3_agents.co_name",
     )
@@ -330,7 +345,9 @@ def agent_cfg():
 
 def test_agent_shared_rare_agent_scores_high():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"TINY FILER": 2}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
     # True normalized IDF for count=2 is ~0.951. An earlier draft asserted
@@ -347,7 +364,9 @@ def test_agent_lookup_is_case_insensitive():
     # and the rarity weighting silently turns itself off. ScoringContext
     # normalizes both sides so casing cannot cause that.
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "big filer"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "BiG FiLeR"}]})
     assert signal.score(pred, cand, ctx) < 0.20
@@ -355,7 +374,9 @@ def test_agent_lookup_is_case_insensitive():
 
 def test_agent_shared_common_agent_scores_low():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
     # The real top BOC-3 filer: 134,283 of 1,426,508 filings. Normalized IDF
@@ -365,7 +386,9 @@ def test_agent_shared_common_agent_scores_low():
 
 def test_agent_no_shared_agent_scores_zero():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=100)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 100)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "A FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "B FILER"}]})
     assert signal.score(pred, cand, ctx) == 0.0
@@ -491,7 +514,11 @@ def test_agent_signal_declines_to_seed():
     # 87 BOC-3 agents cover 519,139 filings, so seeding on one would return
     # essentially random carriers. Declining is what keeps it corroboration-only.
     signal = build_signal(
-        SimpleNamespace(type="agent", weight=0.04, name_field="boc3_agents.co_name")
+        SimpleNamespace(
+            type="rarity-weighted-value",
+            weight=0.04,
+            name_field="boc3_agents.co_name",
+        )
     )
     assert signal.seed_clauses({"boc3_agents": {"co_name": "ACME"}}) == []
 

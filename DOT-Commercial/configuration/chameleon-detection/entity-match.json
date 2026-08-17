@@ -71,7 +71,7 @@
       "text_fields": ["email_address"]
     },
     {
-      "type": "agent",
+      "type": "rarity-weighted-value",
       "weight": 0.04,
       "name_field": "boc3_agents.co_name"
     },
@@ -84,7 +84,7 @@
       "type": "vin-overlap",
       "weight": 0.16,
       "conclusive": true,
-      "max_shared_carriers": 5,
+      "max_shared_entities": 5,
       "fields": [
         "crashes.vehicle_identification_number",
         "inspections.units.insp_unit_vehicle_id_number"

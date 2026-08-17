@@ -99,27 +99,81 @@ def _flatten(values):
     return flattened
 
 
-# Below this many carriers in the corpus, log(N) is 0 or undefined and
-# normalized IDF cannot be computed; agent_rarity floors to 0.0 instead.
-MIN_AGENT_CORPUS = 2
+# Below this many records in the corpus, log(N) is 0 or undefined and
+# normalized IDF cannot be computed; rarity floors to 0.0 instead.
+MIN_RARITY_CORPUS = 2
 
 
-def _normalize_agent_key(name) -> str:
-    """Casefold an agent name for keying and lookup.
+def normalize_rarity_key(value) -> str:
+    """Casefold a value for keying and lookup.
 
-    Must match how AgentSignal normalizes names before intersecting them,
-    otherwise a lookup silently misses and every agent degrades to the 1.0
+    Must match how a signal normalizes values before intersecting them,
+    otherwise a lookup silently misses and every value degrades to the 1.0
     "unseen" fallback — turning the rarity weighting off without any error.
+
+    Shared with is_ignored below for the same reason: an operator writing
+    "Unknown" in config must match a record carrying "UNKNOWN", and two
+    normalizers that drift apart would disable one of the two silently.
     """
-    return str(name).strip().lower()
+    return str(value).strip().lower()
+
+
+@dataclass
+class FieldRarityTable:
+    """Value frequencies for one field, as normalized inverse document frequency.
+
+    Exists because a signal scoring a shared value highly is asserting that the
+    value discriminates, and only the corpus can say whether it does. One
+    project's shared-filing-agent field carried 89 distinct values across 1.43M
+    rows, so two unrelated records share one about 7% of the time by chance;
+    unweighted, that signal fires on noise.
+
+    Uses log(N/count)/log(N), NOT 1 - count/N. With 89 values the largest share
+    is 9.4%, so 1 - share compresses every value into [0.906, 1.0] and carries
+    no discriminating power at all. Normalized IDF spreads the same population
+    across [0.167, 1.0].
+
+    This was ScoringContext.agent_rarity, which named one project's field in
+    framework code. The arithmetic is unchanged; only the vocabulary is.
+    """
+
+    counts: dict[str, int] = field(default_factory=dict)
+    total: int = 0
+
+    def __post_init__(self):
+        # Normalized on the way in so callers cannot introduce a silent case
+        # mismatch, regardless of how they built the dict.
+        self.counts = {normalize_rarity_key(k): v for k, v in self.counts.items()}
+
+    def rarity(self, value: str) -> float:
+        """1.0 for a value nobody uses, near 0.0 for a dominant one.
+
+        Returns 0.0 — the floor of the signal's range, not "neutral" and
+        emphatically not "maximally common" — when there is no usable corpus:
+        either total is 0 (frequencies were never gathered) or 1 (log(N) is 0,
+        making the ratio undefined). A shared value under either condition is
+        still real evidence; scoring it 1.0 (the "unseen" placeholder) would
+        misrepresent a known value as novel, and inventing a mid-range value
+        would fabricate precision the data cannot support. 0.0 makes the
+        signal contribute nothing until real statistics exist, rather than
+        pretend to a discriminating power it does not have.
+        """
+        if self.total < MIN_RARITY_CORPUS:
+            return 0.0
+        count = self.counts.get(normalize_rarity_key(value), 0)
+        if count <= 0:
+            return 1.0
+        return math.log(self.total / count) / math.log(self.total)
 
 
 @dataclass
 class ScoringContext:
     """Corpus-level statistics gathered once per sweep."""
 
-    agent_counts: dict[str, int] = field(default_factory=dict)
-    total_agent_carriers: int = 0
+    # Field path -> that field's value frequencies. Keyed by field because the
+    # same string can be a dominant value on one field and a rare one on
+    # another, so a single global table would misprice both.
+    rarity_tables: dict[str, FieldRarityTable] = field(default_factory=dict)
     # Field path -> normalized values that must not be treated as evidence on
     # that field. The key "*" applies to every field. Two sources merge here:
     # values an operator declared in entity-match.json's ignore_values, and
@@ -139,53 +193,30 @@ class ScoringContext:
         evidence) instead of "evaluated, matched" — the difference between no
         evidence and damning evidence.
         """
-        normalized = _normalize_agent_key(value)
+        normalized = normalize_rarity_key(value)
         if normalized in self.ignored_values.get("*", ()):
             return True
         return normalized in self.ignored_values.get(field_path, ())
 
     def __post_init__(self):
-        # Normalize keys on the way in so callers cannot introduce a silent
-        # case mismatch, regardless of how they built the dict.
-        self.agent_counts = {
-            _normalize_agent_key(k): v for k, v in self.agent_counts.items()
-        }
-        # Same reason, applied to the values rather than the keys: an operator
-        # writing "Unknown" in config must match a record carrying "UNKNOWN",
-        # or the ignore list silently does nothing.
+        # Normalize the ignore-list values on the way in: an operator writing
+        # "Unknown" in config must match a record carrying "UNKNOWN", or the
+        # ignore list silently does nothing. Rarity table keys are normalized
+        # by FieldRarityTable itself, for the same reason.
         self.ignored_values = {
-            path: {_normalize_agent_key(v) for v in values}
+            path: {normalize_rarity_key(v) for v in values}
             for path, values in self.ignored_values.items()
         }
 
-    def agent_rarity(self, agent_name: str) -> float:
-        """1.0 for an agent nobody uses, near 0.0 for a dominant filer.
+    def rarity(self, field_path: str, value: str) -> float:
+        """How rare a value is on one field, or 0.0 when nothing was gathered.
 
-        BOC-3 process agents are a commercial filing industry: only 89 distinct
-        agents cover 1.43M filings, and the largest covers 9.4%. Without this
-        weighting a shared agent fires on roughly 7% of random pairs.
-
-        Uses normalized inverse document frequency, log(N/count)/log(N), NOT
-        1 - count/N. With only 89 agents the largest share is 9.4%, so
-        1 - share would compress every agent into [0.906, 1.0] and the signal
-        would carry no discriminating power at all. Normalized IDF spreads the
-        same population across [0.167, 1.0].
-
-        Returns 0.0 — the floor of the signal's range, not "neutral" and
-        emphatically not "maximally common" — when there is no usable corpus:
-        either total_agent_carriers is 0 (frequencies were never gathered) or
-        1 (log(N) is 0, making the ratio undefined). A shared agent under
-        either condition is still real evidence; scoring it 1.0 (the "unseen
-        agent" placeholder) would misrepresent a known agent as novel, and
-        inventing a mid-range value would fabricate precision the data can't
-        support. 0.0 makes the signal contribute nothing until real stats
-        exist, rather than pretend to a discriminating power it doesn't have.
+        0.0 rather than 1.0 for an absent table, matching FieldRarityTable's
+        own floor: no table means frequencies were never collected, and
+        treating an unmeasured value as novel would overstate the evidence
+        rather than withhold judgement.
         """
-        if self.total_agent_carriers < MIN_AGENT_CORPUS:
+        table = self.rarity_tables.get(field_path)
+        if table is None:
             return 0.0
-        count = self.agent_counts.get(_normalize_agent_key(agent_name), 0)
-        if count <= 0:
-            return 1.0
-        return math.log(self.total_agent_carriers / count) / math.log(
-            self.total_agent_carriers
-        )
+        return table.rarity(value)

@@ -73,7 +73,8 @@ class CandidateFinder:
         Restricted to seed_signals so an operator's config choice stays
         authoritative: a signal not trusted to seed cannot silently widen the
         search. A signal that is listed but declines to seed (returning no
-        clauses, as AgentSignal does) is simply skipped rather than raising.
+        clauses, as RarityWeightedValueSignal does) is simply skipped rather
+        than raising.
 
         This method used to hold a whitelist of seedable types plus one helper
         per type, which meant candidate retrieval knew about phone numbers and

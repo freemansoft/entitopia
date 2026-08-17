@@ -25,14 +25,18 @@ logger = logging.getLogger(__name__)
 
 # Config keys whose values name the source fields a signal reads. Used to
 # decide which signals are looking at the same underlying evidence.
+#
+# predecessor_date and successor_date used to appear here. They moved to the
+# lifecycle block, so a temporal signal now names no source fields and falls
+# through to the frozenset({signal_type}) default below. That is still exactly
+# one evidence key, distinct from every other signal's, so min_signals counts
+# the same number as before -- see the test pinning it.
 _FIELD_CONFIG_KEYS = (
     "fields",
     "phone_fields",
     "text_fields",
     "name_field",
     "address_field",
-    "predecessor_date",
-    "successor_date",
 )
 
 
@@ -105,9 +109,11 @@ class Signal:
         Returning [] means "this signal cannot retrieve, only corroborate" —
         it will still score a pair that some other signal pulled in, but it
         will never widen the candidate set. That is the right answer for a
-        signal with no discriminating power to retrieve on: AgentSignal
-        deliberately declines, because 87 BOC-3 agents cover 519,139 filings
-        and seeding on one returns essentially random carriers.
+        signal with no discriminating power to retrieve on:
+        RarityWeightedValueSignal deliberately declines, because the fields
+        it suits are by construction ones many records share -- in the
+        measured case 87 values covered 519,139 filings, so seeding on one
+        returns essentially random candidates.
 
         This lives on the signal rather than in CandidateFinder because a
         signal is the only thing that knows what evidence it reads. The
@@ -467,28 +473,42 @@ def parse_flexible_date(value) -> datetime.date | None:  # noqa: PLR0911
     return None
 
 
-class AgentSignal(Signal):
-    """Shared BOC-3 process agent, weighted by how rare the agent is.
+class RarityWeightedValueSignal(Signal):
+    """A shared value on one field, weighted by how rare that value is.
 
-    Only 89 distinct agents cover 1.43M filings, so an unweighted version of
-    this signal fires on roughly 7% of random pairs. Weight is deliberately low.
+    Named for the mechanism rather than the field it was written for. It was
+    "agent", after the BOC-3 process agents it scores in one project, which put
+    a domain concept in the framework's type registry. Any field where a shared
+    value is weak evidence in proportion to how common the value is behaves
+    identically — a shared filing agent, a shared registered office, a shared
+    billing service.
+
+    The weighting is not optional decoration. In the measured case only 89
+    distinct values covered 1.43M rows, so an unweighted version of this signal
+    fires on roughly 7% of random pairs. Weight is deliberately low on top of
+    that.
+
+    Declines to seed — it inherits the base seed_clauses returning [] — because
+    a field this signal suits is by construction one that many records share,
+    and seeding on such a value returns essentially random candidates.
     """
 
-    type_names = ("agent",)
+    type_names = ("rarity-weighted-value",)
 
     def score(self, pred, cand, ctx):
-        pred_agents = set()
-        cand_agents = set()
-        _collect(pred_agents, pred.value(self.config.name_field), normalize_text_identifier)
-        _collect(cand_agents, cand.value(self.config.name_field), normalize_text_identifier)
+        pred_values = set()
+        cand_values = set()
+        field_path = self.config.name_field
+        _collect(pred_values, pred.value(field_path), normalize_text_identifier)
+        _collect(cand_values, cand.value(field_path), normalize_text_identifier)
 
-        if not pred_agents or not cand_agents:
+        if not pred_values or not cand_values:
             return None
 
-        shared = pred_agents & cand_agents
+        shared = pred_values & cand_values
         if not shared:
             return 0.0
-        return max(ctx.agent_rarity(name) for name in shared)
+        return max(ctx.rarity(field_path, value) for value in shared)
 
 
 class TemporalSignal(Signal):
@@ -685,7 +705,7 @@ def _register(signal_class: type[Signal]) -> None:
 _register(NameOverlapSignal)
 _register(AddressSignal)
 _register(ExactIdentifierSignal)
-_register(AgentSignal)
+_register(RarityWeightedValueSignal)
 _register(TemporalSignal)
 _register(SharedTokenSignal)
 

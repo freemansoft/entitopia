@@ -15,13 +15,17 @@ from types import SimpleNamespace
 from elasticsearch.helpers import parallel_bulk
 
 from matching.candidates import CandidateFinder
-from matching.documents import ScoringContext
+from matching.documents import FieldRarityTable, ScoringContext
 from matching.population import PopulationSelector
 from matching.scorer import PairScorer
 from matching.signals import build_signal, parse_flexible_date
 from utils import analysis_fingerprint, elasticsearch_utils, file_utils, id_utils
 
-AGENT_TERMS_SIZE = 500
+# Distinct values to pull when measuring how common a field's values are.
+# Sized for a field whose whole premise is a small value space -- the
+# measured case had 89 distinct values across 1.43M rows -- so this is
+# generous rather than tight.
+RARITY_TERMS_SIZE = 500
 # Fallback for how many records may share a value before it stops identifying
 # anything, when neither config nor the signal says. Deliberately small: this
 # only applies to fields a signal scores as exact identity, where sharing is
@@ -556,60 +560,82 @@ class PhaseEntityMatch:
             return int(limits[source_path])
         if "*" in limits:
             return int(limits["*"])
-        return int(getattr(signal.config, "max_shared_carriers", DEFAULT_SHARED_LIMIT))
+        return int(getattr(signal.config, "max_shared_entities", DEFAULT_SHARED_LIMIT))
 
 
     def _build_context(self, source_index, signal_configs, config=None):
-        """Gather corpus statistics once per sweep: agent rarity and ignored values."""
+        """Gather corpus statistics once per sweep: value rarity and ignored values."""
         signals = [build_signal(c, self.lifecycle) for c in signal_configs]
         declared_ignored = self._declared_ignored_values(config) if config else {}
         limits = self._shared_limits(config) if config else {}
         suppressed = self._suppressed_values(source_index, signals, limits)
         for field_path, values in declared_ignored.items():
             suppressed.setdefault(field_path, set()).update(values)
-        agent_config = next((c for c in signal_configs if c.type == "agent"), None)
-        if agent_config is None:
-            return ScoringContext(ignored_values=suppressed)
-
-        keyword_field = "{}.keyword".format(agent_config.name_field)
-        try:
-            response = self.es.search(
-                index=source_index,
-                size=0,
-                aggs={
-                    "agents": {"terms": {"field": keyword_field, "size": AGENT_TERMS_SIZE}}
-                },
-            )
-        except Exception as e:
-            self.logger.warning(
-                "Could not gather agent frequencies ({}); agent signal has no corpus "
-                "to weight against and will score every shared agent at 0.0 (no "
-                "discriminating power) rather than fabricate a rarity value".format(e)
-            )
-            return ScoringContext(ignored_values=suppressed)
-
-        buckets = response["aggregations"]["agents"]["buckets"]
-        counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
-        total = sum(counts.values())
-        if total == 0:
-            # A zero-agent corpus is the signature of enrichment having
-            # silently produced nothing (see the README's documented enrich
-            # bugs) rather than a legitimately agent-free carrier population.
-            self.logger.warning(
-                "Loaded 0 distinct BOC-3 agents; boc3_agents enrichment may not "
-                "have run. The agent signal will score every shared agent at 0.0."
-            )
-        else:
-            self.logger.info(
-                "Loaded {} distinct BOC-3 agents covering {} carrier filings".format(
-                    len(counts), total
-                )
-            )
         return ScoringContext(
-            agent_counts=counts,
-            total_agent_carriers=total,
+            rarity_tables=self._rarity_tables(source_index, signal_configs),
             ignored_values=suppressed,
         )
+
+    def _rarity_tables(self, source_index, signal_configs):
+        """One value-frequency table per field a rarity-weighted signal reads.
+
+        A loop over the configured signals rather than one hardcoded lookup:
+        the mechanism is "count how common this field's values are", and which
+        fields need it is a project's decision. Previously this fetched exactly
+        one field, named by the signal type "agent".
+
+        A field that cannot be aggregated is skipped with a warning rather than
+        aborting the sweep, because the signal degrades honestly without it —
+        FieldRarityTable floors an empty corpus to 0.0, so the signal
+        contributes nothing instead of inventing a rarity.
+        """
+        tables = {}
+        for signal_config in signal_configs:
+            if getattr(signal_config, "type", None) != "rarity-weighted-value":
+                continue
+            field_path = signal_config.name_field
+            # .keyword because the source field is analyzed text; aggregating
+            # the analyzed form would count tokens rather than whole values.
+            keyword_field = "{}.keyword".format(field_path)
+            try:
+                response = self.es.search(
+                    index=source_index,
+                    size=0,
+                    aggs={
+                        "values": {
+                            "terms": {"field": keyword_field, "size": RARITY_TERMS_SIZE}
+                        }
+                    },
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "Could not gather value frequencies for {} ({}); its signal has "
+                    "no corpus to weight against and will score every shared value "
+                    "at 0.0 (no discriminating power) rather than fabricate a "
+                    "rarity value".format(field_path, e)
+                )
+                continue
+
+            buckets = response["aggregations"]["values"]["buckets"]
+            counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
+            total = sum(counts.values())
+            if total == 0:
+                # A zero-value corpus is the signature of enrichment having
+                # silently produced nothing (see the README's documented enrich
+                # bugs) rather than a population that genuinely has no values.
+                self.logger.warning(
+                    "Loaded 0 distinct values for {}; the enrichment feeding it may "
+                    "not have run. Its signal will score every shared value at "
+                    "0.0.".format(field_path)
+                )
+            else:
+                self.logger.info(
+                    "Loaded {} distinct values for {} covering {} records".format(
+                        len(counts), field_path, total
+                    )
+                )
+            tables[field_path] = FieldRarityTable(counts=counts, total=total)
+        return tables
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,

@@ -142,3 +142,28 @@ def test_signal_type_is_still_temporal_after_the_change():
     # this string, and IDENTITY_SIGNAL_TYPES does not contain it.
     assert _signal().signal_type == "temporal"
     assert re.fullmatch(r"temporal", _signal().signal_type)
+
+
+def test_temporal_still_contributes_exactly_one_distinct_evidence_key():
+    """min_signals counts distinct evidence keys, so this could move pairs.
+
+    Moving the date paths into the lifecycle block means the temporal signal
+    names no source fields, so its evidence_key falls through from
+    {"out_of_service_orders.oos_date", "add_date"} to {"temporal"}. That is
+    still one key and still distinct from every other signal's, so the count
+    min_signals sees is unchanged -- but it is a silent change to a guard that
+    decides which pairs survive, which is worth an explicit test rather than
+    an argument.
+    """
+    temporal = _signal()
+    name = build_signal(
+        SimpleNamespace(
+            type="name-phonetic",
+            weight=0.15,
+            fields=["legal_name"],
+            subfield="phonetic",
+        )
+    )
+    assert len(temporal.evidence_key) == 1
+    assert temporal.evidence_key != name.evidence_key
+    assert len({temporal.evidence_key, name.evidence_key}) == 2
