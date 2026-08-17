@@ -267,6 +267,15 @@ the compatibility gate for no gain.
 Together these partially deliver the README's open item 6, the `signals[].detail`
 field specified in the chameleon matching design and never implemented.
 
+**Open, found while verifying the gate:** a `temporal` contribution emits
+`"fields": []`. Its date paths live in the `lifecycle` block, and `fields_read()`
+reads only signal-level config keys, so a reader of one pair cannot tell which
+dates its `gap_days` was measured between — which is the exact failure this
+section exists to prevent, on the one signal whose paths moved. Fixing it means
+teaching `fields_read()` about `lifecycle` or emitting those paths at document
+level; both change the emitted document, so neither belonged inside the commit
+range the gate certified.
+
 `nested-exists` is one primitive rather than three composable ones **because
 flattening is a known defect, not a style preference**. The docstring at
 `predecessors.py:63` records the incident: under an object mapping, a record with
@@ -509,6 +518,12 @@ generated queries against the current hardcoded output directly, so the
 riskiest part of the refactor is verified without a cluster.
 
 ### The compatibility gate
+
+**Ran 2026-08-17 and passed on both checks** — all eleven metrics exactly equal
+and the pair id sets identical at 75,537 each, against the source index stamped
+`0595ca890d9ec6fb` and with no reload in between. Full record, including the
+sweep summary and one gap found while verifying, in
+[the runbook](../plans/2026-08-16-compatibility-gate-runbook.md).
 
 The gate is behavioral, not structural. Config churn is free; result churn is
 not.
