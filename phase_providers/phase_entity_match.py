@@ -10,6 +10,7 @@ import datetime
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 
 from elasticsearch.helpers import parallel_bulk
 
@@ -125,6 +126,12 @@ class PhaseEntityMatch:
         self.one_step = one_step
         self.project_config = project_config
         self.logger = logging.getLogger(__name__)
+        # Replaced by handle() from the loaded entity-match.json. Defaulted
+        # here so _to_action stays callable on a bare instance rather than
+        # raising AttributeError depending on which method ran first -- a
+        # pair document built from an empty block carries only entity_key,
+        # which is a degraded document rather than a crash.
+        self.entity_config = SimpleNamespace()
 
     def handle(self):
         self.logger.info(
@@ -155,9 +162,18 @@ class PhaseEntityMatch:
         elasticsearch_utils.replace_index_with_now_version(index_config)
 
         source_index = config.source_index
+        # Overrides the __init__ default. Held on the instance because
+        # _to_action needs it several call frames below, and threading it
+        # through the generator would put a config object in the signature of
+        # every intermediate method.
+        self.entity_config = getattr(config, "entity", SimpleNamespace())
         scorer = PairScorer(config.signals, config.scoring)
         finder = CandidateFinder(
-            self.es, source_index, config.candidates, config.signals
+            self.es,
+            source_index,
+            config.candidates,
+            config.signals,
+            entity_config=self.entity_config,
         )
         selector = PredecessorSelector(self.es, source_index, config.predecessors)
 
@@ -669,9 +685,20 @@ class PhaseEntityMatch:
                 parse_flexible_date(registered) - parse_flexible_date(shutdown)
             ).days
 
+        pred_extra = {}
+        succ_extra = {}
+        if shutdown is not None:
+            pred_extra["shutdown_date"] = shutdown
+            reason = pred.value("out_of_service_orders.oos_reason")
+            pred_extra["shutdown_reason"] = (
+                reason[0] if isinstance(reason, list) else reason
+            )
+        if registered is not None:
+            succ_extra["add_date"] = registered
+
         document = {
-            "predecessor": _carrier_summary(pred, shutdown_date=shutdown),
-            "successor": _carrier_summary(succ, add_date=registered),
+            "predecessor": _entity_summary(pred, self.entity_config, pred_extra),
+            "successor": _entity_summary(succ, self.entity_config, succ_extra),
             "total_score": round(pair.total_score, 6),
             "gap_days": gap_days,
             "signals_present": pair.signals_present,
@@ -703,28 +730,36 @@ class PhaseEntityMatch:
         }
 
 
-def _carrier_summary(doc, shutdown_date=None, add_date=None):
+def _entity_summary(doc, entity_config, extra=None):
     """Trim an EntityDoc to the human-facing fields a reviewer needs to judge a pair.
 
     The output document exists to be read by a person deciding whether a
-    flagged pair is a real chameleon, not to carry the full carrier record
-    already available in the source index; keeping this list short is what
-    keeps a reviewed hit list scannable.
+    flagged pair is real, not to carry the full record already available in
+    the source index; keeping this list short is what keeps a reviewed hit
+    list scannable. Which fields those are is a project's own decision, so it
+    comes from entity.summary_fields rather than being fixed here -- the
+    previous fixed list named FMCSA columns, so any other project's pairs
+    would have carried five keys holding nulls.
+
+    Both `entity_key` and the project's own label are emitted when a label is
+    configured. Both rather than either, for the reason the provenance work
+    already established about source_index: a pair is routinely read on its
+    own, and at that point the project config is not in the reader's hands.
+    Generic tooling reads entity_key without loading config, while the
+    labelled copy keeps existing project scripts, committed baselines and
+    README figures working unchanged.
+
+    A configured field that is absent is emitted as None rather than dropped,
+    so a reviewer can tell "asked for and empty" from "never asked for".
     """
-    summary = {
-        "dot_number": doc.entity_key,
-        "legal_name": doc.value("legal_name"),
-        "dba_name": doc.value("dba_name"),
-        "phy_street": doc.value("phy_street"),
-        "phy_city": doc.value("phy_city"),
-        "phy_state": doc.value("phy_state"),
-    }
-    if shutdown_date is not None:
-        summary["shutdown_date"] = shutdown_date
-        reason = doc.value("out_of_service_orders.oos_reason")
-        summary["shutdown_reason"] = reason[0] if isinstance(reason, list) else reason
-    if add_date is not None:
-        summary["add_date"] = add_date
+    summary = {"entity_key": doc.entity_key}
+    label = getattr(entity_config, "key_label", None)
+    if label:
+        summary[label] = doc.entity_key
+    for path in getattr(entity_config, "summary_fields", None) or []:
+        summary[path] = doc.value(path)
+    if extra:
+        summary.update(extra)
     return summary
 
 

@@ -1,6 +1,11 @@
 {
   "source_index": "carriers-000001",
   "source_settings_step": "carriers",
+  "entity": {
+    "key": "dot_number",
+    "key_label": "dot_number",
+    "summary_fields": ["legal_name", "dba_name", "phy_street", "phy_city", "phy_state"]
+  },
   "predecessors": {
     "selector": "out-of-service",
     "oos_status": ["ACTIVE"],
@@ -72,12 +77,16 @@
   ],
   "ignore_values": {
     "crashes.vehicle_identification_number": [
-      "UNKNOWN", "UNKNOWN-REPAIR", "UNK", "NONE", "N/A", "NA", "GGGG",
+      "UNKNOWN",
+      "UNKNOWN-REPAIR",
+      "UNK",
+      "NONE",
+      "N/A",
+      "NA",
+      "GGGG",
       "XXXXXXXXXXXXXXXXX"
     ],
-    "inspections.units.insp_unit_vehicle_id_number": [
-      "UNKNOWN", "UNK", "NONE", "N/A", "NA"
-    ],
+    "inspections.units.insp_unit_vehicle_id_number": ["UNKNOWN", "UNK", "NONE", "N/A", "NA"],
     "telephone": ["(000) 000-0000", "0000000000", "(999) 999-9999"],
     "fax": ["(000) 000-0000", "0000000000", "(999) 999-9999"]
   },
