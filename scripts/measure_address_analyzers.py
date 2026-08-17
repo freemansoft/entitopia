@@ -33,7 +33,7 @@ from elasticsearch import Elasticsearch
 from matching.tokens import containment
 
 # Mirrors AddressSignal's own arithmetic. Kept in sync by hand rather than
-# imported because the signal needs a CarrierDoc and a ScoringContext, neither
+# imported because the signal needs an EntityDoc and a ScoringContext, neither
 # of which exists here. This one genuinely is a Python constant — it copies
 # CROSS_STATE_FUZZY_PENALTY in matching/signals.py — so it only drifts if that
 # code changes, and a code change is something a reader of this file's git

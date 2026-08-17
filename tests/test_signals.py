@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, ScoringContext
 from matching.signals import (
     MAX_SEED_TOKENS,
     SIGNAL_TYPES,
@@ -25,9 +25,9 @@ from matching.signals import (
 )
 
 
-def make_doc(dot_number="1", source=None, tokens=None):
-    return CarrierDoc(
-        dot_number=dot_number,
+def make_doc(entity_key="1", source=None, tokens=None):
+    return EntityDoc(
+        entity_key=entity_key,
         source=source or {},
         tokens=tokens or {},
     )
@@ -581,7 +581,7 @@ def test_shared_token_score_still_normalizes_case():
         SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
     )
     pred = make_doc(source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
     assert signal.score(pred, cand, ScoringContext()) == 1.0
 
 
@@ -594,7 +594,7 @@ def test_suppressed_token_is_not_evaluable_rather_than_zero():
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "UNKNOWN"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "UNKNOWN"}]})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -604,7 +604,7 @@ def test_suppression_leaves_real_tokens_alone():
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}, {"vin": "1FUJGLDR0CSBP9784"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     assert signal.score(pred, cand, ctx) == 1.0
 
 
@@ -658,7 +658,7 @@ def test_ignored_phone_is_not_evaluable():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"(000) 000-0000"}})
     pred = make_doc(source={"telephone": "(000) 000-0000"})
-    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    cand = make_doc(entity_key="2", source={"telephone": "(000) 000-0000"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -668,7 +668,7 @@ def test_ignore_matches_the_normalized_phone_form_too():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
     pred = make_doc(source={"telephone": "(000) 000-0000"})
-    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    cand = make_doc(entity_key="2", source={"telephone": "(000) 000-0000"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -678,7 +678,7 @@ def test_ignored_shared_service_email_is_not_identity_evidence():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
     pred = make_doc(source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
-    cand = make_doc(dot_number="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    cand = make_doc(entity_key="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -686,7 +686,7 @@ def test_real_shared_phone_still_scores():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
     pred = make_doc(source={"telephone": "(555) 867-5309"})
-    cand = make_doc(dot_number="2", source={"telephone": "(555) 867-5309"})
+    cand = make_doc(entity_key="2", source={"telephone": "(555) 867-5309"})
     assert signal.score(pred, cand, ctx) == 1.0
 
 

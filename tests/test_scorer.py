@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, ScoringContext
 from matching.scorer import PairScorer
 from matching.signals import build_signal
 
@@ -18,8 +18,8 @@ def cfg(**kwargs):
     return SimpleNamespace(**kwargs)
 
 
-def doc(dot_number="1", source=None, tokens=None):
-    return CarrierDoc(dot_number=dot_number, source=source or {}, tokens=tokens or {})
+def doc(entity_key="1", source=None, tokens=None):
+    return EntityDoc(entity_key=entity_key, source=source or {}, tokens=tokens or {})
 
 
 def scoring(**overrides):

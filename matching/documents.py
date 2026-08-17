@@ -1,6 +1,6 @@
 """Data shapes that signals consume.
 
-CarrierDoc pairs a carrier's _source with the analyzed tokens Elasticsearch
+EntityDoc pairs a record's _source with the analyzed tokens Elasticsearch
 produced for it. Tokens come from _mtermvectors rather than being recomputed in
 Python, so scoring always sees exactly what the index sees.
 """
@@ -10,15 +10,22 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class CarrierDoc:
-    """Pairs one carrier's raw _source with its Elasticsearch-analyzed tokens.
+class EntityDoc:
+    """Pairs one record's raw _source with its Elasticsearch-analyzed tokens.
 
     Tokens are read from _mtermvectors rather than recomputed in Python so
     that scoring always sees the same phonetic encodings and synonym
     expansions the index actually produced, not a local approximation of them.
+
+    `entity_key` is named for its role rather than for any dataset's column.
+    It used to be `dot_number`, which meant every project's records had to
+    pretend to be FMCSA carriers and made `entity-match` unreachable by
+    configuration. There is deliberately no `dot_number` alias property: two
+    names for one value give new code no rule about which to reach for, which
+    is how the vocabulary got in here to begin with.
     """
 
-    dot_number: str
+    entity_key: str
     source: dict
     # Keyed "field.subfield", e.g. "legal_name.phonetic_bm"
     tokens: dict[str, set[str]] = field(default_factory=dict)
@@ -27,7 +34,7 @@ class CarrierDoc:
         """Tokens for one analyzed field, or an empty set if never indexed.
 
         Signals intersect sets freely; returning empty rather than raising on
-        a missing field lets "not indexed for this carrier" be treated the
+        a missing field lets "not indexed for this record" be treated the
         same as "no overlap" without every caller needing a try/except.
         """
         return self.tokens.get("{}.{}".format(field_name, subfield), set())
@@ -40,8 +47,8 @@ class CarrierDoc:
 def read_path(source: dict, path: str):
     """Read a dotted path out of a raw _source dict.
 
-    Lives outside CarrierDoc because candidate *retrieval* needs it too, and
-    at that point there is no CarrierDoc yet — seed clauses are built from a
+    Lives outside EntityDoc because candidate *retrieval* needs it too, and
+    at that point there is no EntityDoc yet — seed clauses are built from a
     predecessor's raw search hit, before tokens have been fetched. Keeping one
     implementation means a signal reads the same values when seeding the
     candidate query as it does later when scoring the pair; two copies would

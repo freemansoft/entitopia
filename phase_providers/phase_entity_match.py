@@ -626,7 +626,7 @@ class PhaseEntityMatch:
                     stats["errors"] += 1
                     self.logger.error(
                         "Scoring failed for {} -> {}: {}".format(
-                            pred_doc.dot_number, cand_doc.dot_number, e
+                            pred_doc.entity_key, cand_doc.entity_key, e
                         )
                     )
                     continue
@@ -635,7 +635,7 @@ class PhaseEntityMatch:
 
             scored.sort(key=lambda p: p.total_score, reverse=True)
             for pair in scored[:max_pairs]:
-                key = (pair.predecessor.dot_number, pair.successor.dot_number)
+                key = (pair.predecessor.entity_key, pair.successor.entity_key)
                 if key in seen_pairs:
                     continue
                 seen_pairs.add(key)
@@ -697,14 +697,14 @@ class PhaseEntityMatch:
         return {
             "_index": target_index,
             "_id": id_utils.compute_id(
-                {"p": pred.dot_number, "s": succ.dot_number}, ["p", "s"]
+                {"p": pred.entity_key, "s": succ.entity_key}, ["p", "s"]
             ),
             "_source": document,
         }
 
 
 def _carrier_summary(doc, shutdown_date=None, add_date=None):
-    """Trim a CarrierDoc to the human-facing fields a reviewer needs to judge a pair.
+    """Trim an EntityDoc to the human-facing fields a reviewer needs to judge a pair.
 
     The output document exists to be read by a person deciding whether a
     flagged pair is a real chameleon, not to carry the full carrier record
@@ -712,7 +712,7 @@ def _carrier_summary(doc, shutdown_date=None, add_date=None):
     keeps a reviewed hit list scannable.
     """
     summary = {
-        "dot_number": doc.dot_number,
+        "dot_number": doc.entity_key,
         "legal_name": doc.value("legal_name"),
         "dba_name": doc.value("dba_name"),
         "phy_street": doc.value("phy_street"),

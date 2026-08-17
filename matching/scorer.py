@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, ScoringContext
 from matching.signals import _latest_date, build_signal
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,8 @@ class ScoredPair:
     the total rather than collapsing to a single score.
     """
 
-    predecessor: CarrierDoc
-    successor: CarrierDoc
+    predecessor: EntityDoc
+    successor: EntityDoc
     total_score: float
     signals: list[SignalContribution] = field(default_factory=list)
     matched_on: list[str] = field(default_factory=list)
@@ -147,7 +147,7 @@ class PairScorer:
         # this module's whole design (see module and class docstrings); folding
         # the new gap-window guard into an existing branch would hide a distinct
         # rejection reason behind another one's return statement.
-        self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext
+        self, pred: EntityDoc, cand: EntityDoc, ctx: ScoringContext
     ) -> ScoredPair | None:
         """Run all signals over a pair, renormalize, and apply the guards.
 
@@ -159,7 +159,7 @@ class PairScorer:
         missing data instead of judging it neutrally on what could actually
         be evaluated.
         """
-        if pred.dot_number == cand.dot_number:
+        if pred.entity_key == cand.entity_key:
             return None
 
         if self._gap_outside_window(pred, cand):

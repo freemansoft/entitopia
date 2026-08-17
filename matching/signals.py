@@ -12,7 +12,7 @@ neutrally.
 import datetime
 import logging
 
-from matching.documents import CarrierDoc, ScoringContext, read_path
+from matching.documents import EntityDoc, ScoringContext, read_path
 from matching.tokens import (
     blended_overlap,
     containment,
@@ -93,7 +93,7 @@ class Signal:
         # rather than collapsing together with every other such signal.
         return frozenset(names) or frozenset({self.signal_type})
 
-    def score(self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext) -> float | None:
+    def score(self, pred: EntityDoc, cand: EntityDoc, ctx: ScoringContext) -> float | None:
         """Score one carrier pair. Subclasses implement; see the class
         docstring for the None-vs-0.0 contract every implementation must honor.
         """
@@ -557,7 +557,7 @@ class SharedTokenSignal(Signal):
     def _tokens(self, reader, ctx) -> set[str]:
         """Normalized, non-suppressed tokens from every configured field.
 
-        Takes the reader rather than the document so scoring (CarrierDoc.value)
+        Takes the reader rather than the document so scoring (EntityDoc.value)
         and seeding (read_path over a raw hit) collect tokens identically —
         seeding on values that scoring would normalize differently would
         retrieve candidates that then score 0.0.
