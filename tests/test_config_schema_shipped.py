@@ -24,6 +24,7 @@ _KIND_BY_FILENAME = {
     "pipelines.json": "pipelines",
     "enrichment-policies.json": "enrichment-policies",
     "entity-match.json": "entity-match",
+    "metrics.json": "metrics",
 }
 
 _PROJECTS = ("DOT-Commercial", "CMS-Providers")

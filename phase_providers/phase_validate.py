@@ -41,6 +41,7 @@ STEP_CONFIG_FILES = (
     ("pipelines", "pipelines.json"),
     ("enrichment-policies", "enrichment-policies.json"),
     ("entity-match", "entity-match.json"),
+    ("metrics", "metrics.json"),
 )
 
 ENTITY_MATCH_FILE = "entity-match.json"
