@@ -80,14 +80,20 @@ max-positional-args = 10
 # import runs — forcing the import below the sys.path fix-up and out of
 # top-of-file position.
 "scripts/measure_address_analyzers.py" = ["E402"]
-# Same sys.path fix-up shape as measure_address_analyzers.py above: this
-# script imports utils.crash_lift after pushing the repo root onto sys.path.
-# Verified against ruff 0.16.1 that this entry is currently a no-op — that
+# Same sys.path fix-up shape as measure_address_analyzers.py above: both
+# scripts push the repo root onto sys.path before importing framework
+# packages, and load DOT-Commercial/crash_lift.py by path afterwards.
+# Verified against ruff 0.16.1 that these entries are currently no-ops — that
 # version already allows a `sys.path.insert` call before a subsequent import
-# without flagging E402, so removing this line changes nothing today. Kept
+# without flagging E402, so removing these lines changes nothing today. Kept
 # anyway, defensively, in case a future ruff drops that allowance; mirrors
 # the sanctioned exemption above rather than inventing a new reason.
-"scripts/measure_crash_lift.py" = ["E402"]
+#
+# The paths moved with the scripts. A defensive exemption naming a file that
+# no longer exists is worse than none: it reads as covered and does nothing
+# on the day the allowance it guards against is withdrawn.
+"DOT-Commercial/scripts/measure_crash_lift.py" = ["E402"]
+"DOT-Commercial/scripts/measure_chameleon_shape.py" = ["E402"]
 # Magic values in assertions are what a test asserts.
 #
 # D103 (undocumented public function) is exempted for test functions

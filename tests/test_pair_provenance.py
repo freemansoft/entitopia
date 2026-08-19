@@ -10,7 +10,7 @@ a real one and be quoted as evidence.
 
 import logging
 
-from matching.documents import CarrierDoc
+from matching.documents import EntityDoc
 from matching.scorer import ScoredPair
 from phase_providers.phase_entity_match import PhaseEntityMatch, RunProvenance
 
@@ -59,11 +59,11 @@ def match_phase(es=None):
 
 
 def pair():
-    pred = CarrierDoc(
-        dot_number="1",
+    pred = EntityDoc(
+        entity_key="1",
         source={"out_of_service_orders": {"oos_date": "2025-01-01", "oos_reason": "X"}},
     )
-    succ = CarrierDoc(dot_number="2", source={"add_date": "2025-02-01"})
+    succ = EntityDoc(entity_key="2", source={"add_date": "2025-02-01"})
     return ScoredPair(predecessor=pred, successor=succ, total_score=0.9, signals_present=2)
 
 

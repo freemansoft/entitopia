@@ -397,7 +397,7 @@ successor has to register after the predecessor shuts down, or, per
 known-coming shutdown. `gap_days` (successor `add_date` minus predecessor
 `shutdown_date`) is already on every emitted pair, so checking this needs no
 labels and no external dataset: run
-`.venv/bin/python scripts/measure_chameleon_shape.py` and look at where the
+`.venv/bin/python DOT-Commercial/scripts/measure_chameleon_shape.py` and look at where the
 ≥ 0.70 tier's gaps actually land.
 
 Measured 2026-08-08: of the **1,729 pairs scoring ≥ 0.70**, only **34.5%
@@ -465,7 +465,7 @@ the result is exactly how this kind of measurement fools its author:
   wash out completely if averaged against a decade of carriers that
   re-registered long ago and have been running quietly ever since.
 
-Run `.venv/bin/python scripts/measure_crash_lift.py`. Measured 2026-08-08:
+Run `.venv/bin/python DOT-Commercial/scripts/measure_crash_lift.py`. Measured 2026-08-08:
 crash window 2024-08-12 to 2026-07-29; 249,778 distinct successors, restricted
 cohort 196,707 (21.2% excluded as registered inside the window). That cohort
 crashed at **6.64%**; per-band rates inside it don't rise with score

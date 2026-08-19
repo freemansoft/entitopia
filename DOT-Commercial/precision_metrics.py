@@ -8,8 +8,9 @@ compared against a number chosen in advance rather than one rationalized after
 the fact.
 
 Kept free of Elasticsearch imports on purpose: anything here must be callable
-from a test with plain dicts, the same split that keeps utils/crash_lift.py
-testable while scripts/measure_crash_lift.py stays integration-shaped.
+from a test with plain dicts, the same split that keeps
+DOT-Commercial/crash_lift.py testable while its measure_crash_lift.py stays
+integration-shaped.
 
 Lives in DOT-Commercial/ rather than utils/ (which keeps only the generic diff
 engine, utils.sweep_compare.compare()) because "coherent", "triage", and
@@ -35,7 +36,7 @@ COHERENT_MAX_GAP = 365
 # The signals the triage filter treats as corroboration. Name and address
 # similarity are excluded deliberately — a pair resting on those alone is the
 # false-positive shape the triage set exists to exclude.
-CORROBORATING = frozenset({"vin-overlap", "exact-identifier"})
+CORROBORATING = frozenset({"shared-token", "exact-identifier"})
 
 # A byte-identical legal name reappearing within a week of shutdown at a near
 # perfect score is the README's sanity anchor. It is counted rather than named
@@ -95,12 +96,18 @@ def summarize(pairs) -> dict:
         # because they answer different questions and disagreed by 156 pairs
         # on the baseline (519 against 675). The strict one is the literal
         # population; the identity one is the population that exists ONLY
-        # because vin-overlap is marked conclusive, since agent (0.04) and
-        # temporal (0.05) cannot lift a pair over the 0.35 floor between them.
-        # Collapsing them into one metric would silently pick a side.
-        if matched == {"vin-overlap"}:
+        # because the shared-token signal is marked conclusive, since the
+        # rarity-weighted (0.04) and temporal (0.05) signals cannot lift a pair
+        # over the 0.35 floor between them. Collapsing them into one metric
+        # would silently pick a side.
+        #
+        # The matched_on value is the signal TYPE, which is now "shared-token";
+        # the metric NAMES stay vin_only and vin_only_identity because they are
+        # keys in a committed baseline, and renaming them would make the
+        # comparison fail for a cosmetic reason.
+        if matched == {"shared-token"}:
             counts["vin_only"] += 1
-        if matched & IDENTITY_SIGNAL_TYPES == {"vin-overlap"}:
+        if matched & IDENTITY_SIGNAL_TYPES == {"shared-token"}:
             counts["vin_only_identity"] += 1
 
         if score < TRIAGE_SCORE:

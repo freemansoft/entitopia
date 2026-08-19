@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, ScoringContext
 from matching.scorer import PairScorer
 from matching.signals import build_signal
 
@@ -18,8 +18,8 @@ def cfg(**kwargs):
     return SimpleNamespace(**kwargs)
 
 
-def doc(dot_number="1", source=None, tokens=None):
-    return CarrierDoc(dot_number=dot_number, source=source or {}, tokens=tokens or {})
+def doc(entity_key="1", source=None, tokens=None):
+    return EntityDoc(entity_key=entity_key, source=source or {}, tokens=tokens or {})
 
 
 def scoring(**overrides):
@@ -37,9 +37,11 @@ NAME_SIGNAL = cfg(
     type="name-phonetic", weight=0.5, fields=["legal_name"], subfield="phonetic"
 )
 VIN_SIGNAL = cfg(
-    type="vin-overlap", weight=0.5, fields=["crashes.vehicle_identification_number"]
+    type="shared-token", weight=0.5, fields=["crashes.vehicle_identification_number"]
 )
-AGENT_SIGNAL = cfg(type="agent", weight=0.5, name_field="boc3_agents.co_name")
+AGENT_SIGNAL = cfg(
+    type="rarity-weighted-value", weight=0.5, name_field="boc3_agents.co_name"
+)
 
 
 def strong_pair():
@@ -63,7 +65,7 @@ def test_scores_a_strong_pair():
     assert result is not None
     assert result.total_score == pytest.approx(1.0)
     assert result.signals_present == 2
-    assert set(result.matched_on) == {"name-phonetic", "vin-overlap"}
+    assert set(result.matched_on) == {"name-phonetic", "shared-token"}
 
 
 def test_renormalizes_over_available_signals():
@@ -101,14 +103,10 @@ def test_min_total_score_guard_rejects_weak_pairs():
 
 
 def test_require_identity_signal_rejects_vin_only_match():
-    temporal = cfg(
-        type="temporal",
-        weight=0.5,
-        predecessor_date="out_of_service_orders.oos_date",
-        successor_date="add_date",
-        max_gap_days=365,
+    temporal = cfg(type="temporal", weight=0.5, max_gap_days=365)
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, temporal], scoring(min_signals=1), lifecycle=LIFECYCLE
     )
-    scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL, temporal], scoring(min_signals=1))
     pred = doc(
         "1",
         source={
@@ -168,7 +166,7 @@ def test_shared_vin_alone_satisfies_the_identity_guard():
     )
     pair = scorer.score_pair(pred, cand, ScoringContext())
     assert pair is not None
-    assert pair.matched_on == ["vin-overlap"]
+    assert pair.matched_on == ["shared-token"]
 
 
 def test_returns_none_when_no_signal_is_evaluable():
@@ -249,7 +247,7 @@ def test_conclusive_signal_overrides_the_score_floor():
     # trucks. Raising the weight enough to clear the floor (~0.46) would make
     # the signal dominate every pair, so the override is a guard, not a weight.
     conclusive_vin = cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
         conclusive=True,
@@ -268,12 +266,12 @@ def test_conclusive_signal_overrides_the_score_floor():
     pair = scorer.score_pair(pred, cand, ScoringContext())
     assert pair is not None
     assert pair.total_score < 0.35
-    assert pair.matched_on == ["vin-overlap"]
+    assert pair.matched_on == ["shared-token"]
 
 
 def test_conclusive_signal_that_did_not_fire_does_not_override():
     conclusive_vin = cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
         conclusive=True,
@@ -298,13 +296,16 @@ def test_signals_are_not_conclusive_by_default():
     assert scorer.conclusive_types == set()
 
 
-TEMPORAL_SIGNAL = cfg(
-    type="temporal",
-    weight=0.5,
-    predecessor_date="out_of_service_orders.oos_date",
-    successor_date="add_date",
-    max_gap_days=365,
+# The dates a pair's gap is measured between, in one place. Both the
+# temporal signal and the scorer's gap-window gate read this block, which is
+# what makes it impossible for them to disagree about which event a gap
+# describes -- they used to hold separate copies of these two paths.
+LIFECYCLE = SimpleNamespace(
+    shutdown_date="out_of_service_orders.oos_date",
+    registration_date="add_date",
 )
+
+TEMPORAL_SIGNAL = cfg(type="temporal", weight=0.5, max_gap_days=365)
 
 
 def dated_pair(oos_date, add_date):
@@ -327,6 +328,7 @@ def test_pair_outside_the_configured_gap_window_is_dropped():
     scorer = PairScorer(
         [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
         scoring(min_gap_days=-180, max_gap_days=365),
+        lifecycle=LIFECYCLE,
     )
     pred, cand = dated_pair("2022-01-01", "2018-01-01")
     assert scorer.score_pair(pred, cand, ScoringContext()) is None
@@ -336,6 +338,7 @@ def test_pair_inside_the_window_is_kept():
     scorer = PairScorer(
         [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
         scoring(min_gap_days=-180, max_gap_days=365),
+        lifecycle=LIFECYCLE,
     )
     pred, cand = dated_pair("2022-01-01", "2022-02-01")
     assert scorer.score_pair(pred, cand, ScoringContext()) is not None
@@ -345,6 +348,7 @@ def test_gap_window_edges_are_inclusive():
     scorer = PairScorer(
         [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
         scoring(min_gap_days=-180, max_gap_days=365),
+        lifecycle=LIFECYCLE,
     )
     pred, cand = dated_pair("2022-01-01", "2023-01-01")  # exactly 365 days
     assert scorer.score_pair(pred, cand, ScoringContext()) is not None
@@ -357,6 +361,7 @@ def test_unparseable_dates_do_not_drop_the_pair():
     scorer = PairScorer(
         [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL],
         scoring(min_gap_days=-180, max_gap_days=365),
+        lifecycle=LIFECYCLE,
     )
     pred, cand = dated_pair("NOT-A-DATE", "2022-02-01")
     assert scorer.score_pair(pred, cand, ScoringContext()) is not None
@@ -365,18 +370,46 @@ def test_unparseable_dates_do_not_drop_the_pair():
 def test_gate_is_off_when_unconfigured():
     # Absent config must mean "no gate", so an existing deployment that has not
     # opted in keeps its current population. scoring() ships no gap keys.
-    scorer = PairScorer([NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL], scoring())
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL, TEMPORAL_SIGNAL], scoring(), lifecycle=LIFECYCLE
+    )
     pred, cand = dated_pair("2022-01-01", "2010-01-01")
     assert scorer.score_pair(pred, cand, ScoringContext()) is not None
 
 
-def test_gate_is_off_when_no_temporal_signal_is_configured():
-    # The gap comes from the temporal signal's own field paths, so a config
-    # with the window set but no temporal signal has nothing to read. Passing
-    # the pair through is the safe reading: the alternative is dropping every
-    # pair in the sweep on a config the operator thought was a tightening.
+def test_gate_is_off_without_a_lifecycle_block():
+    # The window has nothing to read when no lifecycle block names the dates.
+    # Passing the pair through is the safe reading: the alternative is dropping
+    # every pair in the sweep on a config the operator thought was a tightening.
+    #
+    # This condition used to be "no temporal signal is configured", because the
+    # gate borrowed that signal's own two field paths. Both now read the
+    # lifecycle block, so an absent block -- not an absent signal -- is what
+    # turns the gate off.
     scorer = PairScorer(
         [NAME_SIGNAL, VIN_SIGNAL], scoring(min_gap_days=-180, max_gap_days=365)
     )
     pred, cand = dated_pair("2022-01-01", "2010-01-01")
     assert scorer.score_pair(pred, cand, ScoringContext()) is not None
+
+
+def test_gate_applies_without_a_temporal_signal_when_lifecycle_is_present():
+    """A deliberate behavior change, pinned so it cannot regress unnoticed.
+
+    Previously a config with the window set but no temporal signal left the
+    gate off, because the gate had nowhere to read dates from. Now the dates
+    come from the lifecycle block, so the window applies whether or not
+    anything scores the pair on its timing.
+
+    This is the better reading -- the window is a statement about which pairs
+    are coherent enough to emit, not about which signals happen to be
+    configured -- but it is a change. It cannot affect the compatibility gate,
+    since DOT-Commercial configures both.
+    """
+    scorer = PairScorer(
+        [NAME_SIGNAL, VIN_SIGNAL],
+        scoring(min_gap_days=-180, max_gap_days=365),
+        lifecycle=LIFECYCLE,
+    )
+    pred, cand = dated_pair("2022-01-01", "2010-01-01")
+    assert scorer.score_pair(pred, cand, ScoringContext()) is None

@@ -19,25 +19,35 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Runs as `.venv/bin/python scripts/measure_crash_lift.py`, which puts scripts/
-# on sys.path rather than the repo root, so utils.crash_lift is unimportable
-# without this. Same fix as measure_address_analyzers.py.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Runs as `.venv/bin/python DOT-Commercial/scripts/measure_crash_lift.py`, which
+# puts DOT-Commercial/scripts/ on sys.path rather than the repo root, so the
+# framework packages (utils, matching) are unimportable without this. Same fix
+# as scripts/measure_address_analyzers.py, two directories deeper.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+import importlib.util
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 
-from utils.crash_lift import (
-    SCORE_BANDS,
-    band_for,
-    crashed_after_registration,
-    fleet_size_band,
-    months_between,
-    rate,
-    recency_cohort,
-    standardize,
-    to_yyyymmdd,
-)
+# crash_lift.py sits beside this script's parent, in DOT-Commercial/. That
+# directory can never be a dotted module because of the hyphen, so it is loaded
+# by path — the same constraint tests/test_dot_commercial_precision_metrics.py
+# documents, and the reason this is not a plain import.
+_CRASH_LIFT = Path(__file__).resolve().parent.parent / "crash_lift.py"
+_spec = importlib.util.spec_from_file_location("crash_lift", _CRASH_LIFT)
+crash_lift = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(crash_lift)
+
+SCORE_BANDS = crash_lift.SCORE_BANDS
+band_for = crash_lift.band_for
+crashed_after_registration = crash_lift.crashed_after_registration
+fleet_size_band = crash_lift.fleet_size_band
+months_between = crash_lift.months_between
+rate = crash_lift.rate
+recency_cohort = crash_lift.recency_cohort
+standardize = crash_lift.standardize
+to_yyyymmdd = crash_lift.to_yyyymmdd
 
 PAGE = 1000
 

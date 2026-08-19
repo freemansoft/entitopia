@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, FieldRarityTable, ScoringContext
 from matching.signals import (
     MAX_SEED_TOKENS,
     SIGNAL_TYPES,
@@ -24,10 +24,16 @@ from matching.signals import (
     parse_flexible_date,
 )
 
+# The field the rarity-weighted signal reads in these tests. Rarity is keyed by
+# field path now, so the lookup and the table must name the same one -- a
+# mismatch silently scores every value as unseen, which is the 1.0 fallback and
+# therefore looks like strong evidence rather than like a bug.
+AGENT_FIELD = "boc3_agents.co_name"
 
-def make_doc(dot_number="1", source=None, tokens=None):
-    return CarrierDoc(
-        dot_number=dot_number,
+
+def make_doc(entity_key="1", source=None, tokens=None):
+    return EntityDoc(
+        entity_key=entity_key,
         source=source or {},
         tokens=tokens or {},
     )
@@ -84,13 +90,17 @@ def test_value_missing_path_is_none():
 def test_agent_rarity_common_agent_scores_low():
     # The real top BOC-3 filer: 134,283 of 1,426,508 filings (9.4%).
     # Normalized IDF puts it at ~0.167.
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("BIG FILER") < 0.20
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "BIG FILER") < 0.20
 
 
 def test_agent_rarity_rare_agent_scores_high():
-    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
-    assert ctx.agent_rarity("TINY FILER") > 0.94
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"TINY FILER": 2}, 1426508)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "TINY FILER") > 0.94
 
 
 def test_agent_rarity_ranks_common_below_rare():
@@ -98,15 +108,16 @@ def test_agent_rarity_ranks_common_below_rare():
     # below a rare one. 1 - count/N would put both above 0.9 and rank them
     # nearly equal, which is why that formula was rejected.
     ctx = ScoringContext(
-        agent_counts={"BIG FILER": 134283, "TINY FILER": 2},
-        total_agent_carriers=1426508,
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283, "TINY FILER": 2}, 1426508)}
     )
-    assert ctx.agent_rarity("BIG FILER") < ctx.agent_rarity("TINY FILER") - 0.5
+    assert ctx.rarity(AGENT_FIELD, "BIG FILER") < ctx.rarity(AGENT_FIELD, "TINY FILER") - 0.5
 
 
 def test_agent_rarity_unknown_agent_is_maximally_rare():
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=1000)
-    assert ctx.agent_rarity("UNSEEN") == 1.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 1000)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "UNSEEN") == 1.0
 
 
 def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
@@ -114,16 +125,20 @@ def test_agent_rarity_with_no_corpus_is_floor_zero_not_neutral():
     # not a neutral midpoint. Returning 1.0 (the "unseen agent" value) would
     # misrepresent an unmeasured agent as a known-rare one; a shared agent
     # under a missing corpus is real evidence the signal simply can't weigh.
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=0)
-    assert ctx.agent_rarity("ANY") == 0.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 0)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "ANY") == 0.0
 
 
 def test_agent_rarity_with_single_agent_corpus_does_not_raise():
     # total_agent_carriers == 1 makes log(N) == log(1) == 0, so the naive
     # log(N/count)/log(N) division is 0/0. This must return the same floor
     # value as the no-corpus case rather than raising ZeroDivisionError.
-    ctx = ScoringContext(agent_counts={"ONLY FILER": 1}, total_agent_carriers=1)
-    assert ctx.agent_rarity("ONLY FILER") == 0.0
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"ONLY FILER": 1}, 1)}
+    )
+    assert ctx.rarity(AGENT_FIELD, "ONLY FILER") == 0.0
 
 
 def cfg(**kwargs):
@@ -322,7 +337,7 @@ def test_parse_flexible_date_returns_none_for_junk():
 
 def agent_cfg():
     return cfg(
-        type="agent",
+        type="rarity-weighted-value",
         weight=0.04,
         name_field="boc3_agents.co_name",
     )
@@ -330,7 +345,9 @@ def agent_cfg():
 
 def test_agent_shared_rare_agent_scores_high():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"TINY FILER": 2}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"TINY FILER": 2}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "TINY FILER"}]})
     # True normalized IDF for count=2 is ~0.951. An earlier draft asserted
@@ -347,7 +364,9 @@ def test_agent_lookup_is_case_insensitive():
     # and the rarity weighting silently turns itself off. ScoringContext
     # normalizes both sides so casing cannot cause that.
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "big filer"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "BiG FiLeR"}]})
     assert signal.score(pred, cand, ctx) < 0.20
@@ -355,7 +374,9 @@ def test_agent_lookup_is_case_insensitive():
 
 def test_agent_shared_common_agent_scores_low():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={"BIG FILER": 134283}, total_agent_carriers=1426508)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({"BIG FILER": 134283}, 1426508)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "BIG FILER"}]})
     # The real top BOC-3 filer: 134,283 of 1,426,508 filings. Normalized IDF
@@ -365,7 +386,9 @@ def test_agent_shared_common_agent_scores_low():
 
 def test_agent_no_shared_agent_scores_zero():
     signal = build_signal(agent_cfg())
-    ctx = ScoringContext(agent_counts={}, total_agent_carriers=100)
+    ctx = ScoringContext(
+        rarity_tables={AGENT_FIELD: FieldRarityTable({}, 100)}
+    )
     pred = make_doc(source={"boc3_agents": [{"co_name": "A FILER"}]})
     cand = make_doc(source={"boc3_agents": [{"co_name": "B FILER"}]})
     assert signal.score(pred, cand, ctx) == 0.0
@@ -379,41 +402,54 @@ def test_agent_blank_names_never_match():
     assert signal.score(pred, cand, ScoringContext()) is None
 
 
+# The dates a pair's gap is measured between, in one place. Both the
+# temporal signal and the scorer's gap-window gate read this block, which is
+# what makes it impossible for them to disagree about which event a gap
+# describes -- they used to hold separate copies of these two paths.
+LIFECYCLE = SimpleNamespace(
+    shutdown_date="out_of_service_orders.oos_date",
+    registration_date="add_date",
+)
+
+
 def temporal_cfg(**overrides):
     base = {
         "type": "temporal",
         "weight": 0.05,
-        "predecessor_date": "out_of_service_orders.oos_date",
-        "successor_date": "add_date",
         "max_gap_days": 365,
     }
     base.update(overrides)
     return cfg(**base)
 
 
+def build_signal_dated(config):
+    """build_signal for a signal that needs dated events."""
+    return build_signal(config, LIFECYCLE)
+
+
 def test_temporal_same_day_reopen_scores_one():
-    signal = build_signal(temporal_cfg())
+    signal = build_signal_dated(temporal_cfg())
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2022-01-01"})
     assert signal.score(pred, cand, ScoringContext()) == 1.0
 
 
 def test_temporal_decays_linearly_over_the_window():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2022-02-20"})  # 50 days
     assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.5)
 
 
 def test_temporal_beyond_the_window_scores_zero():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     cand = make_doc(source={"add_date": "2024-01-01"})
     assert signal.score(pred, cand, ScoringContext()) == 0.0
 
 
 def test_temporal_uses_the_latest_shutdown_date():
-    signal = build_signal(temporal_cfg(max_gap_days=100))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=100))
     pred = make_doc(
         source={"out_of_service_orders": [{"oos_date": "2010-01-01"}, {"oos_date": "2022-01-01"}]}
     )
@@ -425,28 +461,28 @@ def test_temporal_pre_registered_shell_scores_at_half_weight():
     # Registering the successor before the shutdown is a real tactic, but
     # weaker evidence than registering right after. 90 days before is halfway
     # through the 180-day backward window, scaled by 0.5 => 0.25.
-    signal = build_signal(temporal_cfg(max_gap_days=365))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=365))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
     earlier = make_doc(source={"add_date": "2022-04-02"})  # 90 days before
     assert signal.score(pred, earlier, ScoringContext()) == pytest.approx(0.25)
 
 
 def test_temporal_beyond_the_backward_window_scores_zero():
-    signal = build_signal(temporal_cfg(max_gap_days=365))
+    signal = build_signal_dated(temporal_cfg(max_gap_days=365))
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-07-01"}]})
     earlier = make_doc(source={"add_date": "2021-01-01"})  # far before the window
     assert signal.score(pred, earlier, ScoringContext()) == 0.0
 
 
 def test_temporal_returns_none_when_a_date_is_missing():
-    signal = build_signal(temporal_cfg())
+    signal = build_signal_dated(temporal_cfg())
     pred = make_doc(source={"out_of_service_orders": [{"oos_date": "2022-01-01"}]})
     assert signal.score(pred, make_doc(), ScoringContext()) is None
 
 
 def vin_cfg():
     return cfg(
-        type="vin-overlap",
+        type="shared-token",
         weight=0.08,
         fields=["crashes.vehicle_identification_number"],
     )
@@ -478,7 +514,11 @@ def test_agent_signal_declines_to_seed():
     # 87 BOC-3 agents cover 519,139 filings, so seeding on one would return
     # essentially random carriers. Declining is what keeps it corroboration-only.
     signal = build_signal(
-        SimpleNamespace(type="agent", weight=0.04, name_field="boc3_agents.co_name")
+        SimpleNamespace(
+            type="rarity-weighted-value",
+            weight=0.04,
+            name_field="boc3_agents.co_name",
+        )
     )
     assert signal.seed_clauses({"boc3_agents": {"co_name": "ACME"}}) == []
 
@@ -486,7 +526,7 @@ def test_agent_signal_declines_to_seed():
 def test_shared_token_signal_seeds_a_terms_clause_per_field():
     signal = build_signal(
         SimpleNamespace(
-            type="vin-overlap",
+            type="shared-token",
             weight=0.08,
             fields=["crashes.vin", "inspections.units.vin"],
         )
@@ -508,7 +548,7 @@ def test_shared_token_signal_seeds_a_terms_clause_per_field():
 
 def test_shared_token_signal_seeds_nothing_without_tokens():
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     assert signal.seed_clauses({}) == []
 
@@ -517,7 +557,7 @@ def test_shared_token_seed_tokens_are_capped_and_sorted():
     # An unbounded terms clause on a large fleet would slow the whole sweep.
     vins = ["VIN{:05d}".format(i) for i in range(MAX_SEED_TOKENS + 50)]
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     clauses = signal.seed_clauses({"crashes": [{"vin": v} for v in vins]})
     terms = clauses[0]["terms"]["crashes.vin"]
@@ -525,9 +565,13 @@ def test_shared_token_seed_tokens_are_capped_and_sorted():
     assert terms == sorted(terms)
 
 
-def test_shared_token_registered_under_neutral_alias():
+def test_shared_token_is_registered_only_under_its_neutral_name():
     # The logic is "same globally-unique token", not anything about vehicles.
-    assert SIGNAL_TYPES["shared-token"] is SIGNAL_TYPES["vin-overlap"]
+    # This used to assert the class was reachable under both "shared-token"
+    # and "vin-overlap"; the domain-flavoured half of that pair is gone, so
+    # the assertion is now that it stayed gone.
+    assert "shared-token" in SIGNAL_TYPES
+    assert "vin-overlap" not in SIGNAL_TYPES
 
 
 def test_name_signal_seeds_and_declares_its_token_subfields():
@@ -568,7 +612,7 @@ def test_shared_token_seeds_preserve_case_for_keyword_fields():
     # matched nothing against a keyword mapping, so the signal silently
     # retrieved no candidates at all.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     clauses = signal.seed_clauses({"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     assert clauses[0]["terms"]["crashes.vin"] == ["1FUJGLDR0CSBP9784"]
@@ -578,10 +622,10 @@ def test_shared_token_score_still_normalizes_case():
     # Seeding uses raw values; scoring compares normalized ones, so a
     # case difference between two records still scores as a match.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     pred = make_doc(source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "1fujgldr0csbp9784"}]})
     assert signal.score(pred, cand, ScoringContext()) == 1.0
 
 
@@ -590,28 +634,28 @@ def test_suppressed_token_is_not_evaluable_rather_than_zero():
     # carriers both filing it share nothing, so the signal must report "no
     # usable evidence" (None), not "evaluated, matched" (1.0).
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "UNKNOWN"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "UNKNOWN"}]})
     assert signal.score(pred, cand, ctx) is None
 
 
 def test_suppression_leaves_real_tokens_alone():
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"unknown"}})
     pred = make_doc(source={"crashes": [{"vin": "UNKNOWN"}, {"vin": "1FUJGLDR0CSBP9784"}]})
-    cand = make_doc(dot_number="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
+    cand = make_doc(entity_key="2", source={"crashes": [{"vin": "1FUJGLDR0CSBP9784"}]})
     assert signal.score(pred, cand, ctx) == 1.0
 
 
 def test_suppressed_tokens_are_not_seeded():
     # Seeding on "GGGG" would retrieve all 158 carriers that recorded it.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     ctx = ScoringContext(ignored_values={"crashes.vin": {"gggg"}})
     clauses = signal.seed_clauses({"crashes": [{"vin": "GGGG"}]}, ctx)
@@ -658,7 +702,7 @@ def test_ignored_phone_is_not_evaluable():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"(000) 000-0000"}})
     pred = make_doc(source={"telephone": "(000) 000-0000"})
-    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    cand = make_doc(entity_key="2", source={"telephone": "(000) 000-0000"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -668,7 +712,7 @@ def test_ignore_matches_the_normalized_phone_form_too():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
     pred = make_doc(source={"telephone": "(000) 000-0000"})
-    cand = make_doc(dot_number="2", source={"telephone": "(000) 000-0000"})
+    cand = make_doc(entity_key="2", source={"telephone": "(000) 000-0000"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -678,7 +722,7 @@ def test_ignored_shared_service_email_is_not_identity_evidence():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"email_address": {"permits@example-service.com"}})
     pred = make_doc(source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
-    cand = make_doc(dot_number="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
+    cand = make_doc(entity_key="2", source={"email_address": "PERMITS@EXAMPLE-SERVICE.COM"})
     assert signal.score(pred, cand, ctx) is None
 
 
@@ -686,7 +730,7 @@ def test_real_shared_phone_still_scores():
     signal = exact_identifier_signal()
     ctx = ScoringContext(ignored_values={"telephone": {"0000000000"}})
     pred = make_doc(source={"telephone": "(555) 867-5309"})
-    cand = make_doc(dot_number="2", source={"telephone": "(555) 867-5309"})
+    cand = make_doc(entity_key="2", source={"telephone": "(555) 867-5309"})
     assert signal.score(pred, cand, ctx) == 1.0
 
 
@@ -710,7 +754,7 @@ def test_exact_identifier_declares_keyword_agg_fields():
 def test_shared_token_aggregates_on_the_field_itself():
     # VIN fields are keyword-mapped, so there is no subfield to aggregate.
     signal = build_signal(
-        SimpleNamespace(type="vin-overlap", weight=0.08, fields=["crashes.vin"])
+        SimpleNamespace(type="shared-token", weight=0.08, fields=["crashes.vin"])
     )
     assert signal.exact_evidence_fields() == [("crashes.vin", "crashes.vin")]
 

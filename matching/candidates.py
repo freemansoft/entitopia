@@ -11,7 +11,7 @@ double-metaphone implementation drifting from the plugin's.
 
 import logging
 
-from matching.documents import CarrierDoc
+from matching.documents import EntityDoc
 from matching.signals import build_signal
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,15 @@ class CandidateFinder:
     per-predecessor cost at exactly two Elasticsearch round trips.
     """
 
-    def __init__(self, es, source_index, candidates_config, signal_configs):
+    def __init__(
+        self,
+        es,
+        source_index,
+        candidates_config,
+        signal_configs,
+        entity_config=None,
+        lifecycle=None,
+    ):
         """Bind to the ES client/index and the configured signals.
 
         signal_configs drives both which fields seed the candidate search and
@@ -38,12 +46,19 @@ class CandidateFinder:
         """
         self.es = es
         self.source_index = source_index
+        # The column this project calls its entity's identity. Defaulted only
+        # so this change does not have to update every caller at once; the
+        # entity block becomes required once every shipped config declares it.
+        self.entity_key_field = getattr(entity_config, "key", "dot_number")
         self.max_candidates = int(getattr(candidates_config, "max_candidates", 100))
         self.seed_signals = set(getattr(candidates_config, "seed_signals", []) or [])
         self.signal_configs = list(signal_configs)
         # Built from the same configs scorer.py uses, so retrieval and scoring
         # can never disagree about what a signal reads.
-        self.signals = [build_signal(c) for c in self.signal_configs]
+        # lifecycle is threaded through even though no dated signal seeds a
+        # candidate query: the signals are built from the whole config list, so
+        # a temporal entry is constructed here too and would refuse without it.
+        self.signals = [build_signal(c, lifecycle) for c in self.signal_configs]
 
     def scored_subfields(self) -> set[str]:
         """Every "field.subfield" the configured signals read tokens from."""
@@ -58,7 +73,8 @@ class CandidateFinder:
         Restricted to seed_signals so an operator's config choice stays
         authoritative: a signal not trusted to seed cannot silently widen the
         search. A signal that is listed but declines to seed (returning no
-        clauses, as AgentSignal does) is simply skipped rather than raising.
+        clauses, as RarityWeightedValueSignal does) is simply skipped rather
+        than raising.
 
         This method used to hold a whitelist of seedable types plus one helper
         per type, which meant candidate retrieval knew about phone numbers and
@@ -111,8 +127,13 @@ class CandidateFinder:
         all_ids = [pred_id] + [h["_id"] for h in hits]
         tokens_by_id = self._fetch_tokens(all_ids)
 
-        pred_doc = _to_carrier_doc(pred_hit, tokens_by_id.get(pred_id, {}))
-        cand_docs = [_to_carrier_doc(h, tokens_by_id.get(h["_id"], {})) for h in hits]
+        pred_doc = to_entity_doc(
+            pred_hit, tokens_by_id.get(pred_id, {}), self.entity_key_field
+        )
+        cand_docs = [
+            to_entity_doc(h, tokens_by_id.get(h["_id"], {}), self.entity_key_field)
+            for h in hits
+        ]
         return pred_doc, cand_docs, truncated
 
     def _fetch_tokens(self, doc_ids):
@@ -150,16 +171,25 @@ class CandidateFinder:
 
 
 
-def _to_carrier_doc(hit, tokens):
-    """Combine a search hit's _source with its fetched tokens into a CarrierDoc.
+def to_entity_doc(hit, tokens, key_field):
+    """Combine a search hit's _source with its fetched tokens into an EntityDoc.
 
-    Falls back to the ES _id for dot_number when _source lacks it (the probe
-    documents in the near-empty dev index do), so this stays usable against a
-    sparsely-populated index rather than raising on missing test data.
+    `key_field` is configuration rather than a literal: it is whichever column
+    a project calls its entity's identity, and framework code cannot know it.
+
+    Public rather than private because it is the single place the configured
+    key is applied to a raw hit, so it is the thing worth testing directly.
+
+    Falls back to the Elasticsearch _id when _source lacks that column (the
+    probe documents in a near-empty dev index do), so this stays usable
+    against a sparsely-populated index rather than raising on test data.
+    Stringified because the same logical key arrives as a JSON integer from
+    some indexes and a string from others, and a pair keyed on it must not
+    depend on which.
     """
     source = hit["_source"]
-    return CarrierDoc(
-        dot_number=str(source.get("dot_number", hit["_id"])),
+    return EntityDoc(
+        entity_key=str(source.get(key_field, hit["_id"])),
         source=source,
         tokens=tokens,
     )

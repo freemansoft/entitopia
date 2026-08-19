@@ -13,18 +13,40 @@ from pathlib import Path
 import pytest
 from elasticsearch import Elasticsearch
 
-from utils.crash_lift import (
-    SCORE_BANDS,
-    band_for,
-    crashed_after_registration,
-    fleet_size_band,
-    gap_band,
-    months_between,
-    rate,
-    recency_cohort,
-    standardize,
-    to_yyyymmdd,
-)
+_CRASH_LIFT = Path(__file__).parent.parent / "DOT-Commercial" / "crash_lift.py"
+
+
+def _load_crash_lift():
+    """Load crash_lift.py by path rather than importing it.
+
+    It moved into DOT-Commercial/ with the measurement it belongs to, and that
+    directory can never be a dotted module because of the hyphen — the same
+    constraint test_dot_commercial_precision_metrics.py documents. A dotted
+    import is not available here at any price short of renaming the project
+    directory.
+    """
+    spec = importlib.util.spec_from_file_location("crash_lift", _CRASH_LIFT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+crash_lift = _load_crash_lift()
+
+# Bound at module level so the test bodies below read exactly as they did when
+# this was a dotted import. The names are what the arithmetic tests assert on;
+# rewriting 31 call sites to go through the module object would have made the
+# diff of a pure relocation look like a change to the tests themselves.
+SCORE_BANDS = crash_lift.SCORE_BANDS
+band_for = crash_lift.band_for
+crashed_after_registration = crash_lift.crashed_after_registration
+fleet_size_band = crash_lift.fleet_size_band
+gap_band = crash_lift.gap_band
+months_between = crash_lift.months_between
+rate = crash_lift.rate
+recency_cohort = crash_lift.recency_cohort
+standardize = crash_lift.standardize
+to_yyyymmdd = crash_lift.to_yyyymmdd
 
 
 def test_band_edges_are_half_open_so_no_score_lands_in_two_bands():
@@ -237,7 +259,9 @@ def test_gap_band_is_none_when_the_gap_is_unknown():
 # package. A function-scoped `sys.path.insert` + import (as originally
 # sketched) trips ruff's PLC0415, which this repo does not exempt for new
 # code — this sidesteps that without mutating sys.path at all.
-_MEASURE_CRASH_LIFT = Path(__file__).parent.parent / "scripts" / "measure_crash_lift.py"
+_MEASURE_CRASH_LIFT = (
+    Path(__file__).parent.parent / "DOT-Commercial" / "scripts" / "measure_crash_lift.py"
+)
 
 
 def _load_measure_crash_lift():

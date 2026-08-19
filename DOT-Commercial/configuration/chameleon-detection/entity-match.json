@@ -1,15 +1,38 @@
 {
   "source_index": "carriers-000001",
   "source_settings_step": "carriers",
-  "predecessors": {
+  "entity": {
+    "key": "dot_number",
+    "key_label": "dot_number",
+    "summary_fields": ["legal_name", "dba_name", "phy_street", "phy_city", "phy_state"]
+  },
+  "lifecycle": {
+    "shutdown_date": "out_of_service_orders.oos_date",
+    "registration_date": "add_date",
+    "shutdown_reason": "out_of_service_orders.oos_reason"
+  },
+  "population": {
+    "mode": "lifecycle",
+    "sort_field": "dot_number",
+    "max_records": null,
     "selector": "out-of-service",
-    "oos_status": ["ACTIVE"],
-    "oos_date_from": "2020-01-01",
-    "max_predecessors": null
+    "selectors": {
+      "out-of-service": {
+        "nested-exists": {
+          "path": "out_of_service_orders",
+          "require": "oos_date",
+          "terms": { "status": ["ACTIVE"] },
+          "range": { "oos_date": { "gte": "2020-01-01" } }
+        }
+      },
+      "revoked-authority": { "term": { "auth_history.disp_action_desc": "REVOKED" } },
+      "both": { "all": ["out-of-service", "revoked-authority"] },
+      "either": { "any": ["out-of-service", "revoked-authority"] }
+    }
   },
   "candidates": {
     "max_candidates": 500,
-    "seed_signals": ["name-phonetic", "address", "exact-identifier", "vin-overlap"]
+    "seed_signals": ["name-phonetic", "address", "exact-identifier", "shared-token"]
   },
   "signals": [
     {
@@ -48,22 +71,21 @@
       "text_fields": ["email_address"]
     },
     {
-      "type": "agent",
+      "type": "rarity-weighted-value",
       "weight": 0.04,
       "name_field": "boc3_agents.co_name"
     },
     {
       "type": "temporal",
       "weight": 0.05,
-      "predecessor_date": "out_of_service_orders.oos_date",
-      "successor_date": "add_date",
       "max_gap_days": 365
     },
     {
-      "type": "vin-overlap",
+      "type": "shared-token",
+      "name": "vin-overlap",
       "weight": 0.16,
       "conclusive": true,
-      "max_shared_carriers": 5,
+      "max_shared_entities": 5,
       "fields": [
         "crashes.vehicle_identification_number",
         "inspections.units.insp_unit_vehicle_id_number"
@@ -72,12 +94,16 @@
   ],
   "ignore_values": {
     "crashes.vehicle_identification_number": [
-      "UNKNOWN", "UNKNOWN-REPAIR", "UNK", "NONE", "N/A", "NA", "GGGG",
+      "UNKNOWN",
+      "UNKNOWN-REPAIR",
+      "UNK",
+      "NONE",
+      "N/A",
+      "NA",
+      "GGGG",
       "XXXXXXXXXXXXXXXXX"
     ],
-    "inspections.units.insp_unit_vehicle_id_number": [
-      "UNKNOWN", "UNK", "NONE", "N/A", "NA"
-    ],
+    "inspections.units.insp_unit_vehicle_id_number": ["UNKNOWN", "UNK", "NONE", "N/A", "NA"],
     "telephone": ["(000) 000-0000", "0000000000", "(999) 999-9999"],
     "fax": ["(000) 000-0000", "0000000000", "(999) 999-9999"]
   },

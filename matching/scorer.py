@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 
-from matching.documents import CarrierDoc, ScoringContext
+from matching.documents import EntityDoc, ScoringContext
 from matching.signals import _latest_date, build_signal
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ IDENTITY_SIGNAL_TYPES = frozenset(
         "name-token",
         "address",
         "exact-identifier",
-        "vin-overlap",
         "shared-token",
     }
 )
@@ -44,6 +43,14 @@ class SignalContribution:
     weight: float
     score: float
     contribution: float
+    # The operator's label for this signal instance, when one is configured.
+    # The framework's type names are generic, so without this a reader of one
+    # pair cannot tell what a `shared-token` signal read.
+    signal_name: str | None = None
+    # The config field paths this signal reads. Paths only, never values: a
+    # matched identifier belongs to a flagged entity, and writing it here
+    # would put an identifying value next to an allegation.
+    fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -55,8 +62,8 @@ class ScoredPair:
     the total rather than collapsing to a single score.
     """
 
-    predecessor: CarrierDoc
-    successor: CarrierDoc
+    predecessor: EntityDoc
+    successor: EntityDoc
     total_score: float
     signals: list[SignalContribution] = field(default_factory=list)
     matched_on: list[str] = field(default_factory=list)
@@ -81,7 +88,7 @@ class PairScorer:
     reviewable list rather than surfacing every pair that scored above zero.
     """
 
-    def __init__(self, signal_configs, scoring_config):
+    def __init__(self, signal_configs, scoring_config, lifecycle=None):
         """Build the scorer's signals and guard thresholds once, up front.
 
         Rejecting a zero total configured weight here catches a config error
@@ -90,8 +97,12 @@ class PairScorer:
         score_pair: that one covers a pair where every signal happened to be
         unevaluable, a per-pair case this constructor-time check cannot see
         since it only knows the configured weights, not any pair's data.
+
+        `lifecycle` is passed straight through to the signals that need dated
+        events, and kept for the gap-window gate below, so both read one set
+        of paths.
         """
-        self.signals = [build_signal(c) for c in signal_configs]
+        self.signals = [build_signal(c, lifecycle) for c in signal_configs]
         if sum(s.weight for s in self.signals) <= 0:
             raise ValueError("signal weights sum to zero; nothing can be scored")
 
@@ -114,13 +125,13 @@ class PairScorer:
         # so a deployment that has not opted in keeps its population.
         self.min_gap_days = getattr(scoring_config, "min_gap_days", None)
         self.max_gap_days = getattr(scoring_config, "max_gap_days", None)
-        # The raw config, not the built Signal: the gate needs the two field
-        # paths, and reading them from the same entry that produces the score
-        # is what stops the gate and the score from disagreeing about which
-        # dates a pair's gap is measured between.
-        self._temporal_config = next(
-            (c for c in signal_configs if getattr(c, "type", None) == "temporal"), None
-        )
+        # The same lifecycle block TemporalSignal scores from, so the gate and
+        # the score cannot disagree about which dates a pair's gap is measured
+        # between. This used to reach into the temporal signal's own config for
+        # the paths, which achieved the same thing only as long as nobody added
+        # a second source for them -- and the phase had already done exactly
+        # that, with literals of its own.
+        self.lifecycle = lifecycle
 
     def _gap_outside_window(self, pred, cand):
         """Whether this pair's timing puts it outside the configured window.
@@ -132,10 +143,10 @@ class PairScorer:
         """
         if self.min_gap_days is None and self.max_gap_days is None:
             return False
-        if self._temporal_config is None:
+        if self.lifecycle is None:
             return False
-        shutdown = _latest_date(pred.value(self._temporal_config.predecessor_date))
-        registered = _latest_date(cand.value(self._temporal_config.successor_date))
+        shutdown = _latest_date(pred.value(self.lifecycle.shutdown_date))
+        registered = _latest_date(cand.value(self.lifecycle.registration_date))
         if shutdown is None or registered is None:
             return False
         gap = (registered - shutdown).days
@@ -147,7 +158,7 @@ class PairScorer:
         # this module's whole design (see module and class docstrings); folding
         # the new gap-window guard into an existing branch would hide a distinct
         # rejection reason behind another one's return statement.
-        self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext
+        self, pred: EntityDoc, cand: EntityDoc, ctx: ScoringContext
     ) -> ScoredPair | None:
         """Run all signals over a pair, renormalize, and apply the guards.
 
@@ -159,7 +170,7 @@ class PairScorer:
         missing data instead of judging it neutrally on what could actually
         be evaluated.
         """
-        if pred.dot_number == cand.dot_number:
+        if pred.entity_key == cand.entity_key:
             return None
 
         if self._gap_outside_window(pred, cand):
@@ -175,6 +186,8 @@ class PairScorer:
             contributions.append(
                 SignalContribution(
                     signal_type=signal.signal_type,
+                    signal_name=signal.signal_name,
+                    fields=signal.fields_read(),
                     subfield=getattr(signal.config, "subfield", None),
                     weight=signal.weight,
                     score=score,

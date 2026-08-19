@@ -12,7 +12,7 @@ neutrally.
 import datetime
 import logging
 
-from matching.documents import CarrierDoc, ScoringContext, read_path
+from matching.documents import EntityDoc, ScoringContext, read_path
 from matching.tokens import (
     blended_overlap,
     containment,
@@ -25,14 +25,18 @@ logger = logging.getLogger(__name__)
 
 # Config keys whose values name the source fields a signal reads. Used to
 # decide which signals are looking at the same underlying evidence.
+#
+# predecessor_date and successor_date used to appear here. They moved to the
+# lifecycle block, so a temporal signal now names no source fields and falls
+# through to the frozenset({signal_type}) default below. That is still exactly
+# one evidence key, distinct from every other signal's, so min_signals counts
+# the same number as before -- see the test pinning it.
 _FIELD_CONFIG_KEYS = (
     "fields",
     "phone_fields",
     "text_fields",
     "name_field",
     "address_field",
-    "predecessor_date",
-    "successor_date",
 )
 
 
@@ -93,7 +97,47 @@ class Signal:
         # rather than collapsing together with every other such signal.
         return frozenset(names) or frozenset({self.signal_type})
 
-    def score(self, pred: CarrierDoc, cand: CarrierDoc, ctx: ScoringContext) -> float | None:
+    @property
+    def signal_name(self) -> str | None:
+        """The operator's label for this signal instance, or None.
+
+        Carried onto every emitted contribution. Framework type names are
+        deliberately generic, which leaves a reader of one pair unable to say
+        what a `shared-token` signal actually read — the old `vin-overlap`
+        type name was doing that explaining. A project labels its own
+        instances instead, so no domain vocabulary re-enters the registry.
+
+        Optional: `fields_read` below answers the same question from data and
+        needs nobody to have remembered to set anything.
+        """
+        return getattr(self.config, "name", None)
+
+    def fields_read(self) -> list[str]:
+        """The config field paths this signal reads, in config order.
+
+        Emitted on each contribution so a pair says what kind of evidence
+        fired without depending on a label having been set. Derived from the
+        same config keys `evidence_key` uses, so it cannot drift from what the
+        signal actually reads.
+
+        A list rather than the frozenset `evidence_key` returns, because order
+        is meaningful to a reader and de-duplication would hide that a signal
+        reads the same field twice.
+
+        **Paths, never values.** A matched identifier belongs to a flagged
+        entity, and writing it into the pair document would put an identifying
+        value next to an allegation.
+        """
+        names: list[str] = []
+        for key in _FIELD_CONFIG_KEYS:
+            value = getattr(self.config, key, None)
+            if isinstance(value, str):
+                names.append(value)
+            elif isinstance(value, list):
+                names.extend(value)
+        return names
+
+    def score(self, pred: EntityDoc, cand: EntityDoc, ctx: ScoringContext) -> float | None:
         """Score one carrier pair. Subclasses implement; see the class
         docstring for the None-vs-0.0 contract every implementation must honor.
         """
@@ -105,9 +149,11 @@ class Signal:
         Returning [] means "this signal cannot retrieve, only corroborate" —
         it will still score a pair that some other signal pulled in, but it
         will never widen the candidate set. That is the right answer for a
-        signal with no discriminating power to retrieve on: AgentSignal
-        deliberately declines, because 87 BOC-3 agents cover 519,139 filings
-        and seeding on one returns essentially random carriers.
+        signal with no discriminating power to retrieve on:
+        RarityWeightedValueSignal deliberately declines, because the fields
+        it suits are by construction ones many records share -- in the
+        measured case 87 values covered 519,139 filings, so seeding on one
+        returns essentially random candidates.
 
         This lives on the signal rather than in CandidateFinder because a
         signal is the only thing that knows what evidence it reads. The
@@ -467,44 +513,75 @@ def parse_flexible_date(value) -> datetime.date | None:  # noqa: PLR0911
     return None
 
 
-class AgentSignal(Signal):
-    """Shared BOC-3 process agent, weighted by how rare the agent is.
+class RarityWeightedValueSignal(Signal):
+    """A shared value on one field, weighted by how rare that value is.
 
-    Only 89 distinct agents cover 1.43M filings, so an unweighted version of
-    this signal fires on roughly 7% of random pairs. Weight is deliberately low.
+    Named for the mechanism rather than the field it was written for. It was
+    "agent", after the BOC-3 process agents it scores in one project, which put
+    a domain concept in the framework's type registry. Any field where a shared
+    value is weak evidence in proportion to how common the value is behaves
+    identically — a shared filing agent, a shared registered office, a shared
+    billing service.
+
+    The weighting is not optional decoration. In the measured case only 89
+    distinct values covered 1.43M rows, so an unweighted version of this signal
+    fires on roughly 7% of random pairs. Weight is deliberately low on top of
+    that.
+
+    Declines to seed — it inherits the base seed_clauses returning [] — because
+    a field this signal suits is by construction one that many records share,
+    and seeding on such a value returns essentially random candidates.
     """
 
-    type_names = ("agent",)
+    type_names = ("rarity-weighted-value",)
 
     def score(self, pred, cand, ctx):
-        pred_agents = set()
-        cand_agents = set()
-        _collect(pred_agents, pred.value(self.config.name_field), normalize_text_identifier)
-        _collect(cand_agents, cand.value(self.config.name_field), normalize_text_identifier)
+        pred_values = set()
+        cand_values = set()
+        field_path = self.config.name_field
+        _collect(pred_values, pred.value(field_path), normalize_text_identifier)
+        _collect(cand_values, cand.value(field_path), normalize_text_identifier)
 
-        if not pred_agents or not cand_agents:
+        if not pred_values or not cand_values:
             return None
 
-        shared = pred_agents & cand_agents
+        shared = pred_values & cand_values
         if not shared:
             return 0.0
-        return max(ctx.agent_rarity(name) for name in shared)
+        return max(ctx.rarity(field_path, value) for value in shared)
 
 
 class TemporalSignal(Signal):
     """Closeness between the predecessor's shutdown and the successor's registration.
 
-    A chameleon carrier typically re-registers under a new DOT number soon
-    after being ordered out of service, to resume operating with minimal
-    downtime. A short gap is therefore corroborating evidence of
-    reincarnation; a gap of years is more likely coincidence.
+    A successor entity typically re-registers soon after its predecessor is
+    shut down, to resume operating with minimal downtime. A short gap is
+    therefore corroborating evidence of reincarnation; a gap of years is more
+    likely coincidence.
+
+    Reads its two date paths from the lifecycle block rather than from its own
+    config entry. They used to be duplicated -- here, and again where the
+    phase computes the gap_days it emits -- with nothing checking the two
+    agreed, so a pair could be scored on one pair of dates and reported with a
+    gap measured between another.
     """
 
     type_names = ("temporal",)
 
+    def __init__(self, config, lifecycle=None):
+        super().__init__(config)
+        if lifecycle is None:
+            raise ValueError(
+                "temporal signal requires a lifecycle block naming shutdown_date "
+                "and registration_date; without one this signal would find no "
+                "dates on any pair, score every one of them unevaluable, and "
+                "report nothing at all"
+            )
+        self.lifecycle = lifecycle
+
     def score(self, pred, cand, ctx):
-        shutdown = _latest_date(pred.value(self.config.predecessor_date))
-        registered = _latest_date(cand.value(self.config.successor_date))
+        shutdown = _latest_date(pred.value(self.lifecycle.shutdown_date))
+        registered = _latest_date(cand.value(self.lifecycle.registration_date))
         if shutdown is None or registered is None:
             return None
 
@@ -531,20 +608,24 @@ MAX_SEED_TOKENS = 512
 class SharedTokenSignal(Signal):
     """Any shared globally-unique token. Binary — one match is damning.
 
-    Registered as both "vin-overlap" and "shared-token" because the logic is
-    not about vehicles: it is "these two records name the same physical thing,
-    and that name is unique worldwide". A VIN is one instance; a container
-    number, aircraft tail number, serial number or NPI behaves identically.
-    Only the `fields` config is domain-specific, which is where domain
-    knowledge belongs. The "vin-overlap" name is retained so existing
-    DOT-Commercial configuration keeps working.
+    The logic is not about vehicles: it is "these two records name the same
+    physical thing, and that name is unique worldwide". A VIN is one instance;
+    a container number, aircraft tail number, serial number or NPI behaves
+    identically. Only the `fields` config is domain-specific, which is where
+    domain knowledge belongs.
+
+    This was registered under "vin-overlap" as well, so a project's config
+    could name the strategy after the one field it happened to use. That name
+    is gone. What it was really providing was an explanation to whoever read
+    the emitted pair, and `signal_name` in project config now carries that
+    without the framework having to know the word.
 
     Unlike the name and address signals, this one is worth seeding on: a token
     that is unique worldwide has no false-positive rate to speak of, so a
-    terms clause on it retrieves the right carrier or nothing at all.
+    terms clause on it retrieves the right record or nothing at all.
     """
 
-    type_names = ("vin-overlap", "shared-token")
+    type_names = ("shared-token",)
 
     def score(self, pred, cand, ctx):
         pred_tokens = self._tokens(pred.value, ctx)
@@ -557,7 +638,7 @@ class SharedTokenSignal(Signal):
     def _tokens(self, reader, ctx) -> set[str]:
         """Normalized, non-suppressed tokens from every configured field.
 
-        Takes the reader rather than the document so scoring (CarrierDoc.value)
+        Takes the reader rather than the document so scoring (EntityDoc.value)
         and seeding (read_path over a raw hit) collect tokens identically —
         seeding on values that scoring would normalize differently would
         retrieve candidates that then score 0.0.
@@ -668,17 +749,21 @@ def _register(signal_class: type[Signal]) -> None:
 _register(NameOverlapSignal)
 _register(AddressSignal)
 _register(ExactIdentifierSignal)
-_register(AgentSignal)
+_register(RarityWeightedValueSignal)
 _register(TemporalSignal)
 _register(SharedTokenSignal)
 
 
-def build_signal(config) -> Signal:
+def build_signal(config, lifecycle=None) -> Signal:
     """Construct the Signal a config entry names, by its `type` string.
 
     Keeps config decoupled from Python import paths: adding a signal means
     registering it via _register, not changing how scorer.py builds its
     signal list from config.
+
+    `lifecycle` is threaded to the signals that need dated events, so the
+    paths a signal scores on and the paths the phase reports a gap from are
+    the same object rather than two copies nothing compares.
     """
     signal_class = SIGNAL_TYPES.get(config.type)
     if signal_class is None:
@@ -687,4 +772,6 @@ def build_signal(config) -> Signal:
                 config.type, ", ".join(sorted(SIGNAL_TYPES))
             )
         )
+    if issubclass(signal_class, TemporalSignal):
+        return signal_class(config, lifecycle)
     return signal_class(config)

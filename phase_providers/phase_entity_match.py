@@ -10,17 +10,22 @@ import datetime
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 
 from elasticsearch.helpers import parallel_bulk
 
 from matching.candidates import CandidateFinder
-from matching.documents import ScoringContext
-from matching.predecessors import PredecessorSelector
+from matching.documents import FieldRarityTable, ScoringContext
+from matching.population import PopulationSelector
 from matching.scorer import PairScorer
 from matching.signals import build_signal, parse_flexible_date
 from utils import analysis_fingerprint, elasticsearch_utils, file_utils, id_utils
 
-AGENT_TERMS_SIZE = 500
+# Distinct values to pull when measuring how common a field's values are.
+# Sized for a field whose whole premise is a small value space -- the
+# measured case had 89 distinct values across 1.43M rows -- so this is
+# generous rather than tight.
+RARITY_TERMS_SIZE = 500
 # Fallback for how many records may share a value before it stops identifying
 # anything, when neither config nor the signal says. Deliberately small: this
 # only applies to fields a signal scores as exact identity, where sharing is
@@ -111,8 +116,8 @@ class RunProvenance:
 class PhaseEntityMatch:
     """Sweeps shut-down carriers for likely successors and writes ranked pairs.
 
-    This is the phase Tasks 1-12 were built for: PredecessorSelector picks the
-    "shut down" population, CandidateFinder retrieves and tokenizes candidate
+    This is the phase Tasks 1-12 were built for: PopulationSelector picks the
+    starting population, CandidateFinder retrieves and tokenizes candidate
     successors, PairScorer turns each pair into a scored, explainable verdict,
     and this class is the only piece that ties them to a live index and
     writes the result. Everything else in matching/ is a pure library with no
@@ -125,6 +130,16 @@ class PhaseEntityMatch:
         self.one_step = one_step
         self.project_config = project_config
         self.logger = logging.getLogger(__name__)
+        # Replaced by handle() from the loaded entity-match.json. Defaulted
+        # here so _to_action stays callable on a bare instance rather than
+        # raising AttributeError depending on which method ran first -- a
+        # pair document built from an empty block carries only entity_key,
+        # which is a degraded document rather than a crash.
+        self.entity_config = SimpleNamespace()
+        # Same reason as entity_config: _to_action reads it. None is the
+        # honest default -- a project with no dated events emits gap_days
+        # null rather than a fabricated zero.
+        self.lifecycle = None
 
     def handle(self):
         self.logger.info(
@@ -155,11 +170,22 @@ class PhaseEntityMatch:
         elasticsearch_utils.replace_index_with_now_version(index_config)
 
         source_index = config.source_index
-        scorer = PairScorer(config.signals, config.scoring)
+        # Overrides the __init__ default. Held on the instance because
+        # _to_action needs it several call frames below, and threading it
+        # through the generator would put a config object in the signature of
+        # every intermediate method.
+        self.entity_config = getattr(config, "entity", SimpleNamespace())
+        self.lifecycle = getattr(config, "lifecycle", None)
+        scorer = PairScorer(config.signals, config.scoring, lifecycle=self.lifecycle)
         finder = CandidateFinder(
-            self.es, source_index, config.candidates, config.signals
+            self.es,
+            source_index,
+            config.candidates,
+            config.signals,
+            entity_config=self.entity_config,
+            lifecycle=self.lifecycle,
         )
-        selector = PredecessorSelector(self.es, source_index, config.predecessors)
+        selector = PopulationSelector(self.es, source_index, config.population)
 
         ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
@@ -534,60 +560,82 @@ class PhaseEntityMatch:
             return int(limits[source_path])
         if "*" in limits:
             return int(limits["*"])
-        return int(getattr(signal.config, "max_shared_carriers", DEFAULT_SHARED_LIMIT))
+        return int(getattr(signal.config, "max_shared_entities", DEFAULT_SHARED_LIMIT))
 
 
     def _build_context(self, source_index, signal_configs, config=None):
-        """Gather corpus statistics once per sweep: agent rarity and ignored values."""
-        signals = [build_signal(c) for c in signal_configs]
+        """Gather corpus statistics once per sweep: value rarity and ignored values."""
+        signals = [build_signal(c, self.lifecycle) for c in signal_configs]
         declared_ignored = self._declared_ignored_values(config) if config else {}
         limits = self._shared_limits(config) if config else {}
         suppressed = self._suppressed_values(source_index, signals, limits)
         for field_path, values in declared_ignored.items():
             suppressed.setdefault(field_path, set()).update(values)
-        agent_config = next((c for c in signal_configs if c.type == "agent"), None)
-        if agent_config is None:
-            return ScoringContext(ignored_values=suppressed)
-
-        keyword_field = "{}.keyword".format(agent_config.name_field)
-        try:
-            response = self.es.search(
-                index=source_index,
-                size=0,
-                aggs={
-                    "agents": {"terms": {"field": keyword_field, "size": AGENT_TERMS_SIZE}}
-                },
-            )
-        except Exception as e:
-            self.logger.warning(
-                "Could not gather agent frequencies ({}); agent signal has no corpus "
-                "to weight against and will score every shared agent at 0.0 (no "
-                "discriminating power) rather than fabricate a rarity value".format(e)
-            )
-            return ScoringContext(ignored_values=suppressed)
-
-        buckets = response["aggregations"]["agents"]["buckets"]
-        counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
-        total = sum(counts.values())
-        if total == 0:
-            # A zero-agent corpus is the signature of enrichment having
-            # silently produced nothing (see the README's documented enrich
-            # bugs) rather than a legitimately agent-free carrier population.
-            self.logger.warning(
-                "Loaded 0 distinct BOC-3 agents; boc3_agents enrichment may not "
-                "have run. The agent signal will score every shared agent at 0.0."
-            )
-        else:
-            self.logger.info(
-                "Loaded {} distinct BOC-3 agents covering {} carrier filings".format(
-                    len(counts), total
-                )
-            )
         return ScoringContext(
-            agent_counts=counts,
-            total_agent_carriers=total,
+            rarity_tables=self._rarity_tables(source_index, signal_configs),
             ignored_values=suppressed,
         )
+
+    def _rarity_tables(self, source_index, signal_configs):
+        """One value-frequency table per field a rarity-weighted signal reads.
+
+        A loop over the configured signals rather than one hardcoded lookup:
+        the mechanism is "count how common this field's values are", and which
+        fields need it is a project's decision. Previously this fetched exactly
+        one field, named by the signal type "agent".
+
+        A field that cannot be aggregated is skipped with a warning rather than
+        aborting the sweep, because the signal degrades honestly without it —
+        FieldRarityTable floors an empty corpus to 0.0, so the signal
+        contributes nothing instead of inventing a rarity.
+        """
+        tables = {}
+        for signal_config in signal_configs:
+            if getattr(signal_config, "type", None) != "rarity-weighted-value":
+                continue
+            field_path = signal_config.name_field
+            # .keyword because the source field is analyzed text; aggregating
+            # the analyzed form would count tokens rather than whole values.
+            keyword_field = "{}.keyword".format(field_path)
+            try:
+                response = self.es.search(
+                    index=source_index,
+                    size=0,
+                    aggs={
+                        "values": {
+                            "terms": {"field": keyword_field, "size": RARITY_TERMS_SIZE}
+                        }
+                    },
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "Could not gather value frequencies for {} ({}); its signal has "
+                    "no corpus to weight against and will score every shared value "
+                    "at 0.0 (no discriminating power) rather than fabricate a "
+                    "rarity value".format(field_path, e)
+                )
+                continue
+
+            buckets = response["aggregations"]["values"]["buckets"]
+            counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
+            total = sum(counts.values())
+            if total == 0:
+                # A zero-value corpus is the signature of enrichment having
+                # silently produced nothing (see the README's documented enrich
+                # bugs) rather than a population that genuinely has no values.
+                self.logger.warning(
+                    "Loaded 0 distinct values for {}; the enrichment feeding it may "
+                    "not have run. Its signal will score every shared value at "
+                    "0.0.".format(field_path)
+                )
+            else:
+                self.logger.info(
+                    "Loaded {} distinct values for {} covering {} records".format(
+                        len(counts), field_path, total
+                    )
+                )
+            tables[field_path] = FieldRarityTable(counts=counts, total=total)
+        return tables
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,
@@ -626,7 +674,7 @@ class PhaseEntityMatch:
                     stats["errors"] += 1
                     self.logger.error(
                         "Scoring failed for {} -> {}: {}".format(
-                            pred_doc.dot_number, cand_doc.dot_number, e
+                            pred_doc.entity_key, cand_doc.entity_key, e
                         )
                     )
                     continue
@@ -635,7 +683,7 @@ class PhaseEntityMatch:
 
             scored.sort(key=lambda p: p.total_score, reverse=True)
             for pair in scored[:max_pairs]:
-                key = (pair.predecessor.dot_number, pair.successor.dot_number)
+                key = (pair.predecessor.entity_key, pair.successor.entity_key)
                 if key in seen_pairs:
                     continue
                 seen_pairs.add(key)
@@ -661,28 +709,61 @@ class PhaseEntityMatch:
         pred = pair.predecessor
         succ = pair.successor
 
-        shutdown = _latest_iso(pred.value("out_of_service_orders.oos_date"))
-        registered = _latest_iso(succ.value("add_date"))
+        # Read from the same lifecycle block TemporalSignal scores from. These
+        # were literals here, duplicating the signal's own config with nothing
+        # comparing the two, so a pair could be scored on one pair of dates and
+        # reported with a gap measured between another.
+        shutdown = None
+        registered = None
+        if self.lifecycle is not None:
+            shutdown = _latest_iso(pred.value(self.lifecycle.shutdown_date))
+            registered = _latest_iso(succ.value(self.lifecycle.registration_date))
         gap_days = None
         if shutdown and registered:
             gap_days = (
                 parse_flexible_date(registered) - parse_flexible_date(shutdown)
             ).days
 
+        pred_extra = {}
+        succ_extra = {}
+        if shutdown is not None:
+            pred_extra["shutdown_date"] = shutdown
+            # Optional: a project may date its shutdowns without recording a
+            # reason for them, and an absent path must not invent a null key.
+            reason_path = getattr(self.lifecycle, "shutdown_reason", None)
+            if reason_path:
+                reason = pred.value(reason_path)
+                pred_extra["shutdown_reason"] = (
+                    reason[0] if isinstance(reason, list) else reason
+                )
+        if registered is not None:
+            succ_extra["add_date"] = registered
+
         document = {
-            "predecessor": _carrier_summary(pred, shutdown_date=shutdown),
-            "successor": _carrier_summary(succ, add_date=registered),
+            "predecessor": _entity_summary(pred, self.entity_config, pred_extra),
+            "successor": _entity_summary(succ, self.entity_config, succ_extra),
             "total_score": round(pair.total_score, 6),
             "gap_days": gap_days,
             "signals_present": pair.signals_present,
             "matched_on": pair.matched_on,
+            # signal_name is omitted rather than written as null when a project
+            # sets no label, matching how the provenance fields treat "unknown"
+            # -- an absent key cannot later be quoted as a value the pair had.
+            # `fields` carries paths only; see SignalContribution on why never
+            # values.
             "signals": [
                 {
-                    "signal_type": c.signal_type,
-                    "subfield": c.subfield,
-                    "weight": c.weight,
-                    "score": round(c.score, 6),
-                    "contribution": round(c.contribution, 6),
+                    key: value
+                    for key, value in {
+                        "signal_type": c.signal_type,
+                        "signal_name": c.signal_name,
+                        "fields": c.fields,
+                        "subfield": c.subfield,
+                        "weight": c.weight,
+                        "score": round(c.score, 6),
+                        "contribution": round(c.contribution, 6),
+                    }.items()
+                    if value is not None
                 }
                 for c in pair.signals
             ],
@@ -697,34 +778,42 @@ class PhaseEntityMatch:
         return {
             "_index": target_index,
             "_id": id_utils.compute_id(
-                {"p": pred.dot_number, "s": succ.dot_number}, ["p", "s"]
+                {"p": pred.entity_key, "s": succ.entity_key}, ["p", "s"]
             ),
             "_source": document,
         }
 
 
-def _carrier_summary(doc, shutdown_date=None, add_date=None):
-    """Trim a CarrierDoc to the human-facing fields a reviewer needs to judge a pair.
+def _entity_summary(doc, entity_config, extra=None):
+    """Trim an EntityDoc to the human-facing fields a reviewer needs to judge a pair.
 
     The output document exists to be read by a person deciding whether a
-    flagged pair is a real chameleon, not to carry the full carrier record
-    already available in the source index; keeping this list short is what
-    keeps a reviewed hit list scannable.
+    flagged pair is real, not to carry the full record already available in
+    the source index; keeping this list short is what keeps a reviewed hit
+    list scannable. Which fields those are is a project's own decision, so it
+    comes from entity.summary_fields rather than being fixed here -- the
+    previous fixed list named FMCSA columns, so any other project's pairs
+    would have carried five keys holding nulls.
+
+    Both `entity_key` and the project's own label are emitted when a label is
+    configured. Both rather than either, for the reason the provenance work
+    already established about source_index: a pair is routinely read on its
+    own, and at that point the project config is not in the reader's hands.
+    Generic tooling reads entity_key without loading config, while the
+    labelled copy keeps existing project scripts, committed baselines and
+    README figures working unchanged.
+
+    A configured field that is absent is emitted as None rather than dropped,
+    so a reviewer can tell "asked for and empty" from "never asked for".
     """
-    summary = {
-        "dot_number": doc.dot_number,
-        "legal_name": doc.value("legal_name"),
-        "dba_name": doc.value("dba_name"),
-        "phy_street": doc.value("phy_street"),
-        "phy_city": doc.value("phy_city"),
-        "phy_state": doc.value("phy_state"),
-    }
-    if shutdown_date is not None:
-        summary["shutdown_date"] = shutdown_date
-        reason = doc.value("out_of_service_orders.oos_reason")
-        summary["shutdown_reason"] = reason[0] if isinstance(reason, list) else reason
-    if add_date is not None:
-        summary["add_date"] = add_date
+    summary = {"entity_key": doc.entity_key}
+    label = getattr(entity_config, "key_label", None)
+    if label:
+        summary[label] = doc.entity_key
+    for path in getattr(entity_config, "summary_fields", None) or []:
+        summary[path] = doc.value(path)
+    if extra:
+        summary.update(extra)
     return summary
 
 
