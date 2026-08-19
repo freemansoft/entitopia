@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/metrics.schema.json",
+  "title": "entitopia metrics",
+  "description": "What a project measures about its own scored pairs. Metric names are load-bearing: they are the keys of committed baseline and expectation files, so renaming one breaks every comparison already recorded against it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["metrics"],
+  "properties": {
+    "baseline": {
+      "type": "string",
+      "description": "Project-relative path to the committed baseline this project compares against. A project that has not taken its first baseline yet legitimately has none, so an absent file is a warning rather than a failure."
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Key in the emitted record, and therefore in every baseline and expectation file. Not cosmetic."
+          },
+          "filter": {
+            "$ref": "#/$defs/predicate",
+            "description": "Which pairs this metric counts. Absent means every pair."
+          },
+          "distinct": {
+            "type": "string",
+            "description": "Dotted path whose unique values are counted, instead of counting pairs. A pair missing the path contributes nothing rather than a null bucket."
+          },
+          "ratio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["numerator", "denominator"],
+            "description": "Computed from two other metrics after the pass over pairs, so it may name a metric declared later. A zero denominator yields 0.0, never NaN — NaN is not valid JSON and would poison the baseline it was written into.",
+            "properties": {
+              "numerator": { "type": "string" },
+              "denominator": { "type": "string" }
+            }
+          }
+        },
+        "not": {
+          "required": ["distinct", "ratio"],
+          "description": "A metric counts pairs, counts distinct values, or divides two other metrics — never two of those at once."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "predicate": {
+      "type": "object",
+      "minProperties": 0,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "description": "Exactly one test, or none at all to match every pair. The menu is closed: a predicate name nobody implemented must fail loudly, because a typo that quietly matches nothing reports a metric of zero as though it had been measured.",
+      "properties": {
+        "score_gte": { "type": "number" },
+        "score_lt": { "type": "number" },
+        "gap_between": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Inclusive on both ends. A null gap never matches: an unparseable date is not evaluable, which is not the same as outside the window."
+        },
+        "gap_lte": { "type": "number" },
+        "gap_gte": { "type": "number" },
+        "has_signal_type": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "matched_on_equals": { "type": "array", "items": { "type": "string" } },
+        "matched_identity_equals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Set equality after restricting to identity signals, so a corroborating signal firing alongside does not change the answer."
+        },
+        "fields_equal": {
+          "type": "string",
+          "description": "Both sides carry the same NON-NULL value for this summary field. Two records that both lack the field are not equal."
+        },
+        "signal_count_gte": { "type": "integer", "minimum": 1 },
+        "all": { "type": "array", "items": { "$ref": "#/$defs/predicate" }, "minItems": 1 },
+        "any": { "type": "array", "items": { "$ref": "#/$defs/predicate" }, "minItems": 1 },
+        "not": { "$ref": "#/$defs/predicate" }
+      }
+    }
+  }
+}

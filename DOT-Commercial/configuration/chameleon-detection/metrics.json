@@ -1,0 +1,63 @@
+{
+  "baseline": "data/precision/baseline-post-reload.json",
+  "metrics": [
+    { "name": "pairs" },
+    { "name": "pairs_ge_070", "filter": { "score_gte": 0.7 } },
+    {
+      "name": "coherent_ge_070",
+      "filter": { "all": [{ "score_gte": 0.7 }, { "gap_between": [-180, 365] }] }
+    },
+    {
+      "name": "coherent_share_ge_070",
+      "ratio": { "numerator": "coherent_ge_070", "denominator": "pairs_ge_070" }
+    },
+    { "name": "vin_only", "filter": { "matched_on_equals": ["shared-token"] } },
+    {
+      "name": "vin_only_identity",
+      "filter": { "matched_identity_equals": ["shared-token"] }
+    },
+    {
+      "name": "triage_unbounded",
+      "filter": {
+        "all": [
+          { "score_gte": 0.7 },
+          { "has_signal_type": ["shared-token", "exact-identifier"] },
+          { "gap_lte": 365 }
+        ]
+      }
+    },
+    {
+      "name": "triage_bounded",
+      "filter": {
+        "all": [
+          { "score_gte": 0.7 },
+          { "has_signal_type": ["shared-token", "exact-identifier"] },
+          { "gap_between": [0, 365] }
+        ]
+      }
+    },
+    {
+      "name": "identical_name_triage",
+      "filter": {
+        "all": [
+          { "score_gte": 0.7 },
+          { "has_signal_type": ["shared-token", "exact-identifier"] },
+          { "gap_lte": 365 },
+          { "fields_equal": "legal_name" }
+        ]
+      }
+    },
+    {
+      "name": "canary",
+      "filter": {
+        "all": [
+          { "score_gte": 0.99 },
+          { "has_signal_type": ["shared-token", "exact-identifier"] },
+          { "gap_between": [0, 7] },
+          { "fields_equal": "legal_name" }
+        ]
+      }
+    },
+    { "name": "predecessors_with_pairs", "distinct": "predecessor.entity_key" }
+  ]
+}

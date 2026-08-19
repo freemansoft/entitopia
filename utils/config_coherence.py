@@ -17,6 +17,8 @@ eight of them. Every rule returns zero or more messages and never raises, so
 first-error validator turns a five-mistake config into five runs.
 """
 
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from matching.population import PopulationSelector
@@ -170,3 +172,100 @@ def check(entity_match: dict, source: str) -> list[str]:
     for rule in _RULES:
         messages.extend(rule(entity_match, source))
     return messages
+
+
+# Prefix marking a finding that should not stop a run. Used sparingly: a
+# warning that is really an error trains readers to skim past both.
+WARNING_PREFIX = "warning: "
+
+
+def _ratios_name_defined_metrics(raw, source) -> list[str]:
+    """A ratio referring to a metric nobody declared cannot be computed."""
+    declared = {m.get("name") for m in raw.get("metrics", []) or []}
+    messages = []
+    for metric in raw.get("metrics", []) or []:
+        ratio = metric.get("ratio")
+        if not ratio:
+            continue
+        for role in ("numerator", "denominator"):
+            named = ratio.get(role)
+            if named and named not in declared:
+                messages.append(
+                    "{}: metric {!r} takes its {} from {!r}, which no metric "
+                    "declares".format(source, metric.get("name"), role, named)
+                )
+    return messages
+
+
+def _metric_names_are_unique(raw, source) -> list[str]:
+    """Two metrics sharing a name means one of them never appears.
+
+    The emitted record is keyed by name, so the later silently overwrites the
+    earlier: a metric an operator declared, and expects to see guarded, is
+    simply absent with nothing reporting it.
+    """
+    seen = set()
+    duplicated = set()
+    for metric in raw.get("metrics", []) or []:
+        name = metric.get("name")
+        if name in seen:
+            duplicated.add(name)
+        seen.add(name)
+    return [
+        "{}: metric name {!r} is declared more than once; the later one "
+        "overwrites the earlier in the emitted record".format(source, name)
+        for name in sorted(duplicated)
+    ]
+
+
+def _baseline_agrees(raw, source, project_root) -> list[str]:
+    """The committed baseline should exist and cover every declared metric.
+
+    A missing baseline file is a WARNING, not a failure: a project that has not
+    taken its first one is in a legitimate state, and failing would make the
+    metrics harness unusable until one exists.
+
+    A baseline that exists but lacks a declared metric is a real finding, since
+    `utils.sweep_compare.compare()` raises on a missing baseline key — hours
+    after a sweep, which is the expensive moment to learn it.
+    """
+    declared = raw.get("baseline")
+    if not declared:
+        return []
+    path = Path(project_root) / declared
+    if not path.exists():
+        return [
+            "{}{}: baseline {!r} does not exist yet; comparisons will have "
+            "nothing to compare against until one is written".format(
+                WARNING_PREFIX, source, declared
+            )
+        ]
+    try:
+        baseline = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        return ["{}: baseline {!r} could not be read: {}".format(source, declared, e)]
+    missing = sorted(
+        {m.get("name") for m in raw.get("metrics", []) or []} - set(baseline)
+    )
+    return [
+        "{}: metric {!r} is declared but absent from baseline {!r}; the "
+        "comparison will raise on it".format(source, name, declared)
+        for name in missing
+    ]
+
+
+def check_metrics(metrics: dict, source: str, project_root) -> list[str]:
+    """Coherence rules for a metrics config. Returns messages, empty when clean.
+
+    Separate from `check` because the two describe different files and a caller
+    may legitimately have one and not the other — a project can measure pairs
+    it did not produce, and an ingestion-only project has neither.
+
+    `project_root` resolves the baseline path, which metrics.json states
+    relative to its project rather than to the repository.
+    """
+    return [
+        *_ratios_name_defined_metrics(metrics, source),
+        *_metric_names_are_unique(metrics, source),
+        *_baseline_agrees(metrics, source, project_root),
+    ]

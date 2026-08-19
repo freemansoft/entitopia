@@ -41,6 +41,7 @@ STEP_CONFIG_FILES = (
     ("pipelines", "pipelines.json"),
     ("enrichment-policies", "enrichment-policies.json"),
     ("entity-match", "entity-match.json"),
+    ("metrics", "metrics.json"),
 )
 
 ENTITY_MATCH_FILE = "entity-match.json"
@@ -97,12 +98,17 @@ class PhaseValidate:
         return findings
 
     def _tier_coherence(self, present):
-        return [
-            message
-            for kind, path, raw in present
-            if kind == "entity-match" and raw is not None
-            for message in config_coherence.check(raw, path)
-        ]
+        messages = []
+        for kind, path, raw in present:
+            if raw is None:
+                continue
+            if kind == "entity-match":
+                messages.extend(config_coherence.check(raw, path))
+            elif kind == "metrics":
+                messages.extend(
+                    config_coherence.check_metrics(raw, path, self.project)
+                )
+        return messages
 
     def _tier_liveness(self, present):
         return [
@@ -133,6 +139,15 @@ class PhaseValidate:
             ("liveness", self._tier_liveness),
         ):
             findings = tier(present)
+            # Warnings are reported and then set aside. A project that has not
+            # taken its first baseline is in a legitimate state, and failing on
+            # it would make the metrics harness unusable until one exists.
+            warnings = [
+                m for m in findings if m.startswith(config_coherence.WARNING_PREFIX)
+            ]
+            findings = [m for m in findings if m not in warnings]
+            for message in warnings:
+                self.logger.warning("%s", message[len(config_coherence.WARNING_PREFIX):])
             if findings:
                 for message in findings:
                     self.logger.error("%s", message)
