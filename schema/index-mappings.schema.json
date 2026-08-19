@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/freemansoft/entitopia/schema/index-mappings.schema.json",
+  "title": "entitopia index-mappings envelope",
+  "description": "Envelope only. Everything under `mappings` is Elasticsearch's own mapping DSL — owned elsewhere, moving independently, and already rejected loudly by the cluster, which this repo made fatal. A schema over its interior would go stale, start rejecting valid config, and teach operators to distrust the validator. Whether the mapped fields actually match the data is a question no schema can answer; that is what the validate phase's live-cluster tier is for.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["index", "mappings"],
+  "properties": {
+    "index": {
+      "type": "string",
+      "description": "Must name the same index as this step's index-config."
+    },
+    "mappings": {
+      "type": "object",
+      "description": "Passed to Elasticsearch untouched."
+    }
+  }
+}
