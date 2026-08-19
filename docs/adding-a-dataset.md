@@ -19,15 +19,15 @@ A dataset with identity fields but no dates still earns a place as a corroborati
 
 These documents sit next to the config they describe and get updated when it changes, so they are the source of truth:
 
-| Document                                                                                       | Covers                                                                                                                                                        |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document                                                                                       | Covers                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [README](../README.md) § Common data-loading hazards                                           | The seven failure modes, each with the incident behind it: dynamic typing, legacy dates, inert analyzers, validation caps, missing `id_field`, stale enrichment, dropped documents under enrich back-pressure |
-| [README](../README.md) § Local Elasticsearch                                                   | The verification commands — `_analyze`, `_simulate`, `_mapping`, enrich counts                                                                                |
-| [README](../README.md) § Inside `entity-match`                                                 | How retrieval and scoring divide the work, and the `seed_signals` / `conclusive` / `ignore_values` knobs                                                       |
-| [DOT-Commercial](../DOT-Commercial/README.md) § Enriched field mappings                        | Why every enriched field is pinned, with the measured before/after                                                                                            |
-| [DOT-Commercial](../DOT-Commercial/README.md) § Name and address analyzers                     | The two-encoder decision, suffix stopping, the street subfield split — with measurements                                                                      |
-| [Chameleon matching design](superpowers/specs/2026-07-30-chameleon-carrier-matching-design.md) | Signal semantics, scoring, guards, and the Known Limitations that record what is still wrong                                                                  |
-| Open work items in each README                                                                 | What is known-broken right now. Check before assuming a behaviour is correct.                                                                                 |
+| [README](../README.md) § Local Elasticsearch                                                   | The verification commands — `_analyze`, `_simulate`, `_mapping`, enrich counts                                                                                                                                |
+| [README](../README.md) § Inside `entity-match`                                                 | How retrieval and scoring divide the work, and the `seed_signals` / `conclusive` / `ignore_values` knobs                                                                                                      |
+| [DOT-Commercial](../DOT-Commercial/README.md) § Enriched field mappings                        | Why every enriched field is pinned, with the measured before/after                                                                                                                                            |
+| [DOT-Commercial](../DOT-Commercial/README.md) § Name and address analyzers                     | The two-encoder decision, suffix stopping, the street subfield split — with measurements                                                                                                                      |
+| [Chameleon matching design](superpowers/specs/2026-07-30-chameleon-carrier-matching-design.md) | Signal semantics, scoring, guards, and the Known Limitations that record what is still wrong                                                                                                                  |
+| Open work items in each README                                                                 | What is known-broken right now. Check before assuming a behaviour is correct.                                                                                                                                 |
 
 ## Workflow
 
@@ -48,6 +48,8 @@ Act on every WARNING it prints — each corresponds to a real incident and names
 If two random records share a value more than roughly a percent of the time, that field cannot carry a match. Weight it by rarity or use it only as a filter.
 
 ### 2. Decide the shape
+
+The **shape** of every config file is already documented and machine-checked — see [`schema/README.md`](../schema/README.md). Point your editor at those schemas before writing config by hand; they give completion and inline errors, and they reject an unknown key rather than ignoring it. What follows is the part they cannot decide for you.
 
 Work through these, consulting the documents above for the specifics:
 
