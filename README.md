@@ -348,7 +348,7 @@ The fix is the enrich coordinator queue sizing in the Docker section above. Reru
 
 The intent is that everything under the repository root is generic, and each project directory owns its own dataset specifics.
 
-**Generic framework code** — `phase_providers/` (phase implementations), `utils/` (config loading, Elasticsearch client, CSV loading, deterministic IDs), `execute_project.py` (the driver).
+**Generic framework code** — `phase_providers/` (phase implementations), `utils/` (config loading, Elasticsearch client, CSV loading, deterministic IDs), `execute_project.py` (the driver), and [`schema/`](schema/) (JSON Schemas for every config file entitopia defines, shared by every project — see [`schema/README.md`](schema/README.md)).
 
 **Project-owned code** — data acquisition lives with its project: [`CMS-Providers/download_cms_provider.sh`](CMS-Providers/download_cms_provider.sh), [`DOT-Commercial/fetch_commercial_carriers.py`](DOT-Commercial/fetch_commercial_carriers.py).
 
