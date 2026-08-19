@@ -47,6 +47,13 @@ CATEGORY_MAX_DISTINCT = 200
 # to make a real decision about.
 DATE_SHAPE_SHARE = 0.5
 
+# Share of populated values that must be numeric before the column is treated
+# as an identifier or measurement rather than as text. High rather than a
+# majority: one alphanumeric value among thousands of digits is exactly the
+# mixed-type trap that makes `keyword` the right answer anyway, so this only
+# needs to separate "numbers" from "words".
+NUMERIC_SHAPE_SHARE = 0.9
+
 MARKER_PREFIX = "__TODO_"
 MARKER_SUFFIX = "__"
 
@@ -81,13 +88,37 @@ def _is_date_shaped(column) -> bool:
     return dated / column.populated > DATE_SHAPE_SHARE
 
 
+def _is_numeric_shaped(column) -> bool:
+    """Whether the column's populated values are overwhelmingly numeric.
+
+    Exists to keep high-cardinality IDENTIFIERS out of `text`. Measured against
+    the CMS provider extract: `NPI` is a ten-digit national provider identifier,
+    unique on every row, so a cardinality test alone called it varied text and
+    mapped it `text` — under which `{"term": {"NPI": "1234567890"}}` matches
+    nothing, silently, which is the exact defect this repo has recorded against
+    an analyzed field before.
+
+    An identifier is never worth analyzing however varied it is, and being
+    varied is precisely what identifiers are.
+    """
+    if not column.populated:
+        return False
+    return (column.n_int + column.n_float) / column.populated > NUMERIC_SHAPE_SHARE
+
+
 def _is_varied_text(column) -> bool:
     """Whether a column is varied enough to want analysis rather than exact match.
 
     `distinct_capped` means the profiler stopped tracking distinct values
     because there were too many, which is itself evidence of high cardinality.
+
+    Numeric-shaped columns are excluded before cardinality is considered at
+    all: uniqueness makes an identifier *more* clearly an identifier, not more
+    like free text.
     """
     if not column.populated:
+        return False
+    if _is_numeric_shaped(column):
         return False
     if column.distinct_capped:
         return True
@@ -125,6 +156,44 @@ def mapping_properties(fieldnames, columns) -> dict:
     as inert — the analyzer never applies and nothing reports it.
     """
     return {name: field_type(columns[name]) for name in fieldnames}
+
+
+def candidate_identity_columns(fieldnames, columns) -> list[str]:
+    """Varied non-numeric columns — the ones that might be worth matching on.
+
+    Surfaced for the generated README because of a measured gap between what
+    this produces and what a human writes. Compared against the hand-written
+    CMS mapping for the same extract, the generator agreed on base type for
+    only 3 of 10 shared columns, and every disagreement was the same one: the
+    hand-written file maps a column `text` so it can carry analyzed subfields
+    for matching, while the generator maps `keyword` because it refuses to
+    decide whether the column is matched on at all.
+
+    Neither is wrong — a `keyword` base can carry analyzed subfields too — but
+    an operator who intends to match on a column should know it probably wants
+    analysis. Listing the candidates is as far as this can go without making
+    the judgement it exists to refuse.
+    """
+    return [
+        name
+        for name in fieldnames
+        if _is_varied_text(columns[name]) or _looks_like_varied_short_text(columns[name])
+    ]
+
+
+def _looks_like_varied_short_text(column) -> bool:
+    """Non-numeric columns with many distinct values but below the ratio gate.
+
+    A city or first-name column repeats heavily across a large file, so it
+    falls under FINGERPRINT_DISTINCT_RATIO and is mapped `keyword` — yet it is
+    exactly the kind of field a matcher wants analyzed. Included as a
+    *candidate* only.
+    """
+    if not column.populated or _is_numeric_shaped(column) or _is_date_shaped(column):
+        return False
+    if column.distinct_capped:
+        return True
+    return len(column.values) > CATEGORY_MAX_DISTINCT
 
 
 def date_shaped_columns(fieldnames, columns) -> list[str]:

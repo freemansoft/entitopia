@@ -74,6 +74,35 @@ def test_a_plain_integer_column_is_keyword():
     assert scaffold.field_type(column)["type"] == "keyword"
 
 
+def test_a_high_cardinality_numeric_identifier_is_keyword_not_text():
+    """The case the three-value test above passed for the wrong reason.
+
+    Found by generating against the real CMS provider extract: NPI is a
+    ten-digit identifier, unique on every row, so a cardinality test alone
+    called it varied text and mapped it `text` -- under which
+    {"term": {"NPI": "1234567890"}} matches nothing, silently.
+
+    Uniqueness makes an identifier MORE clearly an identifier, not more like
+    free text, so the numeric check has to come before cardinality.
+    """
+    column = _profile_of([str(1_000_000_000 + i) for i in range(5_000)])
+    assert scaffold.field_type(column)["type"] == "keyword"
+
+
+def test_a_high_cardinality_numeric_column_with_stray_text_is_still_keyword():
+    # The mixed-type trap at scale: mostly digits with a few alphanumerics.
+    # keyword is right for both reasons at once.
+    values = [str(1_000_000_000 + i) for i in range(5_000)] + ["7221120ND"] * 3
+    assert scaffold.field_type(_profile_of(values))["type"] == "keyword"
+
+
+def test_high_cardinality_names_are_still_text():
+    # The rule must not swallow the case it exists to serve: genuinely varied
+    # free text still wants analysis.
+    column = _profile_of(["EXAMPLE NAME {}".format(i) for i in range(5_000)])
+    assert scaffold.field_type(column)["type"] == "text"
+
+
 def test_low_cardinality_text_is_keyword():
     column = _profile_of(["ACTIVE"] * 50 + ["INACTIVE"] * 50)
     assert scaffold.field_type(column)["type"] == "keyword"

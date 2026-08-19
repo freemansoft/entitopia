@@ -47,6 +47,16 @@ Act on every WARNING it prints — each corresponds to a real incident and names
 
 If two random records share a value more than roughly a percent of the time, that field cannot carry a match. Weight it by rarity or use it only as a filter.
 
+Once you have profiled, `scripts/new_project.py` writes the mechanical half for you:
+
+```bash
+.venv/bin/python scripts/new_project.py --project My-Project --csv mystep=path/to.csv
+```
+
+It emits the directory layout, per-column mappings, aliases and phase lists — and **what it generates does not run**. Every decision it refuses becomes a `__TODO_*__` key that `validate` rejects, so the marker list it prints is your work queue. It refuses the document key, the analyzers, and everything in `entity-match.json`, because those are the judgement calls the rest of this document is about.
+
+Be clear-eyed about how much it saves. Measured against the hand-written CMS mapping for the same extract, generated and hand-written base types agreed on 3 of 10 shared columns — every disagreement being a column a human mapped `text` so it could carry analyzed subfields for matching. The generator maps those `keyword` because it will not decide whether you are matching on them. It removes the typing; the thinking is still yours.
+
 ### 2. Decide the shape
 
 The **shape** of every config file is already documented and machine-checked — see [`schema/README.md`](../schema/README.md). Point your editor at those schemas before writing config by hand; they give completion and inline errors, and they reject an unknown key rather than ignoring it. What follows is the part they cannot decide for you.
