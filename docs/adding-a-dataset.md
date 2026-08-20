@@ -72,6 +72,15 @@ Work through these, consulting the documents above for the specifics:
 - **Seeding** — which of those signals may _retrieve_ candidates (`candidates.seed_signals`), not merely score them. This is a separate decision from weight and it sets the ceiling on recall: a pair the seed query never returns cannot be scored at any threshold.
 - **Junk values** — `ignore_values`, keyed by field path, for placeholders that would otherwise read as evidence.
 
+### 2a. If your data has no dates, say so in the config
+
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
+
+Two things that example is worth reading for:
+
+- **Its metrics deliberately avoid the other project's vocabulary.** No `canary`, no `triage`. Those name a fraud shape, and a duplicate sweep over hospital records is finding legitimate multi-record facilities. Importing the words would make resemblance read as an accusation.
+- **Its name analyzer stops generic words, chosen by measurement.** `HOSPITAL` appears in 52.7% of facility names. Leaving such words in produced thousands of pairs sharing nothing else; stopping them removed 59% of the low band without losing a single pair above 0.70.
+
 ### 3. Verify against a live cluster
 
 Configuration that parses can be entirely inert. The commands are in the top-level README; the discipline is: **after every change, ask the cluster what it actually did** rather than trusting that the config was accepted.
