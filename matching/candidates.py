@@ -150,15 +150,35 @@ class CandidateFinder:
         if not fields or not doc_ids:
             return {}
 
+        # Per-doc `docs` rather than a top-level `fields` list, because a
+        # top-level list is comma-joined into a request parameter and any field
+        # name containing a SPACE is then silently dropped -- no error, no
+        # warning, just an empty token set. A signal reads that as "not
+        # evaluable", drops out, and the pair scores on whatever remains.
+        #
+        # Measured 2026-08-20 against a project whose columns are named
+        # "Facility Name" and "Telephone Number": every name signal returned
+        # nothing for every pair, the sweep reported 0 errors, and 116
+        # plausible-looking pairs were emitted having matched on address alone.
+        # DOT-Commercial could never surface this -- its columns are all
+        # snake_case -- so it took a second dataset to find.
+        #
+        # The per-doc shape sends the field list in the JSON body as an array,
+        # which preserves spaces, and keeps the whole batch in one round trip.
         response = self.es.mtermvectors(
             index=self.source_index,
-            ids=doc_ids,
-            fields=fields,
-            term_statistics=False,
-            field_statistics=False,
-            positions=False,
-            offsets=False,
-            payloads=False,
+            docs=[
+                {
+                    "_id": doc_id,
+                    "fields": fields,
+                    "term_statistics": False,
+                    "field_statistics": False,
+                    "positions": False,
+                    "offsets": False,
+                    "payloads": False,
+                }
+                for doc_id in doc_ids
+            ],
         )
 
         tokens_by_id = {}
