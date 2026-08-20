@@ -206,12 +206,18 @@ class PhaseEntityMatch:
         )
         self._stamp_provenance(index_config.index, provenance)
 
+        # Three failure kinds counted apart, because they answer different
+        # questions and share no denominator. A lookup that raised produced no
+        # candidates at all, so counting it against "candidates examined" would
+        # divide by a number its own failure kept at zero.
         stats = {
             "predecessors": 0,
             "candidates": 0,
             "pairs": 0,
             "truncated": 0,
-            "errors": 0,
+            "lookup_errors": 0,
+            "scoring_errors": 0,
+            "index_errors": 0,
         }
 
         actions = self._generate_actions(
@@ -230,14 +236,16 @@ class PhaseEntityMatch:
             if success:
                 indexed += 1
             else:
-                stats["errors"] += 1
+                stats["index_errors"] += 1
                 self.logger.error("Failed to index pair: {}".format(response))
 
         self.logger.info(
             "entity-match complete: {} predecessors, {} candidates examined, "
-            "{} pairs emitted, {} indexed, {} truncated candidate sets, {} errors".format(
+            "{} pairs emitted, {} indexed, {} truncated candidate sets, "
+            "{} lookup / {} scoring / {} index errors".format(
                 stats["predecessors"], stats["candidates"], stats["pairs"],
-                indexed, stats["truncated"], stats["errors"],
+                indexed, stats["truncated"], stats["lookup_errors"],
+                stats["scoring_errors"], stats["index_errors"],
             )
         )
         self._raise_on_catastrophic_error_rate(stats)
@@ -275,27 +283,68 @@ class PhaseEntityMatch:
         is designed to survive: one malformed record should not discard the
         work done on every other. The line is drawn where the failures stop
         being individual records and start being the configuration.
+
+        **Each failure kind is judged against its own denominator**, and the
+        first version of this guard was wrong for want of that. It divided a
+        single combined error count by `candidates`, which counts only the
+        lookups that SUCCEEDED — so a systemic failure in candidate retrieval
+        left `candidates` at zero, the zero-check returned early, and the guard
+        stayed silent on the most severe form of exactly the failure it exists
+        to catch. That path is the one the token-fetch fix touches, which is
+        the last place a blind spot belongs.
+
+        Index-write failures are deliberately excluded from both shares. They
+        say a cluster refused a document, not that a comparison was wrong, and
+        folding them in would let a transient write problem be reported as a
+        configuration fault.
         """
-        examined = stats["candidates"]
-        errors = stats["errors"]
-        if not examined or not errors:
+        self._check_share(
+            stats["lookup_errors"],
+            stats["predecessors"],
+            "candidate lookups",
+            "no candidates could be retrieved, so nothing was compared at all",
+        )
+        self._check_share(
+            stats["scoring_errors"],
+            stats["candidates"],
+            "comparisons",
+            "the pairs that did survive cannot be trusted to mean what they claim",
+        )
+        if stats["index_errors"]:
+            self.logger.warning(
+                "{} pair(s) failed to index. These are write failures, not "
+                "comparison failures, so they are not counted against the error "
+                "ceiling -- but the pairs are missing from the output.".format(
+                    stats["index_errors"]
+                )
+            )
+
+    def _check_share(self, errors, attempted, what, consequence):
+        """Warn or raise on one failure kind's share of its own attempts.
+
+        `attempted` counts what was tried, not what succeeded. Errors with
+        nothing attempted is not "no problem": it is the total-failure case,
+        and it raises rather than dividing by zero or returning early.
+        """
+        if not errors:
             return
-        share = errors / examined
+        if not attempted:
+            raise RuntimeError(
+                "entity-match failed all {} {} it attempted: {}. The errors "
+                "above name the cause.".format(errors, what, consequence)
+            )
+        share = errors / attempted
         if share < MAX_SCORING_ERROR_SHARE:
             self.logger.warning(
-                "{} of {} comparisons failed ({:.2%}); those pairs were skipped "
-                "and the rest of the sweep is unaffected".format(
-                    errors, examined, share
-                )
+                "{} of {} {} failed ({:.2%}); those were skipped and the rest "
+                "of the sweep is unaffected".format(errors, attempted, what, share)
             )
             return
         raise RuntimeError(
-            "entity-match failed {} of {} comparisons ({:.2%}), at or above the "
-            "{:.0%} ceiling: this is a configuration fault rather than bad "
-            "records, and the pairs that did survive cannot be trusted to mean "
-            "what they claim. The per-comparison errors above name the "
-            "cause.".format(
-                errors, examined, share, MAX_SCORING_ERROR_SHARE
+            "entity-match failed {} of {} {} ({:.2%}), at or above the {:.0%} "
+            "ceiling: this is a configuration fault rather than bad records, "
+            "and {}. The errors above name the cause.".format(
+                errors, attempted, what, share, MAX_SCORING_ERROR_SHARE, consequence
             )
         )
 
@@ -706,7 +755,7 @@ class PhaseEntityMatch:
             try:
                 pred_doc, cand_docs, truncated = finder.find(pred_hit, ctx)
             except Exception as e:
-                stats["errors"] += 1
+                stats["lookup_errors"] += 1
                 self.logger.error(
                     "Candidate lookup failed for {}: {}".format(pred_hit["_id"], e)
                 )
@@ -723,7 +772,7 @@ class PhaseEntityMatch:
                 try:
                     pair = scorer.score_pair(pred_doc, cand_doc, ctx)
                 except Exception as e:
-                    stats["errors"] += 1
+                    stats["scoring_errors"] += 1
                     self.logger.error(
                         "Scoring failed for {} -> {}: {}".format(
                             pred_doc.entity_key, cand_doc.entity_key, e
