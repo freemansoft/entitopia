@@ -118,6 +118,6 @@ The test is not "is this field rare enough to rank well" but **"if two records s
 
 - Everything runs from `.venv/bin/python`, never the system Python.
 - `ruff check .` must pass; JSON and Markdown are prettier-formatted.
-- Mappings and analyzers are immutable on a live index — edit config, delete the index, re-run `index-create`/`index-map`, reload. Deleting is expected.
+- Mappings and analyzers are immutable on a live index — edit config, delete the index, re-run `index-create`/`index-map`, reload. Deleting is expected. **Delete by explicit name and read the response**: a wildcard is refused with an HTTP 400 body rather than a failing exit code, so it is easy to silence and leave the index alive. See the [top-level README](../README.md) § Local Elasticsearch for the trap and its symptom.
 - Record what you measured in the project's README: cardinality numbers, the key choice and its evidence, and any signal you rejected and why. The rejected signals are the expensive part to rediscover.
 - Conventions are in [CLAUDE.md](../CLAUDE.md).

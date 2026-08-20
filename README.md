@@ -424,6 +424,24 @@ curl -s "http://localhost:9200/.enrich-<policy-name>*/_count"
 
 Because mappings and analyzers are immutable on a live index, the normal loop is: edit config → delete the index → re-run `index-create` / `index-map` → reload. Deleting the index is expected, not a failure.
 
+**Delete by explicit name, and read the response.** This cluster runs with `action.destructive_requires_name`, so a wildcard is refused:
+
+```bash
+curl -X DELETE "http://localhost:9200/hospitals-*"
+# {"error":{"type":"illegal_argument_exception",
+#   "reason":"Wildcard expressions or all indices are not allowed"}}
+
+curl -X DELETE "http://localhost:9200/hospitals-2026.08.19-000001"      # works
+```
+
+The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That combines badly with `{now/d}`: a same-day re-run then writes into the index that was supposed to be gone, and its old documents are still there. Symptom to watch for — **a phase reporting more documents indexed than it emitted**. It happened here: a sweep emitting 3,627 pairs left a count of 7,347, because 4,751 pairs from the previous run had never been deleted.
+
+To find what is actually there before deleting anything:
+
+```bash
+curl -s "http://localhost:9200/_cat/indices/hospitals*?h=index,docs.count&s=index"
+```
+
 ## Setup
 
 1. Start the local Elasticsearch (see above): `docker compose -f docker/compose.yml up -d --build`
