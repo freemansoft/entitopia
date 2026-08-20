@@ -11,6 +11,10 @@
     {
       "name": "hospitals",
       "phases": ["validate", "index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "hospital-duplicates",
+      "phases": ["index-create", "index-map", "validate", "entity-match"]
     }
   ],
   "all_phases": [
@@ -19,7 +23,8 @@
     "enrichment-policies",
     "pipelines",
     "index-populate",
-    "validate"
+    "validate",
+    "entity-match"
   ],
   "configurationDir": "configuration",
   "dataDir": "data",

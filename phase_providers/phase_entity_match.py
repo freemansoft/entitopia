@@ -39,6 +39,12 @@ DEFAULT_SHARED_LIMIT = 5
 # because every filing service and corporate parent contributes one.
 SUPPRESSION_TERMS_SIZE = 2000
 BULK_THREAD_COUNT = 2
+# Share of comparisons that may fail before the run is treated as broken rather
+# than merely degraded. Deliberately high: a handful of failures across hundreds
+# of thousands of comparisons is a data problem the sweep is designed to survive,
+# and discarding the whole run over one malformed record would be worse. At a
+# tenth of every comparison the cause has stopped being individual records.
+MAX_SCORING_ERROR_SHARE = 0.10
 
 
 @dataclasses.dataclass(frozen=True)
@@ -234,6 +240,8 @@ class PhaseEntityMatch:
                 indexed, stats["truncated"], stats["errors"],
             )
         )
+        self._raise_on_catastrophic_error_rate(stats)
+
         if indexed == 0:
             self.logger.warning(
                 "entity-match produced NO pairs. Check that {} is populated and "
@@ -246,6 +254,50 @@ class PhaseEntityMatch:
                 "{} predecessors hit the max_candidates ceiling; real matches "
                 "may have been cut off".format(stats["truncated"])
             )
+
+    def _raise_on_catastrophic_error_rate(self, stats):
+        """Fail the run when most comparisons failed, rather than reporting success.
+
+        A per-pair error was previously logged and counted and nothing more, so
+        a sweep in which EVERY comparison raised still logged "entity-match
+        complete" and exited cleanly. Measured 2026-08-19 on a second project's
+        first sweep: 532,529 candidates examined, 532,529 errors, 0 pairs — a
+        config key the schema called optional that the signal read with no
+        default. The only thing that drew attention to it was the separate
+        zero-pairs warning; had one pair scored, that run would have read as a
+        small success.
+
+        That is this repository's signature failure — a phase logging success
+        while producing quietly wrong output — so it raises.
+
+        A threshold rather than any-error-at-all, because a handful of failures
+        across hundreds of thousands of comparisons is a data problem the sweep
+        is designed to survive: one malformed record should not discard the
+        work done on every other. The line is drawn where the failures stop
+        being individual records and start being the configuration.
+        """
+        examined = stats["candidates"]
+        errors = stats["errors"]
+        if not examined or not errors:
+            return
+        share = errors / examined
+        if share < MAX_SCORING_ERROR_SHARE:
+            self.logger.warning(
+                "{} of {} comparisons failed ({:.2%}); those pairs were skipped "
+                "and the rest of the sweep is unaffected".format(
+                    errors, examined, share
+                )
+            )
+            return
+        raise RuntimeError(
+            "entity-match failed {} of {} comparisons ({:.2%}), at or above the "
+            "{:.0%} ceiling: this is a configuration fault rather than bad "
+            "records, and the pairs that did survive cannot be trusted to mean "
+            "what they claim. The per-comparison errors above name the "
+            "cause.".format(
+                errors, examined, share, MAX_SCORING_ERROR_SHARE
+            )
+        )
 
     def _preflight(self, source_index, required_subfields, expected_fingerprint):
         """Fail loudly before sweeping rather than emitting a silently empty result.

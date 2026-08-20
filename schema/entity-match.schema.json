@@ -194,8 +194,9 @@
           {
             "if": { "properties": { "type": { "const": "address" } }, "required": ["type"] },
             "then": {
-              "required": ["fields", "exact_subfield", "fuzzy_subfield"],
+              "required": ["fields", "exact_subfield", "fuzzy_subfield", "fuzzy_scale"],
               "additionalProperties": false,
+              "description": "fuzzy_scale is REQUIRED even though AddressSignal could default it. Two reasons. It is de facto required already -- matching/signals.py reads config.fuzzy_scale with no default, so omitting it raised AttributeError on every scored pair, and a second project hit that on its first sweep with config this schema had passed as valid. And it is a weighting decision rather than a detail: it sets what a fuzzy address match is worth against an exact one, so a silent default would change what every address score means without anyone choosing it.",
               "properties": {
                 "type": true,
                 "weight": true,
