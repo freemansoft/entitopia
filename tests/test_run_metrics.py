@@ -38,6 +38,24 @@ def test_fields_equal_pulls_both_sides_of_the_pair():
     assert "successor.legal_name" in fields
 
 
+def test_fields_equal_pulls_both_side_NAMINGS():
+    """Projection must match whichever naming the emitting sweep used.
+
+    A lifecycle sweep writes predecessor/successor; an all-entities sweep
+    writes left/right. Requesting only one leaves the field absent from every
+    fetched document, so the predicate compares two missing values and returns
+    False for every pair -- no error, and a metric reporting zero.
+
+    Measured when the sides were renamed and this was not:
+    identical_name_pairs went from 269 to 0.
+    """
+    fields = run_metrics.source_fields(
+        [{"name": "m", "filter": {"fields_equal": "Facility Name"}}]
+    )
+    for side in ("predecessor", "successor", "left", "right"):
+        assert "{}.Facility Name".format(side) in fields
+
+
 def test_a_nested_fields_equal_is_found():
     # Most real filters wrap their clauses in an `all`; a walker that only
     # looked at the top level would miss nearly every one.

@@ -146,6 +146,12 @@ class PhaseEntityMatch:
         # honest default -- a project with no dated events emits gap_days
         # null rather than a fabricated zero.
         self.lifecycle = None
+        # Decides what the two sides of an emitted pair are CALLED. A
+        # lifecycle sweep asserts that one record followed another, so
+        # predecessor/successor is a claim it can make; an all-entities
+        # sweep has no dated events and asserts only resemblance, where
+        # those names would state a direction the data cannot support.
+        self.population_mode = "lifecycle"
 
     def handle(self):
         self.logger.info(
@@ -182,6 +188,7 @@ class PhaseEntityMatch:
         # every intermediate method.
         self.entity_config = getattr(config, "entity", SimpleNamespace())
         self.lifecycle = getattr(config, "lifecycle", None)
+        self.population_mode = getattr(config.population, "mode", "lifecycle")
         scorer = PairScorer(config.signals, config.scoring, lifecycle=self.lifecycle)
         finder = CandidateFinder(
             self.es,
@@ -262,6 +269,29 @@ class PhaseEntityMatch:
                 "{} predecessors hit the max_candidates ceiling; real matches "
                 "may have been cut off".format(stats["truncated"])
             )
+
+    def pair_side_names(self):
+        """What the two sides of an emitted pair are called, given the mode.
+
+        A lifecycle sweep asserts that one record *followed* another, so
+        `predecessor` / `successor` is a claim it is entitled to make and the
+        direction is the point of the pair.
+
+        An all-entities sweep has no dated events at all — that absence is how
+        a duplicate-detection project is expressed — so those names would state
+        a succession the data cannot support. A reader pulling one pair out of
+        the index sees only the document, not the config that produced it, and
+        `predecessor` reads as an assertion rather than as a slot name. `left`
+        and `right` say what is true: two records that resemble each other,
+        with no claim about which came first.
+
+        Public because anything reading a pair document needs the same answer,
+        and a second implementation of this choice would be a second place for
+        it to drift.
+        """
+        if self.population_mode == "all-entities":
+            return "left", "right"
+        return "predecessor", "successor"
 
     def _raise_on_catastrophic_error_rate(self, stats):
         """Fail the run when most comparisons failed, rather than reporting success.
@@ -840,9 +870,10 @@ class PhaseEntityMatch:
         if registered is not None:
             succ_extra["add_date"] = registered
 
+        left_key, right_key = self.pair_side_names()
         document = {
-            "predecessor": _entity_summary(pred, self.entity_config, pred_extra),
-            "successor": _entity_summary(succ, self.entity_config, succ_extra),
+            left_key: _entity_summary(pred, self.entity_config, pred_extra),
+            right_key: _entity_summary(succ, self.entity_config, succ_extra),
             "total_score": round(pair.total_score, 6),
             "gap_days": gap_days,
             "signals_present": pair.signals_present,
