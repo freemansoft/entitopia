@@ -1,0 +1,58 @@
+{
+  "source_index": "hospitals-000001",
+  "source_settings_step": "hospitals",
+  "entity": {
+    "key": "Facility ID",
+    "key_label": "facility_id",
+    "summary_fields": ["Facility Name", "Address", "City/Town", "State"]
+  },
+  "population": {
+    "mode": "all-entities",
+    "sort_field": "Facility ID",
+    "max_records": null
+  },
+  "candidates": {
+    "max_candidates": 100,
+    "seed_signals": ["name-phonetic", "address", "exact-identifier"]
+  },
+  "signals": [
+    {
+      "type": "name-phonetic",
+      "name": "facility-name-sound",
+      "weight": 0.4,
+      "fields": ["Facility Name"],
+      "subfield": "phonetic"
+    },
+    {
+      "type": "name-token",
+      "name": "facility-name-tokens",
+      "weight": 0.2,
+      "fields": ["Facility Name"],
+      "subfield": "clean"
+    },
+    {
+      "type": "address",
+      "name": "street-address",
+      "weight": 0.25,
+      "fields": ["Address"],
+      "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.7
+    },
+    {
+      "type": "exact-identifier",
+      "name": "shared-telephone",
+      "weight": 0.15,
+      "phone_fields": ["Telephone Number"]
+    }
+  ],
+  "max_shared_records": {
+    "Telephone Number": 10
+  },
+  "scoring": {
+    "min_total_score": 0.5,
+    "min_signals": 2,
+    "require_identity_signal": true,
+    "max_pairs_per_predecessor": 10
+  }
+}

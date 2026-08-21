@@ -64,6 +64,44 @@ def test_a_temporal_signal_carrying_its_old_date_keys_is_rejected():
     assert any("predecessor_date" in e for e in errors)
 
 
+def test_an_address_signal_without_fuzzy_scale_is_rejected():
+    """The schema and the code disagreed, and a second project paid for it.
+
+    matching/signals.py reads config.fuzzy_scale with no default, so omitting
+    it raises AttributeError on every scored pair. This schema listed the key
+    as optional, so a CMS config passed all three validation tiers and then
+    produced 532,529 scoring errors and zero pairs on its first sweep.
+
+    Required rather than defaulted in code: fuzzy_scale sets what a fuzzy
+    address match is worth against an exact one, so a silent default would
+    change what every address score means without anyone choosing it.
+    """
+    raw = copy.deepcopy(_SHIPPED)
+    del _signal(raw, "address")["fuzzy_scale"]
+    errors = config_schema.validate_mapping("entity-match", raw, "mutated")
+    assert any("fuzzy_scale" in e for e in errors)
+
+
+def test_every_key_an_address_signal_reads_is_required_by_the_schema():
+    """Guards the general shape of the defect above, not just the one key.
+
+    A signal class reading a config key with no default makes that key
+    required in fact; if the schema calls it optional, config validates and
+    then crashes. This asserts the address variant's required list covers
+    every attribute AddressSignal reads directly off its config.
+    """
+    schema = json.loads(_SCHEMA_PATH.read_text())
+    address = next(
+        clause
+        for clause in schema["properties"]["signals"]["items"]["allOf"]
+        if clause["if"]["properties"]["type"].get("const") == "address"
+    )
+    required = set(address["then"]["required"])
+    # Read directly as self.config.X in AddressSignal.score, so each raises
+    # AttributeError when absent rather than falling back.
+    assert {"fields", "exact_subfield", "fuzzy_subfield", "fuzzy_scale"} <= required
+
+
 def test_a_name_signal_without_a_subfield_is_rejected():
     # A name signal reads analyzed tokens; with no subfield there is nothing to
     # read and it would score every pair unevaluable.
@@ -128,6 +166,11 @@ def test_a_duplicate_detection_config_without_lifecycle_validates():
                 "fields": ["Address"],
                 "exact_subfield": "clean",
                 "fuzzy_subfield": "tokens",
+                # Omitted when this test was written, because the schema then
+                # called it optional. That omission is exactly what broke the
+                # real CMS sweep, so this test was encoding the same wrong
+                # assumption it was meant to guard against.
+                "fuzzy_scale": 0.7,
             },
         ],
         "scoring": {"min_total_score": 0.5, "min_signals": 1},

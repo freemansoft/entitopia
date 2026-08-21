@@ -1,0 +1,49 @@
+{
+  "metrics": [
+    {
+      "name": "pairs"
+    },
+    {
+      "name": "pairs_ge_070",
+      "filter": {
+        "score_gte": 0.7
+      }
+    },
+    {
+      "name": "pairs_ge_090",
+      "filter": {
+        "score_gte": 0.9
+      }
+    },
+    {
+      "name": "identical_name_pairs",
+      "filter": {
+        "fields_equal": "Facility Name"
+      }
+    },
+    {
+      "name": "identical_address_pairs",
+      "filter": {
+        "fields_equal": "Address"
+      }
+    },
+    {
+      "name": "fuzzy_name_share",
+      "ratio": {
+        "numerator": "identical_name_pairs",
+        "denominator": "pairs"
+      }
+    },
+    {
+      "name": "phone_involved",
+      "filter": {
+        "has_signal_type": ["exact-identifier"]
+      }
+    },
+    {
+      "name": "facilities_with_pairs",
+      "distinct": "left.entity_key"
+    }
+  ],
+  "baseline": "data/precision/baseline-hospital-duplicates.json"
+}

@@ -93,13 +93,31 @@ def _matched_identity_equals(types, pair):
     return (_matched(pair) & IDENTITY_SIGNAL_TYPES) == set(types)
 
 
+# The two namings a pair document can use for its sides. A lifecycle sweep
+# emits predecessor/successor because it asserts that one record followed
+# another; an all-entities sweep emits left/right because it asserts only
+# resemblance. Both are read here rather than one, because a predicate that
+# knew only the first would return False for every pair of the second -- no
+# error, just a metric silently reporting zero.
+_SIDE_NAMES = (("predecessor", "successor"), ("left", "right"))
+
+
+def _sides(pair):
+    """The pair's two sides, whichever naming the sweep that emitted it used."""
+    for left_key, right_key in _SIDE_NAMES:
+        if left_key in pair or right_key in pair:
+            return pair.get(left_key) or {}, pair.get(right_key) or {}
+    return {}, {}
+
+
 def _fields_equal(path, pair):
     """Whether both sides carry the same non-null value for one summary field.
 
     Null on either side is not-equal — see the module docstring.
     """
-    left = _read(pair.get("predecessor") or {}, path)
-    right = _read(pair.get("successor") or {}, path)
+    left_side, right_side = _sides(pair)
+    left = _read(left_side, path)
+    right = _read(right_side, path)
     return left is not None and left == right
 
 

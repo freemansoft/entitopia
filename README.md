@@ -424,6 +424,24 @@ curl -s "http://localhost:9200/.enrich-<policy-name>*/_count"
 
 Because mappings and analyzers are immutable on a live index, the normal loop is: edit config → delete the index → re-run `index-create` / `index-map` → reload. Deleting the index is expected, not a failure.
 
+**Delete by explicit name, and read the response.** This cluster runs with `action.destructive_requires_name`, so a wildcard is refused:
+
+```bash
+curl -X DELETE "http://localhost:9200/hospitals-*"
+# {"error":{"type":"illegal_argument_exception",
+#   "reason":"Wildcard expressions or all indices are not allowed"}}
+
+curl -X DELETE "http://localhost:9200/hospitals-2026.08.19-000001"      # works
+```
+
+The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That combines badly with `{now/d}`: a same-day re-run then writes into the index that was supposed to be gone, and its old documents are still there. Symptom to watch for — **a phase reporting more documents indexed than it emitted**. It happened here: a sweep emitting 3,627 pairs left a count of 7,347, because 4,751 pairs from the previous run had never been deleted.
+
+To find what is actually there before deleting anything:
+
+```bash
+curl -s "http://localhost:9200/_cat/indices/hospitals*?h=index,docs.count&s=index"
+```
+
 ## Setup
 
 1. Start the local Elasticsearch (see above): `docker compose -f docker/compose.yml up -d --build`
@@ -475,7 +493,9 @@ Framework-level. Dataset-specific items live in each project's README.
 1. Enrichment policies bound to a live pipeline still cannot be **deleted**, so a policy whose _definition_ needs to change (different source index, different `enrich_fields`) still requires deleting the pipeline by hand, then rerunning the ingestion-setup step and reloading anything that was enriched from it. **Measured 2026-08-13**: a full reload left all six policies pointing at indexes twelve days superseded, and `carriers` was then built from them. The run now stops rather than finishing green — see the closed item below — but the manual, ordered recovery is unchanged. A real fix deletes and recreates the dependent pipelines around the policy rebuild.
 1. **A `temporal` contribution emits `"fields": []`, so a pair cannot say which dates its gap spans.** Every other signal now carries the config paths it read onto each emitted contribution, which is what replaced the deleted `vin-overlap` type name as the thing telling a reader what evidence fired. `temporal` is the exception, and by construction: its two date paths moved into the `lifecycle` block, while `fields_read()` reads only signal-level config keys. The information is in `entity-match.json`, but the whole argument for per-contribution provenance is that a pair gets read on its own, without the config to hand — so this is the one signal where that argument fails. Fixing it means either teaching `fields_read()` about `lifecycle` or emitting those paths at document level; both change the emitted document, which is why neither landed inside the commit range the compatibility gate certified.
 
-1. **The portability claim is unproven by any second project.** `matching/` is dataset-agnostic and DOT-Commercial's sweep is bit-identical across the change, but no other project has configured an `entity-match` step, so nothing has yet exercised the path a new dataset would take. Until one does, "onboarded by writing configuration" is a property of the code rather than an observed fact.
+1. **An `all-entities` sweep emits every pair twice, once in each direction.** `seen_pairs` keys on `(left, right)`, which is order-sensitive. For a lifecycle sweep that is right — A followed B and B followed A are different claims. For duplicate detection they are one fact stated twice, so every count is inflated: the CMS hospitals sweep emits 3,627 pairs covering 1,966 distinct unordered pairs, 84% of them present both ways. De-duplicating is not simply keying on a frozenset, because `max_pairs_per_predecessor` is applied per record: if one side's slate is already full, dropping the other direction loses the pair entirely rather than storing it once. A fix has to reconcile the cap with the de-duplication, which is why this is written down rather than patched.
+
+1. **`min_signals` counts evaluable evidence sources, not firing ones, and reads far stronger than it behaves.** A signal that was evaluated and scored 0.0 still contributes its evidence key, so a pair matching on **name alone** satisfies `min_signals: 2` as long as some second signal had data on both sides to compare. Measured on the CMS hospitals sweep: 2,581 of 3,627 pairs matched on nothing but the name, every one of them past a floor written to demand corroboration from a second source. The behaviour is documented on `ScoredPair.signals_present` and is defensible — "evaluated and disagreed" is real information — but no operator reading `min_signals: 2` in config would predict it. Either the guard should count firing sources, or the config key should be named for what it does.
 1. `signals[].detail` is specified in the chameleon matching design but was never implemented — `SignalContribution` has no such field. It was to carry human-readable evidence per signal (e.g. `"shared tokens: SM0, TRKN"`). `matched_on` covers the main triage path in the meantime.
 1. `parallel_bulk` still cannot retry a 429. Raising `enrich.coordinator_proxy.queue_capacity` removed the observed loss, but the client has no `max_retries` (only `streaming_bulk` does), so back-pressure remains permanent data loss rather than a delay. Any future dataset with more enrich processors, or a smaller VM, reopens this. A real fix is switching the populate phase to `streaming_bulk` with retry/backoff and accepting the lower throughput, or chunking the load so retries are cheap.
 1. Support multiple steps for the `--step` command line argument
@@ -484,6 +504,16 @@ Framework-level. Dataset-specific items live in each project's README.
 1. Add support for target specific processors
 
 ### Closed work items
+
+1. **A second project produced scored pairs — and configuration alone was not enough.** CMS-Providers now runs a `hospital-duplicates` sweep in `all-entities` mode: 5,419 facilities, 3,627 pairs, 22 scoring ≥ 0.70 and 18 ≥ 0.90, from four config files and no lifecycle block. So the path a new dataset takes has been exercised, and the answer to "is this onboarded by writing configuration" is **no, not quite** — it took three framework fixes, none of which DOT-Commercial could have surfaced.
+
+   **`_mtermvectors` silently dropped every field whose name contains a space.** The field list was sent as a top-level `fields` parameter, which is comma-joined, so `Facility Name.phonetic` resolved to nothing while `Address.tokens` worked. The field, its mapping and its analyzer were all correct — verified three ways: the explicit request returned nothing, a `Facility*` wildcard returned the very field it could not, and the single-document `termvectors` API returned it too. The consequence was invisible: every name signal returned an empty token set, read it as "not evaluable", and dropped out. The sweep emitted 116 plausible pairs, reported **0 errors**, and had matched on address alone. Fixed by sending the field list per document in the JSON body; the same config then emitted 4,751. Every column in DOT-Commercial is snake_case, which is the only reason this survived a certified sweep of 22 million comparisons.
+
+   **The schema and the signal disagreed about `fuzzy_scale`.** `AddressSignal` reads it with no default while the schema called it optional, so a config passed all three validation tiers and then raised on every scored pair — 532,529 errors, 0 pairs. Made required in the schema rather than defaulted in code, because it sets what a fuzzy address match is worth against an exact one, and a silent default would change what every address score means without anyone choosing it.
+
+   **A sweep in which every comparison failed reported success.** Per-pair errors were counted and logged and nothing more, so that 532,529-error run still logged `entity-match complete` and exited cleanly. Only a separate zero-pairs warning drew attention; had one pair scored, it would have read as a small success. Now raises above a 10% error share — a threshold rather than any-error-at-all, because one malformed record must not discard the work done on every other.
+
+   The pattern is worth more than the three fixes. Each defect was invisible to the project that wrote the code, needed no unusual data to trigger, and produced plausible output rather than an error. **A second dataset was the cheapest possible test and it found all three on first contact.**
 
 1. **`matching/` is dataset-agnostic, and DOT-Commercial's sweep is unchanged by the change.** `CarrierDoc.dot_number` became `EntityDoc.entity_key` read from `entity.key`; `matching/predecessors.py` became `matching/population.py`, with the four FMCSA selectors moved into project configuration and assembled from a closed four-clause menu — `nested-exists`, `term`, `all`, `any` — that stays in code. `agent` rarity generalized to a per-field rarity table, and the `vin-overlap` signal type was deleted in favour of `shared-token`, which the class was already registered under.
 

@@ -33,6 +33,12 @@ SCAN_SIZE = 2000
 # named by config (fields_equal, distinct) are added to these at run time.
 _ALWAYS_READ = ("total_score", "gap_days", "matched_on", "signals")
 
+# What the two sides of a pair may be called. A lifecycle sweep asserts one
+# record followed another; an all-entities sweep asserts only resemblance and
+# names them neutrally. Both are projected, since a scan cannot know which
+# shape the index it is reading holds.
+SIDE_NAMES = ("predecessor", "successor", "left", "right")
+
 
 def source_fields(metrics: list[dict]) -> list[str]:
     """The _source fields this metrics config actually needs.
@@ -46,8 +52,18 @@ def source_fields(metrics: list[dict]) -> list[str]:
     def walk(predicate):
         for name, value in (predicate or {}).items():
             if name == "fields_equal":
-                wanted.add("predecessor.{}".format(value))
-                wanted.add("successor.{}".format(value))
+                # Both namings, because the projection has to match whichever
+                # the emitting sweep used: a lifecycle sweep writes
+                # predecessor/successor, an all-entities sweep writes
+                # left/right. Requesting only one leaves the field absent from
+                # every fetched document, so the predicate compares two
+                # missing values, returns False for every pair, and the metric
+                # reports zero -- a plausible number and therefore the worst
+                # possible symptom. Measured: identical_name_pairs went 269 to
+                # 0 when the sides were renamed and this was not.
+                # Asking for a field an index does not have is free.
+                for side in SIDE_NAMES:
+                    wanted.add("{}.{}".format(side, value))
             elif name in ("all", "any"):
                 for clause in value:
                     walk(clause)

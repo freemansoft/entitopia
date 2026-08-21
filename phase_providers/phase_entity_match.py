@@ -39,6 +39,12 @@ DEFAULT_SHARED_LIMIT = 5
 # because every filing service and corporate parent contributes one.
 SUPPRESSION_TERMS_SIZE = 2000
 BULK_THREAD_COUNT = 2
+# Share of comparisons that may fail before the run is treated as broken rather
+# than merely degraded. Deliberately high: a handful of failures across hundreds
+# of thousands of comparisons is a data problem the sweep is designed to survive,
+# and discarding the whole run over one malformed record would be worse. At a
+# tenth of every comparison the cause has stopped being individual records.
+MAX_SCORING_ERROR_SHARE = 0.10
 
 
 @dataclasses.dataclass(frozen=True)
@@ -140,6 +146,12 @@ class PhaseEntityMatch:
         # honest default -- a project with no dated events emits gap_days
         # null rather than a fabricated zero.
         self.lifecycle = None
+        # Decides what the two sides of an emitted pair are CALLED. A
+        # lifecycle sweep asserts that one record followed another, so
+        # predecessor/successor is a claim it can make; an all-entities
+        # sweep has no dated events and asserts only resemblance, where
+        # those names would state a direction the data cannot support.
+        self.population_mode = "lifecycle"
 
     def handle(self):
         self.logger.info(
@@ -176,6 +188,7 @@ class PhaseEntityMatch:
         # every intermediate method.
         self.entity_config = getattr(config, "entity", SimpleNamespace())
         self.lifecycle = getattr(config, "lifecycle", None)
+        self.population_mode = getattr(config.population, "mode", "lifecycle")
         scorer = PairScorer(config.signals, config.scoring, lifecycle=self.lifecycle)
         finder = CandidateFinder(
             self.es,
@@ -200,12 +213,18 @@ class PhaseEntityMatch:
         )
         self._stamp_provenance(index_config.index, provenance)
 
+        # Three failure kinds counted apart, because they answer different
+        # questions and share no denominator. A lookup that raised produced no
+        # candidates at all, so counting it against "candidates examined" would
+        # divide by a number its own failure kept at zero.
         stats = {
             "predecessors": 0,
             "candidates": 0,
             "pairs": 0,
             "truncated": 0,
-            "errors": 0,
+            "lookup_errors": 0,
+            "scoring_errors": 0,
+            "index_errors": 0,
         }
 
         actions = self._generate_actions(
@@ -224,16 +243,20 @@ class PhaseEntityMatch:
             if success:
                 indexed += 1
             else:
-                stats["errors"] += 1
+                stats["index_errors"] += 1
                 self.logger.error("Failed to index pair: {}".format(response))
 
         self.logger.info(
             "entity-match complete: {} predecessors, {} candidates examined, "
-            "{} pairs emitted, {} indexed, {} truncated candidate sets, {} errors".format(
+            "{} pairs emitted, {} indexed, {} truncated candidate sets, "
+            "{} lookup / {} scoring / {} index errors".format(
                 stats["predecessors"], stats["candidates"], stats["pairs"],
-                indexed, stats["truncated"], stats["errors"],
+                indexed, stats["truncated"], stats["lookup_errors"],
+                stats["scoring_errors"], stats["index_errors"],
             )
         )
+        self._raise_on_catastrophic_error_rate(stats)
+
         if indexed == 0:
             self.logger.warning(
                 "entity-match produced NO pairs. Check that {} is populated and "
@@ -246,6 +269,114 @@ class PhaseEntityMatch:
                 "{} predecessors hit the max_candidates ceiling; real matches "
                 "may have been cut off".format(stats["truncated"])
             )
+
+    def pair_side_names(self):
+        """What the two sides of an emitted pair are called, given the mode.
+
+        A lifecycle sweep asserts that one record *followed* another, so
+        `predecessor` / `successor` is a claim it is entitled to make and the
+        direction is the point of the pair.
+
+        An all-entities sweep has no dated events at all — that absence is how
+        a duplicate-detection project is expressed — so those names would state
+        a succession the data cannot support. A reader pulling one pair out of
+        the index sees only the document, not the config that produced it, and
+        `predecessor` reads as an assertion rather than as a slot name. `left`
+        and `right` say what is true: two records that resemble each other,
+        with no claim about which came first.
+
+        Public because anything reading a pair document needs the same answer,
+        and a second implementation of this choice would be a second place for
+        it to drift.
+        """
+        if self.population_mode == "all-entities":
+            return "left", "right"
+        return "predecessor", "successor"
+
+    def _raise_on_catastrophic_error_rate(self, stats):
+        """Fail the run when most comparisons failed, rather than reporting success.
+
+        A per-pair error was previously logged and counted and nothing more, so
+        a sweep in which EVERY comparison raised still logged "entity-match
+        complete" and exited cleanly. Measured 2026-08-19 on a second project's
+        first sweep: 532,529 candidates examined, 532,529 errors, 0 pairs — a
+        config key the schema called optional that the signal read with no
+        default. The only thing that drew attention to it was the separate
+        zero-pairs warning; had one pair scored, that run would have read as a
+        small success.
+
+        That is this repository's signature failure — a phase logging success
+        while producing quietly wrong output — so it raises.
+
+        A threshold rather than any-error-at-all, because a handful of failures
+        across hundreds of thousands of comparisons is a data problem the sweep
+        is designed to survive: one malformed record should not discard the
+        work done on every other. The line is drawn where the failures stop
+        being individual records and start being the configuration.
+
+        **Each failure kind is judged against its own denominator**, and the
+        first version of this guard was wrong for want of that. It divided a
+        single combined error count by `candidates`, which counts only the
+        lookups that SUCCEEDED — so a systemic failure in candidate retrieval
+        left `candidates` at zero, the zero-check returned early, and the guard
+        stayed silent on the most severe form of exactly the failure it exists
+        to catch. That path is the one the token-fetch fix touches, which is
+        the last place a blind spot belongs.
+
+        Index-write failures are deliberately excluded from both shares. They
+        say a cluster refused a document, not that a comparison was wrong, and
+        folding them in would let a transient write problem be reported as a
+        configuration fault.
+        """
+        self._check_share(
+            stats["lookup_errors"],
+            stats["predecessors"],
+            "candidate lookups",
+            "no candidates could be retrieved, so nothing was compared at all",
+        )
+        self._check_share(
+            stats["scoring_errors"],
+            stats["candidates"],
+            "comparisons",
+            "the pairs that did survive cannot be trusted to mean what they claim",
+        )
+        if stats["index_errors"]:
+            self.logger.warning(
+                "{} pair(s) failed to index. These are write failures, not "
+                "comparison failures, so they are not counted against the error "
+                "ceiling -- but the pairs are missing from the output.".format(
+                    stats["index_errors"]
+                )
+            )
+
+    def _check_share(self, errors, attempted, what, consequence):
+        """Warn or raise on one failure kind's share of its own attempts.
+
+        `attempted` counts what was tried, not what succeeded. Errors with
+        nothing attempted is not "no problem": it is the total-failure case,
+        and it raises rather than dividing by zero or returning early.
+        """
+        if not errors:
+            return
+        if not attempted:
+            raise RuntimeError(
+                "entity-match failed all {} {} it attempted: {}. The errors "
+                "above name the cause.".format(errors, what, consequence)
+            )
+        share = errors / attempted
+        if share < MAX_SCORING_ERROR_SHARE:
+            self.logger.warning(
+                "{} of {} {} failed ({:.2%}); those were skipped and the rest "
+                "of the sweep is unaffected".format(errors, attempted, what, share)
+            )
+            return
+        raise RuntimeError(
+            "entity-match failed {} of {} {} ({:.2%}), at or above the {:.0%} "
+            "ceiling: this is a configuration fault rather than bad records, "
+            "and {}. The errors above name the cause.".format(
+                errors, attempted, what, share, MAX_SCORING_ERROR_SHARE, consequence
+            )
+        )
 
     def _preflight(self, source_index, required_subfields, expected_fingerprint):
         """Fail loudly before sweeping rather than emitting a silently empty result.
@@ -654,7 +785,7 @@ class PhaseEntityMatch:
             try:
                 pred_doc, cand_docs, truncated = finder.find(pred_hit, ctx)
             except Exception as e:
-                stats["errors"] += 1
+                stats["lookup_errors"] += 1
                 self.logger.error(
                     "Candidate lookup failed for {}: {}".format(pred_hit["_id"], e)
                 )
@@ -671,7 +802,7 @@ class PhaseEntityMatch:
                 try:
                     pair = scorer.score_pair(pred_doc, cand_doc, ctx)
                 except Exception as e:
-                    stats["errors"] += 1
+                    stats["scoring_errors"] += 1
                     self.logger.error(
                         "Scoring failed for {} -> {}: {}".format(
                             pred_doc.entity_key, cand_doc.entity_key, e
@@ -739,9 +870,10 @@ class PhaseEntityMatch:
         if registered is not None:
             succ_extra["add_date"] = registered
 
+        left_key, right_key = self.pair_side_names()
         document = {
-            "predecessor": _entity_summary(pred, self.entity_config, pred_extra),
-            "successor": _entity_summary(succ, self.entity_config, succ_extra),
+            left_key: _entity_summary(pred, self.entity_config, pred_extra),
+            right_key: _entity_summary(succ, self.entity_config, succ_extra),
             "total_score": round(pair.total_score, 6),
             "gap_days": gap_days,
             "signals_present": pair.signals_present,

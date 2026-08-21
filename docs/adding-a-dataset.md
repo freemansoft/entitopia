@@ -72,6 +72,15 @@ Work through these, consulting the documents above for the specifics:
 - **Seeding** — which of those signals may _retrieve_ candidates (`candidates.seed_signals`), not merely score them. This is a separate decision from weight and it sets the ceiling on recall: a pair the seed query never returns cannot be scored at any threshold.
 - **Junk values** — `ignore_values`, keyed by field path, for placeholders that would otherwise read as evidence.
 
+### 2a. If your data has no dates, say so in the config
+
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
+
+Two things that example is worth reading for:
+
+- **Its metrics deliberately avoid the other project's vocabulary.** No `canary`, no `triage`. Those name a fraud shape, and a duplicate sweep over hospital records is finding legitimate multi-record facilities. Importing the words would make resemblance read as an accusation.
+- **Its name analyzer stops generic words, chosen by measurement.** `HOSPITAL` appears in 52.7% of facility names. Leaving such words in produced thousands of pairs sharing nothing else; stopping them removed 59% of the low band without losing a single pair above 0.70.
+
 ### 3. Verify against a live cluster
 
 Configuration that parses can be entirely inert. The commands are in the top-level README; the discipline is: **after every change, ask the cluster what it actually did** rather than trusting that the config was accepted.
@@ -109,6 +118,6 @@ The test is not "is this field rare enough to rank well" but **"if two records s
 
 - Everything runs from `.venv/bin/python`, never the system Python.
 - `ruff check .` must pass; JSON and Markdown are prettier-formatted.
-- Mappings and analyzers are immutable on a live index — edit config, delete the index, re-run `index-create`/`index-map`, reload. Deleting is expected.
+- Mappings and analyzers are immutable on a live index — edit config, delete the index, re-run `index-create`/`index-map`, reload. Deleting is expected. **Delete by explicit name and read the response**: a wildcard is refused with an HTTP 400 body rather than a failing exit code, so it is easy to silence and leave the index alive. See the [top-level README](../README.md) § Local Elasticsearch for the trap and its symptom.
 - Record what you measured in the project's README: cardinality numbers, the key choice and its evidence, and any signal you rejected and why. The rejected signals are the expensive part to rediscover.
 - Conventions are in [CLAUDE.md](../CLAUDE.md).
