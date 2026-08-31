@@ -1,0 +1,252 @@
+# Blog series outline: entity resolution with Elasticsearch and an LLM
+
+Planning document for a four-article series drawn from this repository. It is not
+itself an article. Each article outline below names the repo file, commit, or
+measurement that backs each section, so a drafter can verify a claim without
+re-deriving it, and gives a word budget per section so the draft has a shape before
+it has sentences.
+
+## Why a series and not one article
+
+The repo already documents its own decisions well, but all of it is **reference
+material in final state** — READMEs, a glossary, design specs, a theory-of-operation
+doc. What does not exist anywhere is the **narrative**: the order things happened in,
+what was tried and abandoned, and why the current shape is the shape. That story lives
+only in the git log, and it is the part that transfers to someone outside this project.
+
+Four audiences want four different slices of it, and one article cannot serve them
+without burying three of the four.
+
+## Framing
+
+The series is about **identity resolution in loosely coupled data** — records from
+different sources describing the same real-world entity, with no shared key and no
+ground truth. Fraud detection is one application of that machinery, used throughout as
+the worked example rather than as the thesis. A reader running a provider directory, a
+customer MDM, or a supplier deduplication project should be able to follow the whole
+series without caring about trucking.
+
+| #   | Working title                                                  | Primary audience                    | Target words | One-line thesis                                                                                                          |
+| --- | -------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Designing a schema for fuzzy matching in Elasticsearch         | Search engineers                    | 1,825        | The schema _is_ the matcher; one analyzer cannot serve two purposes, so index each field several ways.                   |
+| 2   | Tuning an entity matcher: the knobs that actually moved recall | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                               |
+| 3   | Configuration-driven matching across datasets                  | Data and platform engineers         | 1,700        | Adding a dataset should mean writing configuration, not code — here is how far that got and where it leaked.             |
+| 4   | Closing in on a data model with an LLM                         | Developers using LLM-assisted tools | 1,600        | The LLM was useful where measurement was cheap and judgment expensive; the discipline was making it measure, not recall. |
+
+Each article stands alone and cross-links to the others. Series total: ~7,225 words.
+
+---
+
+## House style
+
+The per-article **Register** lines below all point here. These are the repo's own
+documentation-tone rules, applied to prose.
+
+### Shape
+
+Every article has the same three-part spine:
+
+1. **A lead that states the problem in general terms** before naming the domain. A
+   reader doing customer MDM should recognize their own problem in the first paragraph.
+2. **Numbered sections, one claim and one piece of evidence each.** If a section carries
+   two claims it is two sections; if it carries none it is a transition and should be a
+   sentence in its neighbour.
+3. **A takeaway that is a checklist or an ordered list**, not a summary. The reader
+   should be able to act on it against their own data.
+
+Density rules: at most one code or config block per two sections, and show the fragment
+that carries the point rather than the whole file. Use a table only where there is a
+measured comparison; prose everywhere else.
+
+### Register
+
+- **Figures instead of superlatives.** "36,788 of 5,647,567 documents dropped" rather
+  than "a lot of documents dropped". Where there is no number, state the mechanism
+  rather than reaching for an intensifier.
+- **Hedged mechanisms.** Say what was measured and against which extract. Never promote
+  a point-in-time count into an invariant, and never imply a threshold tuned here will
+  hold on the reader's data.
+- **Name the failed alternative.** "The obvious approach did not work" is worthless
+  without naming it and saying how it failed. Most of the value in this series is in the
+  failures, so they get specifics: the formula, the pattern, the measured consequence.
+- **End on the last factual sentence.** No rousing conclusion, no call to action, no
+  paragraph about the future of entity resolution.
+- **No accusation.** Flagged entities anonymized, ignored entities named on purpose —
+  see production note 1.
+- Second person for instructions to the reader. First person plural, sparingly, for
+  project history. Never first person singular.
+
+### Using the budgets
+
+The per-section word counts are a drafting constraint, not a target to hit exactly. A
+section coming in 30% over is a signal that it is really two sections, or that it
+belongs in a different article. A section coming in far under usually means the evidence
+for it is thinner than the outline implied — check the source before padding it.
+
+---
+
+## Article 1 — Designing a schema for fuzzy matching in Elasticsearch
+
+- **Audience:** engineers who already run Elasticsearch and are being asked to make it
+  match records that no exact query will join — names with variant spellings,
+  abbreviated business names, addresses that differ only in punctuation.
+- **Target length:** 1,700–2,000 words; the section budgets below sum to 1,825.
+- **Register:** house style. This is the most config-heavy article of the four, so it
+  carries the highest ratio of code blocks — budget for four, no more.
+- **Thesis:** The schema _is_ the matcher. How text will be compared is decided in the
+  mapping, before any scoring code exists — and one analyzer cannot serve two purposes,
+  so index each field several ways.
+- **On section 2, which was drafted twice.** The first version argued from model
+  capability — embeddings model meaning, this is an orthographic problem — and was cut as
+  the one claim in the article that decays as models improve. The shipped version argues
+  **control and the undefined unit** instead, which does not decay. Keep it that way.
+  Article 4 § 3 uses the same episode for a different purpose: there the point is the
+  research method, not the technical verdict.
+
+| Section                                                | Words | Content                                                                                                                                                                                                                                                                                                                                                                                                           | Backed by                                                                      |
+| ------------------------------------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 1. The problem, stated generically                     | 150   | Two records, same real-world entity, no field matches exactly. Separate agencies, separate keys, no join. Fraud, dedupe, MDM, provider directories are the same shape.                                                                                                                                                                                                                                            | `README.md` § Purpose, Glossary                                                |
+| 2. Why not vector search                               | 175   | You _declare_ the equivalence relation in Elasticsearch (`ste, suite`; this suffix list is noise), reviewable in one file. Vector similarity is whatever the model learned and cannot be asserted into — when it gets an equivalence wrong, the recourse is a different model. And nothing decides what you would embed: one field, or the whole record serialized? That choice determines what similarity means. | design spec § "The question that started this"                                 |
+| 3. The finding that reframed the work                  | 125   | The phonetic analyzers had been configured on every name field for months and were never queried — there was no query layer at all. No claim that model X beats metaphone is measurable until a baseline exists.                                                                                                                                                                                                  | design spec § "The finding that actually mattered"                             |
+| 4. Multi-fields: one name, four indexings              | 150   | `.keyword` / `.clean` / `.phonetic` / `.phonetic_bm`. Show the mapping. Why not a keyword `normalizer`: signals compare token sets, and the point is several _different_ tokenizations, not one canonical form.                                                                                                                                                                                                   | `carriers/index-mappings.json`                                                 |
+| 5. Two phonetic encoders, not one                      | 200   | The `SMITH` / `SMYTH` / `SCHMIDT` table from live `_analyze`. Double-metaphone collides spelling variants; Beider-Morse collides cross-language ones. `max_code_len` 4→6 because 4 over-collides on company tokens. Beider-Morse pinned to english+spanish because language guessing on short corporate tokens is unstable and makes output non-reproducible.                                                     | `DOT-Commercial/README.md` § Name and address analyzers; `index-settings.json` |
+| 6. Stopwords before phonetic encoding, and only there  | 150   | Nearly every name ends in LLC/INC/TRUCKING. Scoring happens in Python, so there is no BM25 IDF to discount them and they would dominate every comparison. `.clean` keeps the full name. State the consequence plainly: a name that is _entirely_ suffixes reduces to zero tokens — "no signal", not "no match".                                                                                                   | same                                                                           |
+| 7. Streets need two subfields                          | 125   | `street_clean` (keyword tokenizer) for exact-after-normalization; `street_tokens` (standard tokenizer plus suffix synonyms) for fuzzy. One tokenizer cannot do both.                                                                                                                                                                                                                                              | same                                                                           |
+| 8. The whitespace bug that produced zero candidates    | 125   | `punct_white` turns each punctuation mark into a space without collapsing the run, so `55 CEDAR ST, STE 4` and `55 CEDAR ST STE 4` were different single tokens and **identical addresses silently retrieved nothing**. Fixed with `collapse_whitespace`.                                                                                                                                                         | same; commit `1b77071`                                                         |
+| 9. The dead analyzer that would have been wrong anyway | 100   | `street_suffix_map` was referenced by no analyzer, and its unanchored `(st)` → `street` pattern would have mapped `stone` → `streetone` if wired up. Replaced by a term-level synonym filter. Still inert in the other project — a live before/after in one repo.                                                                                                                                                 | commit `47f1b31`; `CMS-Providers/configuration/*/index-settings.json`          |
+| 10. Pin every field you will query                     | 150   | Dynamic inference happens under concurrency and is not deterministic across runs; a non-conforming value rejects the **whole document**. Measured: 36,788 of 5,647,567 dropped by a `float` inference; ZIP `00602` → `602`.                                                                                                                                                                                       | `README.md` hazard 1                                                           |
+| 11. Legacy dates, and why the obvious mapping is worse | 150   | `dd-MMM-yy` mapped as a date pattern pivots to 2000–2099 in Java, so a 1974 registration becomes 2074. ISO-only mapping, plus a Painless century pivot, plus `LocalDate.of` validation (a shape-valid `9999-99-99` passes a regex and then costs the document), plus `on_failure` that removes the field rather than the record.                                                                                  | `README.md` hazard 2; commits `19d03b2`, `18fd363`                             |
+| 12. Verify against the cluster, not the config file    | 150   | `_analyze`, `_mapping`, `_simulate`. The failure this catches: three datasets shipped with analyzers naming columns the source had renamed — configured, plausible-looking, never ran.                                                                                                                                                                                                                            | `README.md` hazard 3; commit `bd0b0cd`                                         |
+| 13. Takeaway                                           | 75    | A checklist a reader can apply to their own mapping.                                                                                                                                                                                                                                                                                                                                                              | —                                                                              |
+
+---
+
+## Article 2 — Tuning an entity matcher: the knobs that actually moved recall
+
+- **Audience:** developers working on entity matching and MDM-style projects where they
+  are looking for subtle or soft relationships — the ones who already have a matcher
+  emitting output and cannot tell whether the threshold or the candidate query is what
+  is holding them back.
+- **Target length:** 1,900–2,300 words; the section budgets below sum to 2,100. The
+  longest of the four, because it carries the most measured before/after pairs.
+- **Register:** house style, with the numbers doing the arguing. Almost every section
+  here has a measured consequence attached — lead each with the consequence, then the
+  mechanism.
+- **Thesis:** Retrieval and scoring are separate problems, and most tuning effort goes
+  to the wrong one. Recall is set by what you retrieve. Precision is set by what you
+  exclude. Signal weights matter least — and cannot express the thing you most want to
+  say.
+
+| Section                                             | Words | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Backed by                                                             |
+| --------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 1. Two stages, and which one binds                  | 150   | Blocking/seeding → scoring. A pair the seed query never returns cannot be scored at any threshold. Reuse the retrieval/scoring/exclusion diagram.                                                                                                                                                                                                                                                                                                                                                           | `README.md` § Inside `entity-match`                                   |
+| 2. `None` is not `0.0`                              | 125   | The distinction the whole model rests on. Not evaluable vs evaluated-and-disagreed. Renormalize over evaluable weights only, so missing data neither helps nor hurts. Blank must never match blank.                                                                                                                                                                                                                                                                                                         | `matching/signals.py` module docstring                                |
+| 3. The set math, and why it is blended              | 125   | Half jaccard, half containment. Abbreviation is an evasion tactic, and pure jaccard punishes it; pure containment makes any subset perfect. Worked: `{SM0,LLC}` vs `{SM0,TRKN,LLC}` → jaccard 0.67, blended 0.83.                                                                                                                                                                                                                                                                                           | `matching/tokens.py`; `tests/test_tokens.py`                          |
+| 4. A rarity formula with no discriminating power    | 150   | `1 - count/N` vs normalized IDF. With 89 distinct values the largest share is 9.4%, so `1 - share` compresses the whole population into [0.906, 1.0]. IDF spreads it across [0.167, 1.0]. Caught because a stated formula and its own test expectations could not both hold.                                                                                                                                                                                                                                | commit `02c882d`; `matching/documents.py::agent_rarity`               |
+| 5. Seeding sets the recall ceiling                  | 250   | Two **opposite** failures, both real. Seeding on a common value floods the candidate set with noise (one field's values are shared by ~7% of records by chance). _Declining_ to seed on a rare decisive one caps recall at zero for an entire evasion profile: measured, 257 records per 400 were reachable only via shared-identifier seeding. The test is not "is this rare enough to rank well" but "if two records shared only this, would I want to see the pair?"                                     | `docs/adding-a-dataset.md`; commit `52508c1`                          |
+| 6. The null result worth publishing                 | 125   | `max_candidates` 100 → 500: 4× the runtime, **zero** new top-tier findings — relevance ranking already had those near the top — but +13% mid-tier recall. 89% of predecessors still truncate. Going higher has poor ROI.                                                                                                                                                                                                                                                                                    | `DOT-Commercial/README.md` § Chameleon detection tuning               |
+| 7. Averaging cannot say "this one fact settles it"  | 200   | A decisive signal at weight 0.08 totals ~0.11 against a 0.35 floor, so those pairs were discarded. Raising the weight enough to clear the floor unaided (~0.46) makes it dominate every _other_ pair — a worse outcome. Express it as a guard (`conclusive`), not a weight. Measured: 0 such pairs survived out of 3,000 predecessors before the change.                                                                                                                                                    | `matching/scorer.py`; commit `972df7e` (paraphrase only — see note 1) |
+| 8. A guard that counted the wrong thing             | 125   | `min_signals: 2` was satisfied by three name signals reading the same two fields. Fix: count distinct **evidence sources**, not signal instances — 8 configured signals resolve to 6 sources.                                                                                                                                                                                                                                                                                                               | commit `a5f0b67`; `Signal.evidence_key`                               |
+| 9. Non-identifying values: two kinds, one treatment | 200   | Placeholders (`GGGG` on 158 records, `UNKNOWN` on 79, `(000) 000-0000` on 664) **and** values that are entirely correct but widely shared — a filing service's or corporate parent's email on up to 755 records. The second kind cannot be repaired, which is exactly why this is a query-time exclusion rather than a data-cleaning pass: deleting it would destroy correct data and the audit trail with it.                                                                                              | `README.md` § Inside `entity-match`; commit `b0ed914`                 |
+| 10. Declared list plus frequency scan               | 150   | A hand-maintained list covers what you know; a `terms` aggregation with `min_doc_count` covers what nobody knew to declare. The cap that sat exactly at its own ceiling: 200 values returned when exactly 200 qualified, so one more would have been missed silently. Raised to 2000, which revealed 661 over-shared values on one field — meaning a prior sweep had scored 459 non-unique identifiers as identity evidence.                                                                                | `phase_providers/phase_entity_match.py`; commit `b0ed914`             |
+| 11. Seeding and scoring must read the same values   | 125   | Otherwise the sweep retrieves candidates it then refuses to credit — a silent recall loss, not an error. The case bug: seeding with casefolded values against `keyword`-mapped fields matched nothing, indistinguishable from "no record shares this identifier". And without suppression, 94% of an apparent recall gain was placeholder noise.                                                                                                                                                            | `SharedTokenSignal.seed_clauses`; commit `52508c1`                    |
+| 12. What the output actually looks like             | 150   | 429,505 pairs; **81% score below 0.50 and that band is noise**; a reviewable band of roughly 195 pairs. The scores are **uncalibrated confidence, not probability** — nothing has been fitted against known outcomes, so 0.9 does not mean 90% likely. Turning it into a probability needs labelled outcomes this project does not have.                                                                                                                                                                    | `DOT-Commercial/README.md` open item 2                                |
+| 13. What is still wrong, and why it ships that way  | 150   | Name is effectively triple-weighted: 0.45 of 0.94 on one field. Measured counter-example — a pair with a byte-identical street, same state, re-registered 45 days after shutdown scored **0.3483 and was dropped**, while two unrelated names in different states sharing a single token scored **0.5113 and was emitted**. A complete name change is the defining evasion, so this is backwards. It ships because the first sweep is the calibration run, and changing it now swaps one guess for another. | design spec Known Limitation 7                                        |
+| 14. Takeaway                                        | 75    | An ordered tuning list: fix retrieval, then exclusion, then guards, then weights.                                                                                                                                                                                                                                                                                                                                                                                                                           | —                                                                     |
+
+---
+
+## Article 3 — Configuration-driven matching across datasets
+
+- **Audience:** data and platform engineers who own more than one dataset and are
+  deciding whether matching is a per-project script or a shared capability — plus anyone
+  evaluating whether this repo is worth pointing at their own data.
+- **Target length:** 1,500–1,900 words; the section budgets below sum to 1,700.
+- **Register:** house style, with the honesty load carried by section 9. An article
+  claiming a framework generalizes has to name where it does not, in the same voice and
+  the same detail as the parts that work.
+- **Thesis:** Adding a dataset should mean writing configuration, not code. Here is how
+  far that got, what it bought, and exactly where the abstraction leaked.
+
+| Section                                     | Words | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Backed by                                                          |
+| ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| 1. The general problem                      | 150   | Identity resolution in loosely coupled data: two sources, two schemas, no shared key, no ground truth. Fraud is one _selector_ over that machinery; dedupe, MDM, provider directories, KYC are others.                                                                                                                                                                                                                                                             | `docs/adding-a-dataset.md`                                         |
+| 2. Project → steps → phases                 | 150   | Six phases, config on disk per step, one driver. Reuse the mermaid.                                                                                                                                                                                                                                                                                                                                                                                                | `README.md` § How it works                                         |
+| 3. Two datasets, and why two is the minimum | 150   | Healthcare providers (~5.6M rows: scale, composite document IDs, phonetic analyzers, no enrichment) vs commercial trucking (~9.6M: multi-level enrichment chains, ingest pipelines, matching). Having two is what forced the framework/project split to be real rather than aspirational.                                                                                                                                                                          | project READMEs                                                    |
+| 4. A signal registry, not a whitelist       | 175   | Config selects a signal by type string; adding one touches neither retrieval nor scoring. `seed_clauses()` / `token_subfields()` / `exact_evidence_fields()` are questions the retriever asks the signal — because retrieval used to carry a hardcoded whitelist and a clause-builder per type, which meant candidate-generation code knew about phone numbers.                                                                                                    | commit `52508c1`; `matching/candidates.py`                         |
+| 5. Rename it once you notice what it is     | 125   | `vin-overlap` → `SharedTokenSignal`. Nothing about the logic is vehicular: it is "these two records name the same physical thing, and that name is unique worldwide." Only the `fields` config is domain-specific, which is where domain knowledge belongs. Old alias retained so existing config keeps working.                                                                                                                                                   | `matching/signals.py`                                              |
+| 6. The deliberate non-goal                  | 125   | A fixed, code-backed menu of signal types — explicitly **not** query-DSL-in-JSON. Why that is the right ceiling for a configuration language.                                                                                                                                                                                                                                                                                                                      | design spec decision 3                                             |
+| 7. Measure before you configure             | 225   | The profiler: distinct counts, blank rates, detected date formats, and a **fingerprint vs filter** split with a collision estimate behind it. Confusing those two is the most common configuration error. The measurement that demoted a field documented as "harder to fake than an address" to weight 0.04: 89 distinct values across 1.43M rows. Rule of thumb: if two random records share a value more than ~1% of the time, that field cannot carry a match. | `scripts/profile_dataset.py`; `docs/adding-a-dataset.md`           |
+| 8. The silent-failure catalogue             | 225   | The seven hazards compressed, with their shared signature: **the run reports success and the data is quietly wrong.** A stale enrich policy cutting coverage from ~572K matches to ~4K. Back-pressure dropping 91,439 of 2,085,534 documents (4.4%) in a shape that looks exactly like legitimate deduplication. Tuning the wrong queue while the right one overflowed. Countermeasure: preflight checks that ask the cluster what it actually did.                | `README.md` § Common data-loading hazards                          |
+| 9. Where the abstraction leaks              | 150   | `matching/` is generic in structure and carries trucking vocabulary: the entity key name is hardcoded, and the predecessor selector hardcodes source-specific field paths and a literal status value. Running the matcher against the healthcare dataset today requires code changes, which contradicts the project's premise. Named as open work with the intended shape of the fix — keep selectors a closed menu, make the key name configurable.               | `README.md` § Framework code vs project-specific code, open item 6 |
+| 10. Pointing this at a different domain     | 150   | A concrete walkthrough for a reader's own data: pick the population, pick the identity fields, decide what may _seed_ (separately from weight), measure the junk, set the guards. This is the section that makes the article useful to someone with no interest in trucks.                                                                                                                                                                                         | `docs/adding-a-dataset.md` § Workflow                              |
+| 11. Takeaway                                | 75    | What generalizes cleanly, what does not, and how to tell the difference early.                                                                                                                                                                                                                                                                                                                                                                                     | —                                                                  |
+
+---
+
+## Article 4 — Closing in on a data model with an LLM
+
+- **Audience:** developers already using an LLM coding tool who want a worked account of
+  where it earned its keep on a data-modelling problem and where it was wrong — not a
+  capability tour.
+- **Target length:** 1,400–1,800 words; the section budgets below sum to 1,600.
+- **Register:** house style, and the hardest of the four to keep to it. The subject
+  invites enthusiasm; the evidence does not support any. Every claim about the LLM being
+  useful needs a measured or specific counterpart, and the two negative results
+  (sections 5 and 6) get more words than any positive one.
+- **Thesis:** The LLM was useful exactly where measurement was cheap and judgment was
+  expensive. The discipline that made it work was making it **measure rather than
+  recall** — and writing down what it measured, so the next session started from
+  evidence.
+
+| Section                                           | Words | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Backed by                                          |
+| ------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| 1. Framing                                        | 150   | Not "AI wrote my schema." 71 of 150 commits are co-authored across five sessions, but the useful pattern is narrower and more specific than that ratio suggests.                                                                                                                                                                                                                                                                                                                                                                                              | git log                                            |
+| 2. The loop                                       | 150   | Measure → write it down next to the config it describes → let the document be the source of truth → **trust a fresh measurement over the document and update it.** That last rule is why the repo's docs read the way they do.                                                                                                                                                                                                                                                                                                                                | `docs/adding-a-dataset.md` closing line            |
+| 3. Research before design                         | 150   | The opening question was "would vector or neural search beat these analyzers?" The answer was no, _and_ the premise needed correcting three ways — including a factual error in the project's own earlier spec claiming a managed service could not install the phonetic plugin. Getting a well-evidenced "no" cheaply is the win, not the consolation prize.                                                                                                                                                                                                 | design spec preamble                               |
+| 4. Why, never what                                | 200   | The comment convention, with the good/bad docstring pair. Not a style preference: a step-narrating comment goes stale on the next edit, and this codebase's characteristic failure is silent wrongness, so the comments have to carry the reasons and the failed alternatives.                                                                                                                                                                                                                                                                                | `CLAUDE.md` § 1                                    |
+| 5. Where the LLM was wrong, and how it got caught | 300   | Three cases, all instructive. (a) A specified formula and its own test expectations could not both hold — the implementer stopped and asked, and the _formula_ was the wrong half. (b) A verification step asserted several tokens where one is correct, blocking a task until the implementer proved the config was right by testing a different input. (c) A test that passed for the wrong reason, made true by a case-mismatch bug that its own math said was impossible. **The value is in the plan being explicit enough to be contradicted.**          | commits `02c882d`, `984cf81`, `7d911f3`, `6de5656` |
+| 6. A skill that was measured and deleted          | 250   | Built a dataset-onboarding skill; evaluated three cases with and without it: one marginal win, two ties, and slower on the case it won — because the repo already documents its own hazards next to the config, so the skill was a fourth copy. Five rounds of description tuning failed to make it fire at all, which is another way of saying the wording was never the problem. Converted to a plain doc; kept the one piece with standalone value, the profiler. **Lesson: tooling that restates material living next to the code is a drift liability.** | commits `0fb1490`, `6e35e64`                       |
+| 7. An LLM inside the product, behind a hard gate  | 175   | Using an LLM to _suggest_ additions to the ignore list, because the frequency scan can only catch values that are common — it cannot notice that a rare value is garbage. Send distinct values from a `terms` aggregation, not rows: the interesting object is the value, not the record. A human approves before merge, because a wrong entry throws no error and fails no test — it silently removes evidence from every future run, which is the same silent-failure shape the project fights everywhere else.                                             | `chameleon-pipeline-explainer.md` § 8              |
+| 8. The rule that has nothing to do with tooling   | 150   | A score is **an analysis, not a finding.** Thresholds are uncalibrated and a high score routinely reflects a shared filing agent or a corporate parent rather than wrongdoing, so flagged entities are anonymized in the repo — while entities whose identifiers are _ignored_ are named, because whoever maintains that list has to recognize them. The test is which side of the filter the name sits on. Note honestly that the convention arrived late and one commit message predates it.                                                                | `CLAUDE.md` § 2; commit `2a18806`                  |
+| 9. Takeaway                                       | 75    | What to delegate, what to verify, what never to automate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | —                                                  |
+
+---
+
+## Production notes
+
+1. **Anonymization pass before any article ships.** Commit `972df7e`'s _message_ names
+   two real flagged entities; it predates the convention, and rewriting published history
+   was ruled out. Paraphrase that commit, never quote it. Every article drawing on git
+   history gets checked against [CLAUDE.md](../../CLAUDE.md) § "Never name a real entity
+   that the matcher flagged": flagged entities anonymized, ignored entities (filing
+   services, insurers, corporate parents) named on purpose.
+2. **Point-in-time disclaimer, once per article.** Every count is one extract. Source
+   agencies republish on their own schedules, so a threshold tuned against one extract can
+   behave differently against the next. A number is evidence that a problem was real and
+   roughly how big it was, never a value to assert against.
+3. **Do not re-derive what the repo already publishes well.** Link the glossary, the
+   hazards list, the encoder table and the tuning table rather than restating them at
+   length. The articles' value is the sequence and the reasoning, not the reference data.
+4. **Reusable assets already in the repo:** the retrieval/scoring/exclusion mermaid in the
+   top-level README, the colour-coded pipeline flowchart in the explainer, the
+   `SMITH`/`SMYTH`/`SCHMIDT` `_analyze` table, the tuning-knobs table, and two runnable
+   query samples.
+5. **Suggested publication order:** 1 → 2 → 3 → 4. If the LLM piece is expected to drive
+   the most traffic, run 1 → 4 → 2 → 3 instead and have article 4 link back into the
+   others.
+
+## Source index
+
+| Short name       | Path                                                                     |
+| ---------------- | ------------------------------------------------------------------------ |
+| top-level README | `README.md`                                                              |
+| DOT README       | `DOT-Commercial/README.md`                                               |
+| CMS README       | `CMS-Providers/README.md`                                                |
+| onboarding guide | `docs/adding-a-dataset.md`                                               |
+| design spec      | `docs/superpowers/specs/2026-07-30-chameleon-carrier-matching-design.md` |
+| explainer        | `DOT-Commercial/docs/chameleon-pipeline-explainer.md`                    |
+| conventions      | `CLAUDE.md`                                                              |
+| analyzer config  | `DOT-Commercial/configuration/carriers/index-settings.json`              |
+| mapping config   | `DOT-Commercial/configuration/carriers/index-mappings.json`              |
+| matcher config   | `DOT-Commercial/configuration/chameleon-detection/entity-match.json`     |
