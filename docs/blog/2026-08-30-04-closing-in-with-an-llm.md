@@ -2,10 +2,11 @@
 
 ## What the commit ratio does not tell you
 
-Seventy-one of a hundred and fifty commits in this project carry a
-co-authorship line. That number invites the wrong conclusion. It is not
-"an LLM wrote a fraud detector," and the useful pattern is narrower and more
-specific than the ratio suggests.
+As of the commit this series branched from, seventy-one of a hundred and fifty
+commits here carried a co-authorship line — a count this article's own commit
+already moves, arguing for dating every figure on its own. The ratio invites
+the wrong conclusion regardless: it is not "an LLM wrote a fraud detector,"
+and the pattern is narrower than the ratio suggests.
 
 What the model was actually good for was a smaller thing done repeatedly:
 turning questions that could be settled by measurement into measurements, and
@@ -178,13 +179,12 @@ suspected fraud. A score is **an analysis, not a finding.** The thresholds are
 uncalibrated, the sweep truncates, and a high score routinely reflects a shared
 filing agent, a corporate parent, or a placeholder rather than wrongdoing.
 
-So no flagged entity is named anywhere in the repository — not in code,
-comments, configuration, documentation, or commit messages. Names are replaced
-with obviously synthetic placeholders that preserve whatever made the example
-worth recording. The pattern is the reusable part: identical name, same
-address, one day after a shutdown. If an example stops being useful once the
-name is removed, the name was doing argumentative work it should not have been
-doing.
+So no flagged entity is named anywhere in the repository — code, docs, or
+commit messages alike. Names are replaced with obviously synthetic
+placeholders that preserve whatever made the example worth recording. The
+pattern is the reusable part: identical name, same address, one day after a
+shutdown. If an example stops being useful once the name is removed, the name
+was doing argumentative work it should not have been doing.
 
 The inverse case is the one people get wrong. An entity whose identifier is
 being **excluded** — a filing service or an insurance agency whose contact
@@ -193,8 +193,9 @@ whoever maintains that ignore list needs to recognize it. Naming it is the
 opposite of an accusation.
 
 The test is which side of the filter the name sits on. Worth adding honestly:
-this convention arrived late, and one commit message predates it. Rewriting
-published history was judged worse than recording the gap.
+this convention arrived late, and one already-pushed commit message predates
+it. It stays as it is — the gap is recorded in the commit that added the rule,
+not rewritten out of the history.
 
 ## What to delegate, what to verify, what to leave alone
 

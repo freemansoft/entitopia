@@ -27,8 +27,9 @@ not a value to expect on your own data._
 
 The shape is deliberately boring. A **project** is a directory holding
 configuration and data. Running it executes **steps** in order, and each step
-runs one or more **phases**. There are six phases, and they are the only things
-that contain code:
+runs one or more **phases**. There are six phases, and everything project-specific
+about a dataset is supposed to live in the JSON beside them, not in the phases
+themselves:
 
 - `index-create` — create an index and its alias
 - `index-map` — apply field types and analyzers
@@ -69,15 +70,19 @@ needs is a candidate for configuration rather than code.
 
 A **signal** is one kind of evidence that two records are the same entity:
 name similarity, a shared address, a shared phone, timing between a shutdown
-and a re-registration. Config selects them by a `type` string:
+and a re-registration. Config selects them by a `type` string, as shipped
+today:
 
 ```json
 {
-  "type": "shared-token",
+  "type": "vin-overlap",
   "weight": 0.08,
   "conclusive": true,
   "max_shared_carriers": 5,
-  "fields": ["crashes.vehicle_identification_number"]
+  "fields": [
+    "crashes.vehicle_identification_number",
+    "inspections.units.insp_unit_vehicle_id_number"
+  ]
 }
 ```
 
