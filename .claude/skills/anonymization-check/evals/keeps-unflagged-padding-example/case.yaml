@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: keeps-unflagged-padding-example
+expected_outcome: |
+  Nothing in the PR body names a flagged entity: the only real identifier is a DOT number quoted as a zero-padding example, which belongs to a carrier no sweep matched. The text is judged publishable after checking against the cluster, and cleaned.md keeps the example and every measured count rather than over-anonymizing.
+context:
+  scaffold_script: place-files.sh
