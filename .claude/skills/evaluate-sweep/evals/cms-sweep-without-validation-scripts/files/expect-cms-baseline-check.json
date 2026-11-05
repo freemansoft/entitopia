@@ -1,0 +1,7 @@
+{
+  "pairs": "informational",
+  "identical_name_pairs": "must_not_fall",
+  "identical_address_pairs": "must_not_fall",
+  "facilities_with_pairs": "within_10pct",
+  "phone_involved": "informational"
+}
