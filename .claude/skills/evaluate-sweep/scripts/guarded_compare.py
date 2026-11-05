@@ -208,7 +208,7 @@ def checked_expectations(path: Path, defined: set[str]) -> dict:
     an expectation file is exactly the kind of mistake that otherwise surfaces
     as a confusing crash after a long scan.
     """
-    expectations = json.loads(path.read_text())
+    expectations = json.loads(path.read_text(encoding="utf-8"))
     unknown_metrics = sorted(set(expectations) - defined)
     unknown_kinds = sorted({v for v in expectations.values() if v not in EXPECTATIONS})
     if unknown_metrics:
@@ -230,7 +230,7 @@ def baseline_record(es: Elasticsearch, args: argparse.Namespace, config: dict, m
     if path is None or not path.exists():
         raise CannotJudge("no baseline: pass --baseline-index or --baseline-record (declared baseline {} not found)".format(
             config.get("baseline")))
-    return str(path), json.loads(path.read_text())
+    return str(path), json.loads(path.read_text(encoding="utf-8"))
 
 
 def print_table(deltas) -> None:
@@ -290,7 +290,7 @@ def run(args: argparse.Namespace) -> int:
     if unguarded:
         print("\nnot guarded by this expectations file: {}".format(", ".join(unguarded)))
     if args.write_record:
-        Path(args.write_record).write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n")
+        Path(args.write_record).write_text(json.dumps(candidate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print("\nwrote candidate record to {}".format(args.write_record))
 
     regressed = [d.name for d in deltas if not d.ok]
