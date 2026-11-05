@@ -476,7 +476,7 @@ claude plugin install claude-md-management@claude-plugins-official --scope proje
 
 The second command is usually a no-op, since plugins stored inside the marketplace repo are fetched automatically; it is listed because the documentation is inconsistent on that point. These installs used to run from a `SessionStart` hook on every session. That was removed: re-running an install never upgrades an existing plugin, so the hook bought nothing after the first run while executing plugin-manager commands unattended at every start. Upgrades come from Claude Code's background auto-update, which is on by default for this marketplace, or deliberately with `claude plugin update <plugin>@claude-plugins-official --scope project`.
 
-`skill-creator` is deliberately not enabled here; the copy synced from a claude.ai account (`anthropic-skills:skill-creator`) is newer and loading both registers two near-identical skills competing for the same requests.
+`skill-creator` is deliberately not enabled here; the copy synced from a claude.ai account (`anthropic-skills:skill-creator`) is newer and loading both registers two near-identical skills competing for the same requests. That copy only reaches sessions signed in with a claude.ai account, so a contributor who authors or tunes skills while on an API key, Bedrock, Vertex or a gateway should install the plugin for themselves with `claude plugin install skill-creator@claude-plugins-official --scope user`. Nobody needs it merely to use this repo's skills or to re-run their evals.
 
 ## Status
 
