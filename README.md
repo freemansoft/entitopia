@@ -465,6 +465,19 @@ Unit tests need no cluster — the matching and scoring logic is pure functions 
 
 Conventions for working in this repo — comment style, linting, the `.venv` rule, Elasticsearch client usage — are in [CLAUDE.md](CLAUDE.md).
 
+### Claude Code plugins
+
+`.claude/settings.json` declares the `claude-plugins-official` marketplace and enables two plugins for this project: `superpowers` (planning, TDD and subagent-driven development workflows) and `claude-md-management` (CLAUDE.md audits). Trusting the folder adds the marketplace, but enabling a plugin in project settings does not download one hosted outside the marketplace repo — `superpowers` lives in its own repository, so it shows as "enabled in project settings but isn't installed here" until installed once per machine:
+
+```bash
+claude plugin install superpowers@claude-plugins-official --scope project
+claude plugin install claude-md-management@claude-plugins-official --scope project
+```
+
+The second command is usually a no-op, since plugins stored inside the marketplace repo are fetched automatically; it is listed because the documentation is inconsistent on that point. These installs used to run from a `SessionStart` hook on every session. That was removed: re-running an install never upgrades an existing plugin, so the hook bought nothing after the first run while executing plugin-manager commands unattended at every start. Upgrades come from Claude Code's background auto-update, which is on by default for this marketplace, or deliberately with `claude plugin update <plugin>@claude-plugins-official --scope project`.
+
+`skill-creator` is deliberately not enabled here; the copy synced from a claude.ai account (`anthropic-skills:skill-creator`) is newer and loading both registers two near-identical skills competing for the same requests.
+
 ## Status
 
 This is a work in progress.
