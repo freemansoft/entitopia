@@ -4,13 +4,13 @@
 
 **Goal:** Fix the defects and stale claims found on 2026-11-05 while building the `anonymization-check` and `evaluate-sweep` skills (PRs #29, #30) that were recorded but not fixed.
 
-**Architecture:** Eight independent tasks in three PRs.
+**Architecture:** Nine independent tasks in three PRs.
 
 - **PR A** (Tasks 1–2) hardens the sweep-comparison harness, the only place where a wrong answer looks like a pass.
-- **PR B** (Tasks 3, 4, 7) corrects documentation that tells readers, or Claude, something untrue.
-- **PR C** (Tasks 5–6) makes the `run-entitopia` driver safe to run beside the loaded cluster, then replaces the real hospital records it carries with synthetic ones.
+- **PR B** (Tasks 3, 4, 7, 8) corrects documentation that tells readers, or Claude, something untrue, and scopes the anonymization rule to the sweeps whose output reads as an accusation.
+- **PR C** (Tasks 5–6) makes the `run-entitopia` driver safe to run beside the loaded cluster, then fixes its match demo, which queries CMS columns that no longer exist.
 
-Task 8 is a decision for the repository owner and is not executed by this plan.
+Task 9 is a decision for the repository owner and is not executed by this plan.
 
 **Tech Stack:** Python 3.11 in `.venv`, elasticsearch-py 9.4.1 against local Elasticsearch 9.4.1 (Colima), pytest, ruff, bash.
 
@@ -24,14 +24,14 @@ Task 8 is a decision for the repository owner and is not executed by this plan.
 - Comments and docstrings state why something exists and what breaks if it changes. Never narrate the steps the code takes.
 - **Never name a flagged entity** in code, comments, config, docs, commit messages or PR text. Run the `anonymization-check` skill on the staged diff and the commit message before every commit, and on `--range origin/main...HEAD` plus the PR body before every PR.
 - **Cluster writes are confirmed with the user before running.** Reads need no confirmation.
-- **All work goes on a new branch and PR; never commit to `main`.** One branch per PR group: `fix/sweep-compare-guards` (A), `docs/session-corrections` (B), `fix/driver-loaded-cluster-and-fixtures` (C).
+- **All work goes on a new branch and PR; never commit to `main`.** One branch per PR group: `fix/sweep-compare-guards` (A), `docs/session-corrections` (B), `fix/driver-loaded-cluster` (C).
 - The cluster is stopped when this plan is written. Start it with `colima start` then `docker compose -f docker/compose.yml up -d`. Claude's shell may lack Homebrew on PATH; prefix commands with `export PATH="/opt/homebrew/bin:$PATH"`.
 
 ## Decisions already taken (recorded so an executor does not reopen them)
 
 - **D1 — `within_10pct` keeps its one-sided meaning.** The precision plan's tests only ever exercise falls, and the metrics it guards (`vin_only`, `triage_bounded`, `identical_name_triage`) are recall tripwires, where a rise is the goal. Changing the semantics would silently re-judge every committed `expect-*.json`. The defect is that the name reads as symmetric, so the fix is an explicit docstring plus a new, genuinely symmetric `stable_within_10pct` for metrics where any large move is suspect, such as CMS `facilities_with_pairs`.
 - **D2 — CLAUDE.md's curl claim is corrected, not made true.** Adding `Bash(curl -s http://localhost:9200/*)` to the committed `settings.json` would also auto-allow `curl -s http://localhost:9200/<index> -X DELETE`, because the URL comes first. CLAUDE.md itself says the allowlist cannot tell reads from writes.
-- **D3 — committed fixtures use synthetic identities.** CMS facility IDs become `00xxxx`. State code `00` is not assigned, so this keeps the zero-padding the examples exist to show, and Task 6 verifies against the cluster that no `00` prefix exists. Phones use the fictional `555-01xx` line range.
+- **D3 — duplicate-detection matches are not accusations.** Decided by the owner on 2026-11-05. A hospital in a `hospital-duplicates` pair is a possible duplicate record, not a suspected fraud, so real CMS hospital IDs, names and addresses may stay in fixtures, tests and docs as long as nothing around them implies wrongdoing. An earlier draft of this plan replaced them all; that task was dropped. Task 8 writes the distinction into CLAUDE.md and the `anonymization-check` skill so it isn't re-litigated.
 
 ---
 
@@ -388,61 +388,24 @@ git commit -m "fix: stop the driver writing fixtures into the loaded cluster"
 
 ---
 
-### Task 6: Replace real hospital identities in committed fixtures, tests and docs
+### Task 6: Make `match_demo()` query the CMS columns that exist
 
-**Evidence:**
-
-- The real CMS facility IDs in the `01000N` range (Alabama) are used throughout the repo as zero-padding examples. At least one of them belongs to a hospital that appears in two `hospital-duplicates-*` pairs, which makes it a flagged record under CLAUDE.md. Which one is deliberately not recorded here: this plan outlives the fix, and naming it would keep the leak. They are committed in `README.md` (zero-padding item, currently line 577), `utils/csv_load_utils.py:34`, `tests/test_csv_load_utils.py`, `tests/test_entity_doc.py`, `tests/test_mapping_coverage.py`, `tests/test_new_project.py`, `tests/test_scaffold.py` and `docs/superpowers/plans/2026-08-16-matcher-generalization.md`.
-- `run-entitopia/driver.sh:148-153` writes five real hospital records (ID, name, street, city and phone) as "synthetic fixtures". `match_demo()` and `SKILL.md:100-117` repeat one of them.
-- `match_demo()` indexes its near-duplicate with fields `City`, `Phone Number` and `Addresss`, but `CMS-Providers/configuration/hospitals/index-mappings.json` maps `City/Town`, `Telephone Number` and `Address`. So its `City.keyword` blocking filter cannot match the CSV-loaded canonical record, and the "verified output" in `SKILL.md` predates the column rename.
+**Evidence:** `match_demo()` in `.claude/skills/run-entitopia/driver.sh` indexes its near-duplicate with the keys `City`, `Phone Number` and `Addresss`. `CMS-Providers/configuration/hospitals/index-mappings.json` maps `City/Town`, `Telephone Number` and `Address` (confirm with `jq '.mappings.properties | keys' CMS-Providers/configuration/hospitals/index-mappings.json`). The soft match then filters on `City.keyword`, which the CSV-loaded canonical record does not have, so the demo cannot show the two records together. The "verified output" in `SKILL.md:100-117` predates the CMS column rename. This is the same silent column-rename failure the fixture's own comment warns about. Per D3, the fixture's real hospital values stay; only the keys change.
 
 **Files:**
 
-- Modify: `.claude/skills/run-entitopia/driver.sh` (CMS fixture heredoc, `match_demo()`)
+- Modify: `.claude/skills/run-entitopia/driver.sh` (`match_demo()`)
 - Modify: `.claude/skills/run-entitopia/SKILL.md:100-117`
-- Modify: `README.md`, `utils/csv_load_utils.py`, `tests/test_csv_load_utils.py`, `tests/test_entity_doc.py`, `tests/test_mapping_coverage.py`, `tests/test_new_project.py`, `tests/test_scaffold.py`, `docs/superpowers/plans/2026-08-16-matcher-generalization.md`
 
 **Interfaces:**
 
 - Consumes: Task 5's `refuse_loaded_cluster` (the verification below runs the driver on a fresh volume)
 
-- [ ] **Step 1: Confirm the synthetic ID range is unused** (cluster up, read-only)
+- [ ] **Step 1: Rename the near-duplicate's keys.** In the `curl -s -X PUT ... /_doc/$near_dup_id` document, change `"Addresss"` to `"Address"`, `"City"` to `"City/Town"` and `"Phone Number"` to `"Telephone Number"`, keeping each value as it is.
 
-```bash
-curl -s 'http://localhost:9200/hospitals-000001/_count' -H 'Content-Type: application/json' \
-  -d '{"query":{"prefix":{"Facility ID":"00"}}}'
-```
+- [ ] **Step 2: Point the soft match's filter at the real column.** Change `{"term": {"City.keyword": ` to `{"term": {"City/Town.keyword": ` in the soft-match query, and `blocked on City.keyword=` to `blocked on City/Town.keyword=` in the `echo` above it. `City/Town` has a `.keyword` subfield in the hospitals mapping; confirm with `jq '.mappings.properties["City/Town"]' CMS-Providers/configuration/hospitals/index-mappings.json`.
 
-Expected: `"count":0`. If it is not zero, pick an unused two-digit prefix the same way and use it in place of `00` throughout this task.
-
-- [ ] **Step 2: Swap the IDs in code, tests and docs.** Map every real fixture ID `01000N` to the synthetic `00100N` (same final digit), and the test-only `020002` to `002002`. Verify none remain:
-
-```bash
-git grep -n -E "(^|[^0-9-])0(1000[1-8]|20002)([^0-9]|$)" -- . ':!*.json' | grep -v -- "-000001"
-```
-
-Expected: no output. Then run `.venv/bin/python -m pytest -q`. Expected: all pass; the tests depend on the leading zero, not on the ID's value.
-
-- [ ] **Step 3: Replace the driver's CMS fixture rows** (the heredoc after `write_fixture CMS-Providers/data/hospitals/Hospital_General_Information.csv`) with:
-
-```
-Facility ID,Facility Name,Address,City/Town,State,ZIP Code,Telephone Number
-001001,EXAMPLE SOUTHEAST HEALTH MEDICAL CENTER,100 EXAMPLE CIRCLE,SPRINGFIELD,AL,36301,(334) 555-0101
-001005,EXAMPLE NORTH MEDICAL CENTER,200 EXAMPLE HIGHWAY NORTH,RIVERTON,AL,35957,(256) 555-0105
-001006,EXAMPLE MEMORIAL HOSPITAL,300 EXAMPLE STREET,LAKEVIEW,AL,35630,(256) 555-0106
-001007,EXAMPLE COMMUNITY HOSPITAL,400 N EXAMPLE ST,FAIRVIEW,AL,36467,(334) 555-0107
-001008,EXAMPLE COUNTY HOSPITAL,500 EXAMPLE CIRCLE,MILLBROOK,AL,36049,(334) 555-0108
-```
-
-- [ ] **Step 4: Rewrite `match_demo()` against the real column names and the synthetic record.** Make these changes:
-  - near-duplicate document: `"Facility Name": "Exampel Sowth East Helth Med Ctr"`, `"Address": "100 Exampel Cir"`, `"City/Town": "SPRINGFIELD"`, `"State": "AL"`, `"Telephone Number": "(334) 555-0101"`
-  - absolute match: `{"term": {"Facility Name.keyword": "EXAMPLE SOUTHEAST HEALTH MEDICAL CENTER"}}`
-  - soft match: filter `{"term": {"City/Town.keyword": "SPRINGFIELD"}}`, and both `should` clauses querying `"EXAMPLE SOUTHEAST HEALTH MEDICAL CENTER"`
-  - the `echo` lines: `Facility ID 001001` and `City/Town.keyword=SPRINGFIELD`
-
-  `City/Town` has a `.keyword` subfield in the hospitals mapping, so the filter is valid; confirm with `jq '.mappings.properties["City/Town"]' CMS-Providers/configuration/hospitals/index-mappings.json`.
-
-- [ ] **Step 5: Run the driver on a fresh volume** (**cluster writes on a separate volume: confirm with the user first**). The loaded data stays in the `docker_esdata` volume throughout.
+- [ ] **Step 3: Run the driver on a fresh volume** (**cluster writes on a separate volume: confirm with the user first**). The loaded data stays in the `docker_esdata` volume throughout.
 
 ```bash
 docker compose -f docker/compose.yml down                        # loaded cluster stops; volume kept
@@ -455,27 +418,21 @@ docker compose -f docker/compose.yml up -d                       # loaded cluste
 
 Expected from `match-demo`:
 
-- the absolute match prints `hits: 1`, the canonical `001001`;
-- the soft match prints two lines: `001001 -> EXAMPLE SOUTHEAST HEALTH MEDICAL CENTER` scored higher, then `__match-demo-dup__ -> Exampel Sowth East Helth Med Ctr` scored lower.
+- the absolute match prints `hits: 1`, the canonical fixture record;
+- the soft match prints **two** lines: the canonical record scored higher, then `__match-demo-dup__` scored lower.
 
-If the near-duplicate is missing, the phonetic or fuzzy clauses do not reach the typo. Adjust the typo, not the query, until both appear, because the demo exists to show the soft match working.
+If the soft match prints only the near-duplicate, the filter or a field name is still wrong; fix it rather than the typo, because the demo exists to show the soft match finding both.
 
-- [ ] **Step 6: Update `SKILL.md:100-117`** to name `001001` and the synthetic names and fields from Step 4. Replace its "Verified output" block with the two lines Step 5 actually printed.
+- [ ] **Step 4: Update `SKILL.md:100-117`** so the field names match Steps 1–2, and replace its "Verified output" block with the two lines Step 3 actually printed.
 
-- [ ] **Step 7: Scan the changed files, then commit**
-
-```bash
-.venv/bin/python .claude/skills/anonymization-check/scripts/scan_identifiers.py --staged
-```
-
-Expected: no FLAGGED or REAL finding for any hospital value (the scan exits 0). Then:
+- [ ] **Step 5: Commit**
 
 ```bash
-git add -A .claude/skills/run-entitopia README.md utils/csv_load_utils.py tests docs/superpowers/plans/2026-08-16-matcher-generalization.md
-git commit -m "fix: use synthetic hospital identities in fixtures, tests and docs"
+git add .claude/skills/run-entitopia/driver.sh .claude/skills/run-entitopia/SKILL.md
+git commit -m "fix: make the match demo query the CMS columns that exist"
 ```
 
-Open **PR C** from `fix/driver-loaded-cluster-and-fixtures` with Tasks 5–6.
+Open **PR C** from `fix/driver-loaded-cluster` with Tasks 5–6.
 
 ---
 
@@ -537,11 +494,69 @@ git add CMS-Providers/README.md
 git commit -m "docs: replace the CMS band description with what the pairs measure"
 ```
 
-Open **PR B** from `docs/session-corrections` with Tasks 3, 4 and 7.
+### Task 8: Scope the anonymization rule to sweeps that read as accusations
+
+**Evidence:** CLAUDE.md's rule exists because a chameleon-detection score reads as an unverified fraud accusation. The `anonymization-check` skill applies it to every sweep alike, so a hospital that appears in a `hospital-duplicates` pair comes back FLAGGED with the instruction to anonymize, although that pair says only "possibly the same facility". The owner decided on 2026-11-05 that such matches are not a concern unless the text implies wrongdoing (D3).
+
+**Files:**
+
+- Modify: `CLAUDE.md` (the "Three things this does **not** forbid" list in "Never name a real entity that the matcher flagged")
+- Modify: `.claude/skills/anonymization-check/SKILL.md` (section 3, "Rule on each finding")
+
+- [ ] **Step 1: Add the fourth exemption to CLAUDE.md.** Change the line
+
+```
+Three things this does **not** forbid, because none of them accuses anyone:
+```
+
+to
+
+```
+Four things this does **not** forbid, because none of them accuses anyone:
+```
+
+and append this bullet after the "Entities named because they are being _excluded_" bullet:
+
+```
+- **Entities matched only by a duplicate-detection sweep.** A pair in
+  `hospital-duplicates` says two records may describe one facility, not that
+  anyone did wrong, so real CMS hospital IDs, names and addresses may appear in
+  fixtures, tests and docs. That stops holding the moment the surrounding text
+  implies wrongdoing; then the rule applies as to any flagged entity.
+```
+
+- [ ] **Step 2: Teach the skill the same distinction.** In `.claude/skills/anonymization-check/SKILL.md`, directly after the verdict table in section 3, add:
+
+```
+**Which sweep flagged it matters.** Each finding names the project and step
+whose pairs matched it. A FLAGGED value from an accusatory sweep, today
+`DOT-Commercial/chameleon-detection`, is anonymized as the table says. A
+FLAGGED value from a duplicate-detection sweep, today
+`CMS-Providers/hospital-duplicates`, needs no change unless the surrounding
+text implies wrongdoing; CLAUDE.md exempts it. When a new project adds a
+sweep, decide which kind it is before relying on this paragraph.
+```
+
+- [ ] **Step 3: Verify the skill reads the distinction** (cluster up, read-only). Write a scratch draft outside the repo that cites one real CMS facility ID in a zero-padding sentence, then run:
+
+```bash
+.venv/bin/python .claude/skills/anonymization-check/scripts/scan_identifiers.py --text /path/to/draft.md
+```
+
+Expected: the ID is reported FLAGGED under `CMS-Providers/hospital-duplicates`, with exit 1. That is unchanged: the scanner still reports evidence. Under the new paragraph, the ruling is "no change needed", because the sentence implies nothing about the hospital.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add CLAUDE.md .claude/skills/anonymization-check/SKILL.md
+git commit -m "docs: exempt duplicate-detection matches from the anonymization rule"
+```
+
+Open **PR B** from `docs/session-corrections` with Tasks 3, 4, 7 and 8.
 
 ---
 
-### Task 8: Flagged names in git history (owner decision only; not executed by this plan)
+### Task 9: Flagged names in git history (owner decision only; not executed by this plan)
 
 **Evidence:** Commit `2a18806` anonymized two lines of `DOT-Commercial/README.md` that named flagged carriers. Those original lines remain in every earlier commit, and the repository is public. No later commit can remove them.
 
@@ -550,4 +565,4 @@ Open **PR B** from `docs/session-corrections` with Tasks 3, 4 and 7.
 1. **Leave history as is.** The tip is clean, and the names are as findable as the commit that removed them.
 2. **Rewrite history.** Use `git filter-repo --replace-text` on those two lines, then force-push `main`. The cost: every clone and fork must re-clone, open PR refs keep the old commits, and GitHub's cached views persist until GitHub Support purges them.
 
-Nothing in Tasks 1–7 depends on this decision. An executor must not run `filter-repo` or force-push without the owner's explicit instruction.
+Nothing in Tasks 1–8 depends on this decision. An executor must not run `filter-repo` or force-push without the owner's explicit instruction.
