@@ -292,13 +292,29 @@ def data_paths(paths: Iterable[str]) -> list[str]:
     return [p for p in paths if "data" in Path(p).parts[1:-1]]
 
 
+def diff_sources(range_: str | None, staged: bool, other_sources: bool) -> list[list[str]]:
+    """The `git diff` arguments for each diff a scan reads.
+
+    A range and the staged diff are separate sources, and both are read when
+    both are asked for. Collapsing them to one, as this once did, scanned only
+    the range when given both, silently skipping a revision staged on top of
+    a pushed branch and reporting "clean" over text it never read. With no
+    source named at all, the staged diff is the default, because the commonest
+    question is "is what I'm about to commit safe?".
+    """
+    sources = []
+    if range_:
+        sources.append([range_])
+    if staged or not (range_ or other_sources):
+        sources.append(["--cached"])
+    return sources
+
+
 def gather(args: argparse.Namespace) -> tuple[list[tuple[str, str]], list[str]]:
     """The (location, line) pairs to scan and any committed data paths, per the chosen mode."""
     lines: list[tuple[str, str]] = []
     paths: list[str] = []
-    scan_staged = args.staged or not (args.range or args.text or args.paths)
-    if args.range or scan_staged:
-        diff_args = [args.range] if args.range else ["--cached"]
+    for diff_args in diff_sources(args.range, args.staged, bool(args.text or args.paths)):
         diff = subprocess.run(
             ["git", "diff", "-U0", "--no-color", "--no-ext-diff", *diff_args],
             capture_output=True, text=True, check=True, cwd=REPO_ROOT,
