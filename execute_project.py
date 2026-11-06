@@ -52,7 +52,15 @@ def load_project_config(project):
 
 def parse_args():
     logger = logging.getLogger(__name__)
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run a project's configured steps and phases against Elasticsearch. "
+            "Every run first makes its preflight checks (today: enrich policies an "
+            "ingest pipeline would stop it replacing). A failed check stops the run "
+            "with exit status 2 before anything is written; --preflight runs only "
+            "the checks."
+        )
+    )
     parser.add_argument(
         "--project",
         required=True,
