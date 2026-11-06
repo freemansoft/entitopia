@@ -233,16 +233,22 @@ match_demo() {
     # in CMS-Providers/configuration/hospitals/index-settings.json. Requires
     # hospitals-000001 to be populated (run `fixtures` + `run --project=CMS-Providers
     # --step=hospitals` first, or just run `smoke`).
+    #
+    # The near-duplicate's name keeps "Sowtheast" as one word on purpose. The
+    # hospitals analyzers stop HEALTH, MEDICAL and CENTER, so the canonical name
+    # reduces to the single token "southeast"; the old "Sowth East" split it in
+    # two, shared no token or sound with it, and scored 0 -- present only because
+    # it passed the city filter, which proved nothing about closeness.
     local near_dup_id="__match-demo-dup__"
 
     echo "Indexing a synthetic near-duplicate of Facility ID 010001 (typo'd name/address, same phone/city) as $near_dup_id"
     curl -s -X PUT "$ES_URL/hospitals-000001/_doc/$near_dup_id" -H 'Content-Type: application/json' -d '{
         "Facility ID": "'"$near_dup_id"'",
-        "Facility Name": "Sowth East Helth Med Ctr",
-        "Addresss": "1108 Ross Clark Cir",
-        "City": "DOTHAN",
+        "Facility Name": "Sowtheast Helth Med Ctr",
+        "Address": "1108 Ross Clark Cir",
+        "City/Town": "DOTHAN",
         "State": "AL",
-        "Phone Number": "(334) 793-8701"
+        "Telephone Number": "(334) 793-8701"
     }' >/dev/null
     curl -s -X POST "$ES_URL/hospitals-000001/_refresh" >/dev/null
 
@@ -260,12 +266,13 @@ for h in d['hits']['hits']:
 "
 
     echo
-    echo "--- Soft match: blocked on City.keyword=DOTHAN (exact), ranked by name_phonetic + fuzzy name_clean closeness ---"
+    echo "--- Soft match: blocked on City/Town.keyword=DOTHAN (exact), ranked by name_phonetic + fuzzy name_clean closeness ---"
     echo "(surfaces the near-duplicate with a lower score instead of missing it entirely)"
     curl -s "$ES_URL/hospitals-000001/_search" -H 'Content-Type: application/json' -d '{
         "query": {
             "bool": {
-                "filter": [{"term": {"City.keyword": "DOTHAN"}}],
+                "filter": [{"term": {"City/Town.keyword": "DOTHAN"}}],
+                "minimum_should_match": 1,
                 "should": [
                     {"match": {"Facility Name.phonetic": "SOUTHEAST HEALTH MEDICAL CENTER"}},
                     {"match": {"Facility Name.clean": {"query": "SOUTHEAST HEALTH MEDICAL CENTER", "fuzziness": "AUTO"}}}
