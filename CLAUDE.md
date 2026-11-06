@@ -82,7 +82,7 @@ shutdown — and it survives anonymization intact. If an example stops being
 useful once the name is removed, the name was doing argumentative work it
 should not have been doing.
 
-Three things this does **not** forbid, because none of them accuses anyone:
+Four things this does **not** forbid, because none of them accuses anyone:
 
 - Data-quality values that are junk by nature: the literal VIN `GGGG`, the
   phone `(000) 000-0000`, `UNKNOWN`. Record these freely — they are exactly
@@ -95,6 +95,11 @@ Three things this does **not** forbid, because none of them accuses anyone:
   false positives being filtered out** — the opposite of an allegation, and
   unavoidable if an operator is to maintain the ignore list at all. Name the
   shared value and say why it is not identifying.
+- **Entities matched only by a duplicate-detection sweep.** A pair in
+  `hospital-duplicates` says two records may describe one facility, not that
+  anyone did wrong, so real CMS hospital IDs, names and addresses may appear in
+  fixtures, tests and docs. That stops holding the moment the surrounding text
+  implies wrongdoing; then the rule applies as to any flagged entity.
 
 The test is which side of the filter the name sits on. An entity the matcher
 **flagged** must be anonymized; an entity whose identifier the matcher
