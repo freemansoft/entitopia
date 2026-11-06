@@ -12,8 +12,9 @@ a server or GUI — it connects to a live Elasticsearch cluster and drives
 it through config-defined steps/phases. There is no UI to screenshot; the
 "driving" is running the CLI against a real cluster and querying the
 resulting indices with `curl`. Do this via the driver:
-`.claude/skills/run-entitopia/driver.sh smoke` — it brings up disposable
-Elasticsearch, builds the venv, writes tiny synthetic fixtures, runs both
+`.claude/skills/run-entitopia/driver.sh smoke` — it brings up the project's
+cluster (refusing to write fixtures into one that holds loaded data), builds
+the venv, writes tiny synthetic fixtures, runs both
 example projects end-to-end, verifies documents landed, **and runs a
 soft-match demo** (`match-demo`) that proves the entity-resolution
 capability actually works, not just that CSVs got indexed.
@@ -51,6 +52,28 @@ pinned to the same version as the client in `requirements.txt`, with
 to it rather than building its own image — an earlier version built a second
 container on the same port at a different version, so the two could never run
 together.
+
+**That cluster is also the one holding the loaded data**, on the same port and
+volume. So `smoke`, fixture-mode `run` and `match-demo` refuse when any open
+index holds more than 100,000 documents (`LOADED_CLUSTER_DOCS`): a fixture run
+would repoint the real aliases at five-row indexes and rebuild the enrich
+policies from them. To run them, stop the loaded cluster and start the same
+definition under another compose project. That gives it a fresh volume and
+leaves the loaded one, `docker_esdata`, untouched:
+
+```bash
+docker compose -f docker/compose.yml down                          # loaded data stays in docker_esdata
+docker compose -p entitopia-fixture -f docker/compose.yml up -d    # same container name, fresh volume
+.claude/skills/run-entitopia/driver.sh smoke
+docker compose -p entitopia-fixture -f docker/compose.yml down -v  # discards only entitopia-fixture_esdata
+docker compose -f docker/compose.yml up -d                         # loaded cluster back
+```
+
+Fixture mode also refuses to overwrite real downloads in `*/data/` (see
+`write_fixture`), so on a machine that has them, load the real CSVs on the
+fresh volume instead: `DATA_MODE=sample driver.sh run --project=CMS-Providers
+--step=hospitals`. `ALLOW_LOADED_CLUSTER=1` overrides the cluster check; use it
+only when replacing the loaded indexes is what you want.
 
 Everything runs from `.venv`; `bash dependencies.sh` creates it and installs
 pinned dependencies. Never invoke the system Python.

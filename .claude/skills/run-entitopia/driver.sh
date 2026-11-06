@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Driver for entitopia: brings up a disposable Elasticsearch cluster with the
+# Driver for entitopia: brings up (or reuses) the project's Elasticsearch cluster with the
 # required analysis plugins, builds a Python 3.11+ venv, writes tiny synthetic
 # fixture data (the real CMS/DOT download URLs go stale, see SKILL.md
 # Gotchas), runs the CSV -> Elasticsearch pipeline, and verifies documents
@@ -79,6 +79,27 @@ es_up() {
     done
     echo "Elasticsearch did not become healthy in time" >&2
     exit 1
+}
+
+# A fixture run writes indexes and moves aliases, and docker/compose.yml is the
+# same cluster that holds hours of loaded data. Any index this large cannot be
+# fixture output (fixtures are a handful of rows), so its presence means a
+# smoke run would repoint real aliases at five-row indexes and rebuild the
+# enrich policies from them. match-demo is guarded too: it writes a synthetic
+# hospital into hospitals-000001, and a run that dies before its cleanup
+# would leave that record in the real index for the next sweep to score.
+LOADED_CLUSTER_DOCS=100000
+
+refuse_loaded_cluster() {
+    [ "${ALLOW_LOADED_CLUSTER:-0}" = "1" ] && return 0
+    local largest
+    largest=$(curl -s "$ES_URL/_cat/indices?h=docs.count&expand_wildcards=open" | sort -n | tail -1)
+    if [ "${largest:-0}" -gt "$LOADED_CLUSTER_DOCS" ]; then
+        echo "REFUSING: the cluster at $ES_URL holds an index of $largest documents." >&2
+        echo "  A fixture run would repoint its aliases and rebuild its enrich policies." >&2
+        echo "  Stop it and run against a fresh volume (see SKILL.md), or set ALLOW_LOADED_CLUSTER=1." >&2
+        exit 1
+    fi
 }
 
 es_down() {
@@ -266,6 +287,7 @@ for h in d['hits']['hits']:
 
 smoke() {
     es_up
+    refuse_loaded_cluster
     venv_setup
     es_config_write
     fixtures_cms
@@ -304,9 +326,9 @@ case "$cmd" in
     venv-setup) venv_setup ;;
     es-config) es_config_write ;;
     fixtures) fixtures_cms; fixtures_dot ;;
-    run) run_project "$@" ;;
+    run) if [ "$DATA_MODE" = "fixture" ]; then refuse_loaded_cluster; fi; run_project "$@" ;;
     verify) verify_cms; verify_dot ;;
-    match-demo) match_demo ;;
+    match-demo) refuse_loaded_cluster; match_demo ;;
     smoke) smoke ;;
     *)
         echo "Usage: driver.sh {es-up|es-down|venv-setup|es-config|fixtures|run <execute_project.py args>|verify|match-demo|smoke}" >&2
