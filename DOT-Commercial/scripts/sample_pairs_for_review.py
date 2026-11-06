@@ -67,12 +67,20 @@ SOURCE_FIELDS = [
     "matched_on",
     "predecessor.dot_number",
     "predecessor.legal_name",
+    "predecessor.dba_name",
     "predecessor.phy_street",
+    "predecessor.phy_city",
+    "predecessor.phy_state",
     "predecessor.shutdown_date",
+    "predecessor.shutdown_reason",
     "successor.dot_number",
     "successor.legal_name",
+    "successor.dba_name",
     "successor.phy_street",
+    "successor.phy_city",
+    "successor.phy_state",
     "successor.add_date",
+    "signals",
 ]
 
 
@@ -132,8 +140,29 @@ def build_review_row(pair):
         "total_score": pair["total_score"],
         "gap_days": pair.get("gap_days"),
         "matched_on": pair.get("matched_on"),
+        # Which signals fired and how hard, so a reviewer weighs the evidence
+        # the score was built from instead of re-deriving it from two names.
+        # Fields and weights are dropped: they are config, the same on every row.
+        "signals": [
+            {key: signal.get(key) for key in ("signal_type", "score", "contribution")}
+            for signal in pair.get("signals") or []
+        ],
         "verdict": None,
     }
+
+
+def count_verdicts(path):
+    """How many rows in an existing sample a human has already judged.
+
+    The sampler's determinism only protects a redraw against the same index.
+    Pointed at a new sweep, it draws different pairs and would overwrite a
+    file of hand-written verdicts with nulls, which nothing could restore.
+    """
+    path = Path(path)
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf-8") as handle:
+        return sum(1 for line in handle if line.strip() and json.loads(line).get("verdict") is not None)
 
 
 def main():
@@ -144,6 +173,14 @@ def main():
     parser.add_argument("--host", default="http://localhost:9200")
     parser.add_argument("--out", default="DOT-Commercial/data/precision/review-sample.jsonl")
     args = parser.parse_args()
+
+    judged = count_verdicts(args.out)
+    if judged:
+        print(
+            "REFUSING: {} already holds {} verdicts. Move it aside or pass a different --out; "
+            "redrawing would replace them with nulls.".format(args.out, judged)
+        )
+        return 2
 
     es = Elasticsearch(args.host)
     hits = scan(
@@ -156,7 +193,7 @@ def main():
     rows = [hit["_source"] for hit in hits]
     sample = stratified_sample(rows, args.per_band, args.seed)
 
-    with open(args.out, "w") as handle:
+    with open(args.out, "w", encoding="utf-8") as handle:
         for row in sample:
             handle.write(json.dumps(build_review_row(row)) + "\n")
 
