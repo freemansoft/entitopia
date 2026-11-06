@@ -12,8 +12,9 @@ a server or GUI — it connects to a live Elasticsearch cluster and drives
 it through config-defined steps/phases. There is no UI to screenshot; the
 "driving" is running the CLI against a real cluster and querying the
 resulting indices with `curl`. Do this via the driver:
-`.claude/skills/run-entitopia/driver.sh smoke` — it brings up disposable
-Elasticsearch, builds the venv, writes tiny synthetic fixtures, runs both
+`.claude/skills/run-entitopia/driver.sh smoke` — it brings up the project's
+cluster (refusing to write fixtures into one that holds loaded data), builds
+the venv, writes tiny synthetic fixtures, runs both
 example projects end-to-end, verifies documents landed, **and runs a
 soft-match demo** (`match-demo`) that proves the entity-resolution
 capability actually works, not just that CSVs got indexed.
@@ -51,6 +52,28 @@ pinned to the same version as the client in `requirements.txt`, with
 to it rather than building its own image — an earlier version built a second
 container on the same port at a different version, so the two could never run
 together.
+
+**That cluster is also the one holding the loaded data**, on the same port and
+volume. So `smoke`, fixture-mode `run` and `match-demo` refuse when any open
+index holds more than 100,000 documents (`LOADED_CLUSTER_DOCS`): a fixture run
+would repoint the real aliases at five-row indexes and rebuild the enrich
+policies from them. To run them, stop the loaded cluster and start the same
+definition under another compose project. That gives it a fresh volume and
+leaves the loaded one, `docker_esdata`, untouched:
+
+```bash
+docker compose -f docker/compose.yml down                          # loaded data stays in docker_esdata
+docker compose -p entitopia-fixture -f docker/compose.yml up -d    # same container name, fresh volume
+.claude/skills/run-entitopia/driver.sh smoke
+docker compose -p entitopia-fixture -f docker/compose.yml down -v  # discards only entitopia-fixture_esdata
+docker compose -f docker/compose.yml up -d                         # loaded cluster back
+```
+
+Fixture mode also refuses to overwrite real downloads in `*/data/` (see
+`write_fixture`), so on a machine that has them, load the real CSVs on the
+fresh volume instead: `DATA_MODE=sample driver.sh run --project=CMS-Providers
+--step=hospitals`. `ALLOW_LOADED_CLUSTER=1` overrides the cluster check; use it
+only when replacing the loaded indexes is what you want.
 
 Everything runs from `.venv`; `bash dependencies.sh` creates it and installs
 pinned dependencies. Never invoke the system Python.
@@ -102,25 +125,32 @@ this; standalone, run `fixtures` then
 
 1. Indexes one synthetic near-duplicate of hospital `010001` directly
    (not through the CSV pipeline) — same phone/city, but a
-   deliberately typo'd name and address (`"Sowth East Helth Med Ctr"`
-   vs. the canonical `"SOUTHEAST HEALTH MEDICAL CENTER"`).
+   deliberately typo'd name and address (`"Sowtheast Helth Med Ctr"`
+   vs. the canonical `"SOUTHEAST HEALTH MEDICAL CENTER"`). "Sowtheast"
+   stays one word because the analyzers stop `HEALTH`, `MEDICAL` and
+   `CENTER`, leaving `southeast` as the canonical name's only token; a
+   typo that splits it (the old `"Sowth East"`) shares nothing with it
+   and scores 0.
 2. Runs an **absolute** match — `term` query on `Facility Name.keyword`
    for the canonical name — and shows it finds exactly 1 hit. The
    near-duplicate is structurally invisible to exact matching.
 3. Runs a **soft** match — `bool` query filtered (exact) on
-   `City.keyword`, ranked by `should` clauses against
+   `City/Town.keyword`, ranked by `should` clauses against
    `Facility Name.phonetic` (metaphone-encoded) and
-   `Facility Name.clean` with `fuzziness: AUTO` — and shows it returns
-   _both_ records, the canonical one scored highest and the
-   near-duplicate scored lower but present. Verified output:
+   `Facility Name.clean` with `fuzziness: AUTO`, with
+   `minimum_should_match: 1` so a hospital that only shares the city is
+   not listed — and shows it returns _both_ records, the canonical one
+   scored highest and the near-duplicate scored lower but present.
+   Verified 2026-11-05 on a fresh volume loaded with the real hospitals
+   CSV:
    ```
-   9.599 10001 -> SOUTHEAST HEALTH MEDICAL CENTER
-   2.012 __match-demo-dup__ -> Sowth East Helth Med Ctr
+   14.436 010001 -> SOUTHEAST HEALTH MEDICAL CENTER
+   7.859 __match-demo-dup__ -> Sowtheast Helth Med Ctr
    ```
 4. Deletes the synthetic doc, leaving the index as `smoke` left it.
 
 This is the pattern to build on for real entity-resolution work: block
-on one or more exact fields to keep candidate sets small (`City`,
+on one or more exact fields to keep candidate sets small (`City/Town`,
 `State`, maybe a normalized phone/zip), then score the remaining
 fields by phonetic + fuzzy closeness instead of requiring identity.
 The `name_clean`/`name_phonetic`/`street_clean`/`phone_clean`
@@ -128,7 +158,7 @@ analyzers doing this work live in
 `CMS-Providers/configuration/hospitals/index-settings.json` (and the
 equivalent in `DOT-Commercial/configuration/carriers/`) — they're
 already wired up for `Facility Name`, `Facility Name` again
-(phonetic), `Addresss`, and `Phone Number`; extending the approach
+(phonetic), `Address`, and `Telephone Number`; extending the approach
 means adding more `should` clauses across more fields (address line,
 phone) and tuning weights, not touching the plugin/analyzer setup.
 
