@@ -3,12 +3,13 @@ import logging
 
 from elasticsearch import BadRequestError, ConflictError, NotFoundError, client
 
+from phase_providers import bound_pipelines
 from utils import elasticsearch_utils, file_utils
 
-# Fields of a policy's `match` block that decide what the enrich index contains.
 # Compared when a policy could not be deleted, to tell "the existing policy is
 # the one config asks for" apart from "a stale policy is squatting on the name".
-POLICY_IDENTITY_KEYS = ("indices", "match_field", "enrich_fields")
+# Defined beside the preflight so the prediction and this check cannot drift.
+POLICY_IDENTITY_KEYS = bound_pipelines.POLICY_IDENTITY_KEYS
 
 # Executing a policy reindexes the whole source into a hidden enrich index, so
 # it scales with the source, not with the request. elasticsearch-py's default
@@ -111,7 +112,8 @@ class PhaseEnrichmentPolicies:
                 "them would read the wrong source, so the run is stopped rather than "
                 "left to produce a healthy-looking result. See the errors above; a "
                 "policy bound to a pipeline needs that pipeline deleted and the step "
-                "rerun.".format(", ".join(failed))
+                "rerun; --fix-bound-pipelines does that when the step recreates the "
+                "pipeline itself.".format(", ".join(failed))
             )
 
     def _ensure_policy(self, enrich_client, name, match_dicts) -> bool:
@@ -128,11 +130,12 @@ class PhaseEnrichmentPolicies:
         try:
             enrich_client.delete_policy(name=name)
         except ConflictError as e:
-            self.logger.warning(
-                "Could not delete enrichment policy {} ({}); an ingest pipeline is "
-                "still bound to it. Falling back to verifying the existing "
-                "definition.".format(name, e)
-            )
+            if not self._release_and_delete(enrich_client, name, match_dicts):
+                self.logger.warning(
+                    "Could not delete enrichment policy {} ({}); an ingest pipeline is "
+                    "still bound to it. Falling back to verifying the existing "
+                    "definition.".format(name, e)
+                )
         except NotFoundError:
             pass
 
@@ -146,6 +149,35 @@ class PhaseEnrichmentPolicies:
                 return False
 
         return self._existing_policy_matches(enrich_client, name, match_dicts)
+
+    def _release_and_delete(self, enrich_client, name, match_dicts) -> bool:
+        """With --fix-bound-pipelines, clear the pipelines holding a policy and delete it.
+
+        Off unless asked, because it deletes pipelines: the default is the
+        preflight stopping the run before it starts. Even when asked, the
+        release refuses unless this step recreates the pipeline in this run,
+        so a partial run cannot leave an index pointing at a missing pipeline.
+        """
+        if not getattr(self.project_config, "fix_bound_pipelines", False):
+            return False
+        try:
+            policies = enrich_client.get_policy(name=name).get("policies") or []
+        except NotFoundError:
+            return False
+        found = policies[0].get("config", {}).get("match", {}) if policies else {}
+        released = bound_pipelines.release(
+            client.IngestClient(self.es), self.project, self.project_config, self.one_step,
+            name, found, match_dicts, self.logger,
+        )
+        if not released:
+            return False
+        try:
+            enrich_client.delete_policy(name=name)
+        except (ConflictError, NotFoundError) as e:
+            self.logger.error("Policy {} still could not be deleted after releasing its pipelines: {}".format(name, e))
+            return False
+        self.logger.info("Deleted stale policy {} so it can be recreated from config".format(name))
+        return True
 
     def _existing_policy_matches(self, enrich_client, name, match_dicts) -> bool:
         """Whether the undeletable policy already targets what config asks for.
