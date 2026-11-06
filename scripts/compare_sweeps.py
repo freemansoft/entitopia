@@ -5,6 +5,9 @@ so "fewer pairs" is not evidence of improvement — losing real matches shrinks
 it too. This reads both sweeps by explicit index name rather than through the
 chameleon-candidates alias, because during an experiment the alias is exactly
 the thing in motion and resolving it would compare a run against itself.
+
+Exit 0: no guarded metric regressed. 1: at least one did. 2: the two sweeps
+use different signal-type names and cannot be compared.
 """
 
 import argparse
@@ -18,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import scan
 
-from utils.sweep_compare import compare
+from utils.sweep_compare import compare, signal_type_drift
 
 # DOT-Commercial/ cannot be a dotted import (`import DOT_Commercial...` is
 # invalid syntax because of the hyphen), and nothing else in this repo has
@@ -61,6 +64,19 @@ def summarize_index(es, index):
     return summarize(hit["_source"] for hit in rows)
 
 
+# Larger than any signal vocabulary this repo has had (eight types); a terms
+# aggregation that hit this ceiling would silently drop a type from the check.
+VOCABULARY_SIZE = 100
+
+
+def matched_on_types(es, index):
+    """The signal types that actually occur in an index's `matched_on`."""
+    response = es.search(
+        index=index, size=0, aggs={"v": {"terms": {"field": "matched_on", "size": VOCABULARY_SIZE}}}
+    )
+    return {bucket["key"] for bucket in response["aggregations"]["v"]["buckets"]}
+
+
 def load_expectations(path):
     with open(path) as handle:
         return json.load(handle)
@@ -92,9 +108,17 @@ def main():
     parser.add_argument("--host", default="http://localhost:9200")
     parser.add_argument("--write-baseline", default=None,
                         help="Write the candidate summary here as the new baseline")
+    parser.add_argument("--accept-drift", action="store_true",
+                        help="compare anyway after a signal-type rename; only once each guarded metric is ruled unaffected")
     args = parser.parse_args()
 
     es = Elasticsearch(args.host)
+    drift = signal_type_drift(matched_on_types(es, args.baseline_index), matched_on_types(es, args.candidate_index))
+    if drift and not args.accept_drift:
+        print("CANNOT JUDGE: signal types {} occur in only one of the two sweeps; every metric naming "
+              "them would compare a rename, not a change. Re-sweep the baseline with the current code, "
+              "or pass --accept-drift.".format(", ".join(sorted(drift))))
+        return 2
     baseline = summarize_index(es, args.baseline_index)
     candidate = summarize_index(es, args.candidate_index)
 

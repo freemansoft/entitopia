@@ -15,6 +15,7 @@ DOT-Commercial/crash_lift.py testable while its measure_crash_lift.py stays
 integration-shaped.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 EXPECTATIONS = ("must_not_fall", "must_not_rise", "informational", "within_10pct")
@@ -72,3 +73,16 @@ def compare(baseline: dict, candidate: dict, expectations: dict) -> list[MetricD
 
         deltas.append(MetricDelta(name, before, after, delta, pct, expectation, ok))
     return deltas
+
+
+def signal_type_drift(baseline_types: Iterable[str], candidate_types: Iterable[str]) -> frozenset[str]:
+    """Signal types that occur in one sweep's `matched_on` and never in the other's.
+
+    Non-empty means the two sweeps do not share a vocabulary, so any metric
+    that names a signal type reads zero on the side that used the other
+    name. Measured: the vin-overlap -> shared-token rename made a
+    must_not_fall guard print "ok" over 0 -> 208, a rename passing as a
+    measurement. Kept here, free of Elasticsearch, so the decision is
+    testable with plain sets.
+    """
+    return frozenset(baseline_types) ^ frozenset(candidate_types)
