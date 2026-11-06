@@ -15,9 +15,18 @@ DOT-Commercial/crash_lift.py testable while its measure_crash_lift.py stays
 integration-shaped.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-EXPECTATIONS = ("must_not_fall", "must_not_rise", "informational", "within_10pct")
+# What each expectation permits, because the names alone mislead:
+#   must_not_fall        any rise, no fall
+#   must_not_rise        any fall, no rise
+#   within_10pct         any rise, a fall of at most 10% -- ONE-SIDED. It is
+#                        the recall tripwire for metrics a change is meant to
+#                        grow, so it never fails on a rise.
+#   stable_within_10pct  at most 10% either way; from a zero baseline, only zero
+#   informational        anything; printed, never judged
+EXPECTATIONS = ("must_not_fall", "must_not_rise", "informational", "within_10pct", "stable_within_10pct")
 
 TOLERANCE = 0.10
 
@@ -67,8 +76,23 @@ def compare(baseline: dict, candidate: dict, expectations: dict) -> list[MetricD
             ok = delta >= 0
         elif expectation == "must_not_rise":
             ok = delta <= 0
+        elif expectation == "stable_within_10pct":
+            ok = after == before if not before else abs(pct) <= TOLERANCE
         else:
             ok = pct is None or pct >= -TOLERANCE
 
         deltas.append(MetricDelta(name, before, after, delta, pct, expectation, ok))
     return deltas
+
+
+def signal_type_drift(baseline_types: Iterable[str], candidate_types: Iterable[str]) -> frozenset[str]:
+    """Signal types that occur in one sweep's `matched_on` and never in the other's.
+
+    Non-empty means the two sweeps do not share a vocabulary, so any metric
+    that names a signal type reads zero on the side that used the other
+    name. Measured: the vin-overlap -> shared-token rename made a
+    must_not_fall guard print "ok" over 0 -> 208, a rename passing as a
+    measurement. Kept here, free of Elasticsearch, so the decision is
+    testable with plain sets.
+    """
+    return frozenset(baseline_types) ^ frozenset(candidate_types)

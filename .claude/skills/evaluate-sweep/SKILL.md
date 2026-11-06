@@ -34,7 +34,10 @@ Ask the user for whatever isn't already clear:
    been pruned. DOT-Commercial logs each task's result index in
    `DOT-Commercial/data/precision/result-indexes.txt`.
 4. **Expectations:** a JSON file mapping metric names to `must_not_fall`,
-   `must_not_rise`, `within_10pct` or `informational`. Keep it under
+   `must_not_rise`, `within_10pct`, `stable_within_10pct` or `informational`.
+   `within_10pct` is one-sided: it allows any rise and fails only on a fall of
+   more than 10%. Use `stable_within_10pct` when a large move in either
+   direction would be suspect. Keep it under
    `<project>/data/precision/` (gitignored). If none exists for this change,
    draft one with the user **before running anything that prints the
    candidate's numbers**. Give each metric a one-line reason tied to what the
