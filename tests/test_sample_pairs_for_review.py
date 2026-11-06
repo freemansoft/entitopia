@@ -106,3 +106,25 @@ def test_pairs_below_the_lowest_band_are_not_sampled():
     """
     rows = [pair(0.10, dot_succ=str(i)) for i in range(5)]
     assert stratified_sample(rows, per_band=5, seed=1) == []
+
+
+def test_review_row_carries_each_signals_score_so_a_reviewer_sees_why_it_scored():
+    row = build_review_row(
+        dict(pair(0.82), signals=[{"signal_type": "address", "fields": ["phy_street"], "score": 0.75,
+                                   "contribution": 0.15, "weight": 0.2}])
+    )
+    assert row["signals"] == [{"signal_type": "address", "score": 0.75, "contribution": 0.15}]
+
+
+def test_review_row_without_a_breakdown_has_an_empty_signal_list():
+    assert build_review_row(pair(0.5))["signals"] == []
+
+
+def test_counting_verdicts_ignores_unreviewed_rows(tmp_path):
+    sample = tmp_path / "review-sample.jsonl"
+    sample.write_text('{"verdict": null}\n{"verdict": "chameleon"}\n{"verdict": "unsure"}\n', encoding="utf-8")
+    assert sample_pairs_for_review.count_verdicts(sample) == 2
+
+
+def test_counting_verdicts_in_a_missing_file_is_zero(tmp_path):
+    assert sample_pairs_for_review.count_verdicts(tmp_path / "absent.jsonl") == 0
