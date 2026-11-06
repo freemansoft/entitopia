@@ -67,6 +67,14 @@ LOCATIONS_SHOWN = 3
 # anonymize, so anything inside angle brackets is the fix, not the problem.
 PLACEHOLDER = re.compile(r"<[^<>\s]+>")
 
+# Capital and small letters in any script, for the name patterns. Python's re
+# has no \p{Lu}, and spelling them A-Z cut an accented name at its first
+# non-ASCII capital: only the generic tail ("HAULING LLC") was looked up, it
+# came back SHARED, and a real entity was ruled harmless. The cluster folds
+# accents on lookup, so the whole name is what has to reach it.
+_UPPER = "A-Z" + "".join(c for c in map(chr, range(0x80, 0x10000)) if c.isupper())
+_LOWER = "a-z" + "".join(c for c in map(chr, range(0x80, 0x10000)) if c.islower())
+
 _ORG_SUFFIX = (
     r"LLC|L\.L\.C\.?|INC\.?|INCORPORATED|CORP\.?|CORPORATION|CO\.|COMPANY|LTD\.?|"
     r"LLP|PLLC|TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|FREIGHT|EXPRESS|"
@@ -88,12 +96,14 @@ PATTERNS = {
     "name": [
         # FMCSA legal names put a comma before the suffix (", INC.") and
         # filing agents lead with "#1" or "A+", so both are allowed in a word.
-        re.compile(r"(?<![\w#+])(?:[A-Z0-9#][A-Z0-9&'.+#\-]*,?\s+){1,5}(?:" + _ORG_SUFFIX + r")(?![\w])"),
-        re.compile(r"\b(?:[A-Z][a-z][\w'&.\-]*,?\s+){1,5}(?:" + _TITLE_SUFFIX + r")(?![\w])"),
+        re.compile(
+            r"(?<![\w#+])(?:[" + _UPPER + r"0-9#][" + _UPPER + r"0-9&'.+#\-]*,?\s+){1,5}(?:" + _ORG_SUFFIX + r")(?![\w])"
+        ),
+        re.compile(r"\b(?:[" + _UPPER + r"][" + _LOWER + r"][\w'&.\-]*,?\s+){1,5}(?:" + _TITLE_SUFFIX + r")(?![\w])"),
     ],
     "street": [
         re.compile(
-            r"\b\d{1,6}\s+(?:[NSEW]\.?\s+)?(?:[A-Za-z0-9][\w'.\-]*\s+){1,4}(?:" + _STREET_SUFFIX + r")\b"
+            r"\b\d{1,6}\s+(?:[NSEW]\.?\s+)?(?:[^\W_][\w'.\-]*\s+){1,4}(?:" + _STREET_SUFFIX + r")\b"
             r"(?:\s+\d{1,5}\b)?(?:\s+[NSEW]\b)?",
             re.IGNORECASE,
         ),
