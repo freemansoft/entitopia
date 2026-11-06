@@ -8,7 +8,7 @@ comparison with every number identical. This is the check no count can satisfy.
 
 It is deliberately not part of `utils.sweep_compare`, which answers a different
 question: whether an INTENTIONAL change moved the right metrics in the right
-direction. Its vocabulary (must_not_fall, must_not_rise, within_10pct,
+direction. Its vocabulary (must_not_fall, must_not_rise, within_10pct, stable_within_10pct,
 informational) has no way to express "must not change at all", so running a
 must-not-move comparison through it would let a real regression pass wearing
 `informational`.
