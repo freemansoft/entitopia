@@ -76,7 +76,7 @@ def draft(facts: dict) -> str:
 def main() -> int:
     es = Elasticsearch("http://localhost:9200")
     facts = truth(es)
-    Path("draft.md").write_text(draft(facts))
+    Path("draft.md").write_text(draft(facts), encoding="utf-8")
     if "--truth" in sys.argv:
         print(json.dumps(facts))
     return 0

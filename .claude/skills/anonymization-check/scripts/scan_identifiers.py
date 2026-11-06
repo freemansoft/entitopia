@@ -185,10 +185,10 @@ def load_projects(root: Path) -> list[Project]:
     projects = []
     for match_path in sorted(root.glob("*/configuration/*/entity-match.json")):
         index_path = match_path.with_name("index-config.json")
-        match = json.loads(match_path.read_text())
+        match = json.loads(match_path.read_text(encoding="utf-8"))
         if "source_index" not in match or not index_path.exists():
             continue
-        template = json.loads(index_path.read_text())["index"]
+        template = json.loads(index_path.read_text(encoding="utf-8"))["index"]
         projects.append(
             Project(
                 name="{}/{}".format(match_path.parts[-4], match_path.parts[-2]),
@@ -330,12 +330,16 @@ def gather(args: argparse.Namespace) -> tuple[list[tuple[str, str]], list[str]]:
         for entry in log.split("\x00")[1:]:
             sha, _, body = entry.partition("\n")
             lines.extend(("commit {}:{}".format(sha, n), text) for n, text in enumerate(body.splitlines(), 1))
+    # Drafts quote real names, which are often non-ASCII. Read them as UTF-8
+    # explicitly rather than in the platform encoding: under a Latin-1 locale
+    # the platform default turned an accented name into mojibake that can no
+    # longer match the cluster, so a real entity came back NOT_FOUND.
     for source in args.text or []:
-        content = sys.stdin.read() if source == "-" else Path(source).read_text()
+        content = sys.stdin.buffer.read().decode("utf-8") if source == "-" else Path(source).read_text(encoding="utf-8")
         label = "<stdin>" if source == "-" else source
         lines.extend(("{}:{}".format(label, n), text) for n, text in enumerate(content.splitlines(), 1))
     for source in args.paths or []:
-        content = Path(source).read_text(errors="replace")
+        content = Path(source).read_text(encoding="utf-8", errors="replace")
         lines.extend(("{}:{}".format(source, n), text) for n, text in enumerate(content.splitlines(), 1))
     return lines, paths
 
