@@ -41,3 +41,35 @@ def test_text_or_paths_alone_read_no_diff():
 
 def test_staged_with_text_reads_the_staged_diff():
     assert diff_sources(None, staged=True, other_sources=True) == [["--cached"]]
+
+
+# Accented names. The cluster folds accents on lookup, so a full accented name
+# finds its record; the failure was upstream, in extraction, where the pattern
+# stopped at the first non-ASCII capital and looked up only the generic tail
+# ("HAULING LLC"), which is SHARED and so ruled harmless. The names below are
+# invented.
+def _values(text: str, kind: str) -> set[str]:
+    return {c.value for c in scan_identifiers.extract(text) if c.kind == kind}
+
+
+def test_accented_capitals_stay_inside_an_upper_case_name():
+    assert "ZQÉTRÖ HAULING LLC" in _values("Paid ZQÉTRÖ HAULING LLC twice.", "name")
+
+
+def test_name_may_start_with_an_accented_capital():
+    assert "ÉZQUÑO TRANSPORT INC" in _values("ÉZQUÑO TRANSPORT INC", "name")
+
+
+def test_title_case_name_may_start_with_an_accented_capital():
+    assert "Ávila Zqétrö Hospital" in _values("we called Ávila Zqétrö Hospital.", "name")
+
+
+def test_street_word_may_start_with_an_accented_letter():
+    assert "12 Ñandú Zqet Road" in _values("At 12 Ñandú Zqet Road.", "street")
+
+
+def test_ascii_names_are_unchanged():
+    assert _values("ACME HAULING LLC and #1 ZQET TRUCKING, INC.", "name") == {
+        "ACME HAULING LLC",
+        "#1 ZQET TRUCKING, INC",
+    }
