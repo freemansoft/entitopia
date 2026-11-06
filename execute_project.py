@@ -99,12 +99,15 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--check",
+        "--preflight",
         required=False,
         action="store_true",
         help=(
-            "Read-only: report the enrich policies this run could not replace, "
-            "then exit without running any phase. Exit 0 when none, 2 otherwise."
+            "Read-only: run the checks every run makes before its first phase, "
+            "report them, and exit without running any phase. Today that is one "
+            "check, the enrich policies this run could not replace. Not a dry "
+            "run: it does not predict what the phases themselves would do. Exit 0 "
+            "when nothing would stop the run, 2 otherwise."
         ),
     )
     args = parser.parse_args()
@@ -220,9 +223,9 @@ def main():
         # new indexes and moved aliases, leaving a half-reloaded cluster.
         blocked = bound_pipelines.predict_blocked(es, args.project, project_config)
         bound_pipelines.report(blocked, args.fix_bound_pipelines, root_logger)
-        if args.check:
+        if args.preflight:
             root_logger.info(
-                "Check only: {} enrich policies this run could not replace".format(len(blocked))
+                "Preflight only: {} enrich policies this run could not replace".format(len(blocked))
             )
             sys.exit(bound_pipelines.EXIT_BLOCKED if blocked else 0)
         stop = bound_pipelines.preflight_exit_code(blocked, args.fix_bound_pipelines)
