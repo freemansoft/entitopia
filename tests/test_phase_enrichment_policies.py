@@ -211,3 +211,55 @@ def test_the_enrich_client_itself_has_no_options_method():
     """
     enrich = es_client.EnrichClient(Elasticsearch("http://localhost:9200"))
     assert not hasattr(enrich, "options")
+
+
+class ReleasableEnrichClient(FakeEnrichClient):
+    """Refuses to delete a policy only while its pipeline still exists."""
+
+    def __init__(self, existing, ingest):
+        super().__init__(existing)
+        self.ingest = ingest
+        self.put = []
+
+    def delete_policy(self, name):
+        if self.ingest.pipelines:
+            raise BOUND
+
+    def put_policy(self, name, match):
+        self.put.append(name)
+
+
+class OneIngest:
+    def __init__(self):
+        self.pipelines = {"carrier-pipeline": {"processors": [
+            {"enrich": {"policy_name": "crashes-enrichment-policy"}}]}}
+        self.deleted = []
+
+    def get_pipeline(self):
+        return self.pipelines
+
+    def delete_pipeline(self, id):
+        self.deleted.append(id)
+        self.pipelines.pop(id)
+
+
+def test_with_the_fix_flag_a_bound_stale_policy_is_released_and_replaced(monkeypatch):
+    configured = {"crashes-enrichment-policy": policy("crashes-2026.11.06-000001")}
+    monkeypatch.setattr(
+        phase_enrichment_policies.file_utils, "load_from_project_file",
+        lambda project, cdir, step, filename: (
+            SimpleNamespace(name="carrier-pipeline") if filename == "pipelines.json" else
+            [SimpleNamespace(name=n, match=SimpleNamespace(**m)) for n, m in configured.items()]),
+    )
+    ingest = OneIngest()
+    fake = ReleasableEnrichClient({"crashes-enrichment-policy": policy(["crashes-2026.08.13-000001"])}, ingest)
+    monkeypatch.setattr(phase_enrichment_policies.client, "EnrichClient", lambda es: fake)
+    monkeypatch.setattr(phase_enrichment_policies.client, "IngestClient", lambda es: ingest)
+    config = SimpleNamespace(
+        configurationDir="configuration", fix_bound_pipelines=True,
+        steps=[SimpleNamespace(name="any-step", phases=["enrichment-policies", "pipelines"])])
+    counts = {"crashes-2026.11.06-000001": 10, ".enrich-crashes-enrichment-policy": 10}
+    PhaseEnrichmentPolicies(FakeEs(counts), "AnyProject", "any-step", config).handle()
+    assert ingest.deleted == ["carrier-pipeline"]
+    assert fake.put == ["crashes-enrichment-policy"]
+    assert fake.executed == ["crashes-enrichment-policy"]

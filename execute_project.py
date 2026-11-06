@@ -13,6 +13,7 @@ import argparse
 import copy
 import logging
 
+from phase_providers import bound_pipelines
 from phase_providers.phase_dispatcher import PhaseDispatcher
 from utils import elasticsearch_utils, file_utils
 from utils.custom_logging_formatter import CustomFormatter
@@ -51,7 +52,15 @@ def load_project_config(project):
 
 def parse_args():
     logger = logging.getLogger(__name__)
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run a project's configured steps and phases against Elasticsearch. "
+            "Every run first makes its preflight checks (today: enrich policies an "
+            "ingest pipeline would stop it replacing). A failed check stops the run "
+            "with exit status 2 before anything is written; --preflight runs only "
+            "the checks."
+        )
+    )
     parser.add_argument(
         "--project",
         required=True,
@@ -84,6 +93,29 @@ def parse_args():
             "Off by default: an alias naming more than one index makes reads "
             "return every document once per attached index, which is silent "
             "rather than an error. Use only for a deliberate read-side cutover."
+        ),
+    )
+    parser.add_argument(
+        "--fix-bound-pipelines",
+        required=False,
+        action="store_true",
+        help=(
+            "When a stale enrich policy is held by an ingest pipeline, delete that "
+            "pipeline so the policy can be replaced. Only done when the same step "
+            "recreates the pipeline in this run. Off by default: without it, a run "
+            "that would hit the block stops before writing anything."
+        ),
+    )
+    parser.add_argument(
+        "--preflight",
+        required=False,
+        action="store_true",
+        help=(
+            "Read-only: run the checks every run makes before its first phase, "
+            "report them, and exit without running any phase. Today that is one "
+            "check, the enrich policies this run could not replace. Not a dry "
+            "run: it does not predict what the phases themselves would do. Exit 0 "
+            "when nothing would stop the run, 2 otherwise."
         ),
     )
     args = parser.parse_args()
@@ -136,18 +168,34 @@ def apply_args_to_config(config, args):
         logger.info(
             "Row cap override: loading at most {} rows per dataset".format(args.num_rows)
         )
+    apply_opt_in_overrides(new_config, args)
+    logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
+    return new_config
+
+
+def apply_opt_in_overrides(config, args):
+    """Carry the flags that relax a safety default onto the project config.
+
+    Kept apart from step and phase filtering because each of these turns off a
+    refusal, and they are easier to audit together. Each is set only when
+    asked, so an absent attribute and False both mean the safe behaviour, and
+    no committed config can turn one on.
+    """
+    logger = logging.getLogger(__name__)
+    if getattr(args, "fix_bound_pipelines", False):
+        # Carried on the project config like retain_aliases, for the
+        # enrichment-policies phase to read. Absent and False both mean "refuse".
+        config.fix_bound_pipelines = True
     if args.retain_aliases:
         # Carried on the project config the same way as num_rows_override so
         # index-creation can read it without a new argument threaded through the
         # dispatcher. Set only when asked, so the absence of the attribute and a
         # False both mean "swap", and no committed config can turn retention on.
-        new_config.retain_aliases = True
+        config.retain_aliases = True
         logger.warning(
             "Alias retention on: each alias keeps every index it already names, "
             "so reads through it return each document once per attached index"
         )
-    logger.info("Filter resulted in these steps/phases {}".format(new_config.steps))
-    return new_config
 
 
 def update_logger_based_from_config(project_config, logger):
@@ -177,6 +225,21 @@ def main():
         # connect to cluster
         es_config = file_utils.load_from_file("es_config.json")
         es = elasticsearch_utils.connect_to_es(es_config)
+
+        # Before any phase writes: a run that will hit a policy it cannot
+        # replace used to stop midway, after earlier steps had already created
+        # new indexes and moved aliases, leaving a half-reloaded cluster.
+        blocked = bound_pipelines.predict_blocked(es, args.project, project_config)
+        bound_pipelines.report(blocked, args.fix_bound_pipelines, root_logger)
+        if args.preflight:
+            root_logger.info(
+                "Preflight only: {} enrich policies this run could not replace".format(len(blocked))
+            )
+            sys.exit(bound_pipelines.EXIT_BLOCKED if blocked else 0)
+        stop = bound_pipelines.preflight_exit_code(blocked, args.fix_bound_pipelines)
+        if stop is not None:
+            root_logger.critical("Stopped before running any phase; nothing was written.")
+            sys.exit(stop)
 
         # run it!
         dispatcher = PhaseDispatcher()

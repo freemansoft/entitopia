@@ -134,11 +134,18 @@ flowchart LR
 - `--project=` project directory containing configuration and data
 - `--step=` run a single step
 - `--phase=` run a single phase within the selected steps
+- `--num-rows=` cap the rows loaded per dataset, overriding each index-config's `num_rows`
+- `--retain-aliases` leave the previous index on the alias instead of swapping (see the flag's help for why this is off by default)
+- `--preflight` read-only: run the checks every run makes before its first phase, report them, and exit without running a phase (0 when nothing would stop the run, 2 otherwise). Today the only check is the enrich-policy one below. It is not a dry run: it does not predict what the phases would do.
+- `--fix-bound-pipelines` when a stale enrich policy is held by an ingest pipeline, delete the pipeline so the policy can be replaced. Done only when the same step recreates that pipeline later in the run.
 
 ```bash
 .venv/bin/python execute_project.py --project=CMS-Providers
 .venv/bin/python execute_project.py --project=DOT-Commercial --step=carriers --phase=index-map
+.venv/bin/python execute_project.py --project=DOT-Commercial --preflight
 ```
+
+**Every run checks enrich policies before its first phase.** Each run points its policies at that day's index, and Elasticsearch can neither edit a policy in place nor delete one an ingest pipeline uses. On a cluster loaded on an earlier day, that used to stop a reload midway, after earlier steps had already created new indexes and moved aliases. Now the check predicts it: without `--fix-bound-pipelines` the run stops with exit 2 before writing anything, naming each policy and pipeline. With the flag it deletes each blocking pipeline, which its own step's `pipelines` phase recreates. It refuses when a pipeline belongs to another step, or when `--phase` leaves out the `pipelines` phase, because deleting it then would leave an index with no pipeline.
 
 ### Steps
 
@@ -320,7 +327,7 @@ Without `id_field`, Elasticsearch generates document IDs, so re-running a load a
 
 An enrich policy is a **point-in-time snapshot** of its source index. It does not track later changes. Ways this bites:
 
-- A policy bound to a live pipeline **cannot be deleted**. The rebuild fails with a conflict that is caught and logged as a warning, so the run continues against the _old_ snapshot. This left a policy pinned to a 5,000-row validation sample across a full 5.6M-row production run, silently cutting enrichment coverage from ~572K matches to ~4K.
+- A policy bound to a live pipeline **cannot be deleted**. The rebuild used to fail with a conflict that was caught and logged as a warning, so the run continued against the _old_ snapshot. The phase now refuses to execute a policy that disagrees with config, and the check before the first phase predicts the block; see `--preflight` and `--fix-bound-pipelines` above. This left a policy pinned to a 5,000-row validation sample across a full 5.6M-row production run, silently cutting enrichment coverage from ~572K matches to ~4K.
 - Worse, and now fixed: `delete_policy`, `put_policy` and `execute_policy` used to share one `try`. On any cluster loaded before, the delete raised `ConflictError`, the put then raised `resource_already_exists_exception`, and **`execute_policy` never ran at all** — so the previous run's enrich index stayed live. On a reused cluster that index was frequently _empty_: carriers loaded with no `out_of_service_orders` field, the population selector (then `PredecessorSelector`, now `PopulationSelector`) matched zero records, and the chameleon sweep logged a tidy `0 pairs` that is indistinguishable from "this data contains no chameleons". Execution is now unconditional, and a policy that cannot be replaced is compared against config rather than executed blind.
 - If a source index is missing when policies rebuild, the loop aborts and every policy after it keeps its previous snapshot (see open items).
 
