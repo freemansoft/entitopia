@@ -82,7 +82,7 @@ shutdown — and it survives anonymization intact. If an example stops being
 useful once the name is removed, the name was doing argumentative work it
 should not have been doing.
 
-Three things this does **not** forbid, because none of them accuses anyone:
+Four things this does **not** forbid, because none of them accuses anyone:
 
 - Data-quality values that are junk by nature: the literal VIN `GGGG`, the
   phone `(000) 000-0000`, `UNKNOWN`. Record these freely — they are exactly
@@ -95,6 +95,11 @@ Three things this does **not** forbid, because none of them accuses anyone:
   false positives being filtered out** — the opposite of an allegation, and
   unavoidable if an operator is to maintain the ignore list at all. Name the
   shared value and say why it is not identifying.
+- **Entities matched only by a duplicate-detection sweep.** A pair in
+  `hospital-duplicates` says two records may describe one facility, not that
+  anyone did wrong, so real CMS hospital IDs, names and addresses may appear in
+  fixtures, tests and docs. That stops holding the moment the surrounding text
+  implies wrongdoing; then the rule applies as to any flagged entity.
 
 The test is which side of the filter the name sits on. An entity the matcher
 **flagged** must be anonymized; an entity whose identifier the matcher
@@ -172,8 +177,11 @@ outright without them.
 docker compose -f docker/compose.yml up -d --build
 ```
 
-The cluster is always at **`http://localhost:9200`**, unauthenticated, and
-`curl`ing it needs no approval — `.claude/settings.json` allows it. Query it
+The cluster is always at **`http://localhost:9200`**, unauthenticated. Reading
+it is always appropriate, though the committed `.claude/settings.json` does not
+pre-approve `curl`: a URL-prefix rule would also approve a write whose `-X
+DELETE` follows the URL, so read approvals live in each person's
+`settings.local.json`. Query it
 freely to check mappings, counts and aliases rather than asking or guessing;
 several defects in this repo were only visible by looking at the live index
 (`tow_away` mapped as `text` so `{"term": {"tow_away": "Y"}}` matched zero
@@ -185,6 +193,10 @@ Writes are a different matter: creating, deleting or reindexing against a
 loaded cluster destroys work that takes hours to rebuild, so confirm those
 first even though the allowlist does not distinguish them.
 
-If the build fails with `docker-credential-desktop: executable file not found`,
-prepend Docker Desktop's bin directory to PATH for the command:
-`export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"`.
+The container runtime is Colima, not Docker Desktop. Start the VM first, sized
+for the 6 GB heap `docker/compose.yml` sets: `colima start --cpu 6 --memory 12`.
+Homebrew's `docker` lives in `/opt/homebrew/bin`, which a non-login shell may
+not have on PATH (`export PATH="/opt/homebrew/bin:$PATH"`). A build failing with
+`docker-credential-desktop: executable file not found` means
+`~/.docker/config.json` still names Docker Desktop's `credsStore`; remove that
+key.

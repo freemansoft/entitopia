@@ -69,6 +69,14 @@ there's no need to re-check the other sweeps by hand.
 | **REAL**                 | A real record carries the value, but no sweep matched it.                                                                         | Usually a data-quality example, such as a DOT number quoted to show zero-padding, and acceptable. If the surrounding text implies wrongdoing, or the value isn't load-bearing, use a synthetic one anyway.                                                                                                                          |
 | **SHARED**               | 25 or more records carry the value: a filing agent, a corporate parent, a placeholder.                                            | Allowed when the text presents it as a shared value being filtered out. CLAUDE.md expects those to be named, so the ignore list can be maintained. Anonymize it if the text presents it as one suspect.                                                                                                                             |
 
+**Which sweep flagged it matters.** Each finding names the project and step
+whose pairs matched it. A FLAGGED value from an accusatory sweep, today
+`DOT-Commercial/chameleon-detection`, is anonymized as the table says. A
+FLAGGED value from a duplicate-detection sweep, today
+`CMS-Providers/hospital-duplicates`, needs no change unless the surrounding
+text implies wrongdoing; CLAUDE.md exempts it. When a new project adds a
+sweep, decide which kind it is before relying on this paragraph.
+
 ALLOWED (placeholders and ignore-list junk such as `(000) 000-0000`) and
 NOT_FOUND are only counted, because neither identifies anyone.
 
