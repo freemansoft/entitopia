@@ -29,13 +29,13 @@ class CustomFormatter(logging.Formatter):
         return formatter.format(record)
 
     def replace_formatter(self, root_logger):
-        """
-        replace the current formatters with this one
-        logger is the where we want the formatter to start, usually the root logger
-        """
+        """Make this coloured formatter the only handler on `root_logger`.
 
-        print(root_logger)
-        # create console handler with a higher log level
+        Replaces rather than adds, because `logging.basicConfig` has usually
+        installed a plain handler already, and keeping both prints every line
+        twice. The handler writes to stderr, so it stays out of stdout, which
+        callers read and pipe.
+        """
         handler = logging.StreamHandler()
         handler.setFormatter(CustomFormatter())
         root_logger.handlers = []
