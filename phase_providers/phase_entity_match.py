@@ -45,6 +45,14 @@ BULK_THREAD_COUNT = 2
 # and discarding the whole run over one malformed record would be worse. At a
 # tenth of every comparison the cause has stopped being individual records.
 MAX_SCORING_ERROR_SHARE = 0.10
+# Field types Elasticsearch sorts from doc values. text is absent because it
+# needs fielddata, which is off by default, so a text entity key fails every
+# candidate search.
+_SORTABLE_TYPES = frozenset({
+    "keyword", "constant_keyword", "long", "integer", "short", "byte",
+    "unsigned_long", "double", "float", "half_float", "scaled_float",
+    "date", "date_nanos", "boolean", "ip", "version",
+})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -197,13 +205,14 @@ class PhaseEntityMatch:
             config.signals,
             entity_config=self.entity_config,
             lifecycle=self.lifecycle,
+            scoring_config=config.scoring,
         )
         selector = PopulationSelector(self.es, source_index, config.population)
 
         ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
         )
-        if not ok:
+        if not ok or not self._check_sort_field_types(source_index, finder.sort_fields()):
             return
 
         ctx = self._build_context(source_index, config.signals, config)
@@ -448,6 +457,39 @@ class PhaseEntityMatch:
             )
             return False, resolved_index, stored_fingerprint
         return True, resolved_index, stored_fingerprint
+
+    def _check_sort_field_types(self, source_index, wanted):
+        """Refuse to sweep when a field the candidate search sorts or filters on has the wrong type.
+
+        The candidate search orders by the entity key and, for a lifecycle
+        project, filters and orders by the registration date. A key mapped as
+        text fails every search, which the sweep would count as thousands of
+        lookup errors instead of one clear message. A registration date mapped
+        as keyword is worse: the range filter compares strings, matches
+        nothing in the expected form, and quietly retrieves only the
+        candidates with no date at all.
+
+        `wanted` maps field to "date" or "sortable" (see
+        CandidateFinder.sort_fields). Returns True when every field passes.
+        """
+        caps = self.es.field_caps(index=source_index, fields=sorted(wanted)).get("fields", {})
+        problems = []
+        for field, need in sorted(wanted.items()):
+            types = set(caps.get(field, {}))
+            allowed = {"date", "date_nanos"} if need == "date" else _SORTABLE_TYPES
+            if not types:
+                problems.append("{} is not mapped".format(field))
+            elif not types <= allowed:
+                problems.append("{} is mapped as {}, needs {}".format(field, "/".join(sorted(types)), need))
+        if problems:
+            self.logger.error(
+                "Source index {} cannot order or bound the candidate search: {}. "
+                "Fix the field mapping in index-mappings.json and reload, or "
+                "correct entity.key / lifecycle.registration_date in "
+                "entity-match.json.".format(source_index, "; ".join(problems))
+            )
+            return False
+        return True
 
     def _stamp_provenance(self, target_index, provenance):
         """Record on the candidates index which index's tokens its pairs were scored from.
