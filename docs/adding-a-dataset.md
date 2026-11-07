@@ -74,7 +74,7 @@ Work through these, consulting the documents above for the specifics:
 
 ### 2a. If your data has no dates, say so in the config
 
-A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. A project that does declare `lifecycle` must map `registration_date` as a `date`, and every project's `entity.key` must be sortable (keyword or numeric, not text): the candidate query filters and orders on them, and the sweep refuses to start otherwise, because a range over a keyword date would silently retrieve only undated records. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
 
 Two things that example is worth reading for:
 
@@ -100,7 +100,7 @@ These are decisions, not lookups. They come up on every dataset.
 **But a field too weak to seed on is not the same as a field that should not seed.** These are opposite failures and both are real:
 
 - Seeding on a _common_ value floods the candidate set with noise. That is the rule above.
-- **Declining to seed on a rare, decisive one silently caps recall at zero for an entire fraud profile.** A shared vehicle identifier was scored but not seeded, so an entity that changed its name, address and phone while keeping its equipment could never be retrieved — no threshold, weight, or `max_candidates` value would surface it, because the query never returned the record at all. Raising `max_candidates` from 100 to 500 across a full sweep cost 4× the runtime and produced **zero** new top-tier findings, because relevance ranking already had the reachable ones near the top. The unreachable ones stayed unreachable.
+- **Declining to seed on a rare, decisive one silently caps recall at zero for an entire fraud profile.** A shared vehicle identifier was scored but not seeded, so an entity that changed its name, address and phone while keeping its equipment could never be retrieved — no threshold, weight, or `max_candidates` value would surface it, because the query never returned the record at all. Raising `max_candidates` from 100 to 500 across a full sweep cost 4× the runtime and produced **zero** new top-tier findings, because relevance ranking already had the reachable ones near the top. The unreachable ones stayed unreachable. (Near the top, but not all inside it: BM25 ties hundreds of name matches at the cutoff, and before the query sorted on a total order, which side of 500 a candidate landed on changed from one load to the next. Measured on unchanged data, 2026-11-06: 16 pairs scoring ≥ 0.60 appeared in one load's sweep and not the next.)
 
 The test is not "is this field rare enough to rank well" but **"if two records shared only this field, would I want to see the pair?"** If yes, it must seed, regardless of what else it does.
 

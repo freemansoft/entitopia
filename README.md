@@ -56,7 +56,7 @@ Two vocabularies meet in this repo: **entity resolution**, where most terms come
 - **Seed clause** — one Elasticsearch query clause built by a signal from the predecessor's values, e.g. a `match` on a phonetic name subfield or a `terms` on shared VINs. Produced by `signal.seed_clauses()`.
 - **Seed query** — all the seed clauses for one predecessor, combined into a single `bool.should` query with `minimum_should_match: 1`. What actually runs against the index.
 - **`seed_signals`** — the config list naming which signals may seed. A signal absent from it still scores pairs; it just cannot widen the search. This is the single most consequential recall setting in the project.
-- **Truncation / the candidate ceiling** — the seed query is capped at `max_candidates`. When a predecessor returns that many hits, real matches beyond the cap were cut off and the run says so. Common name tokens make this the normal case, not the exception.
+- **Truncation / the candidate ceiling** — the seed query is capped at `max_candidates`. When a predecessor returns that many hits, real matches beyond the cap were cut off and the run says so. Common name tokens make this the normal case, not the exception. Two things keep the cut honest. The query sorts in a total order (BM25, then registration nearest the shutdown, then the entity key), because BM25 alone ties hundreds of candidates at the cutoff and Lucene then breaks the tie by segment layout, which changes on every load. And for a lifecycle project it filters to the scorer's gap window, so the capped slots go to candidates the scorer could emit.
 - **Signal** — one kind of evidence that two records are the same entity: name similarity, a shared address, a shared phone, timing between shutdown and re-registration. Each returns a score in `[0.0, 1.0]`, or `None`.
 - **Not evaluable (`None`) vs no similarity (`0.0`)** — the distinction the whole scoring model rests on. `None` means the evidence is missing on one or both sides and the signal drops out; `0.0` means it was compared and disagreed. Conflating them penalizes a record for having sparse data. Blank must never match blank.
 - **Evidence source** — the set of underlying fields a signal reads. Several signals over the same fields (two phonetic encoders plus a cleaned form of one name) are one source, not three, so corroboration counts sources rather than signals.
@@ -193,7 +193,7 @@ flowchart TB
     subgraph retrieve["retrieval — sets what CAN be found"]
         direction TB
         Seed["each signal builds its own seed clauses<br/>signal.seed_clauses, limited to seed_signals"]
-        Cands["bool.should query<br/>capped at max_candidates"]
+        Cands["bool.should query<br/>gap-window filter · total sort order<br/>capped at max_candidates"]
         Tokens["one _mtermvectors call<br/>signal.token_subfields"]
         Seed --> Cands --> Tokens
     end
