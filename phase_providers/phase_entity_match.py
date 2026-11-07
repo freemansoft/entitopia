@@ -472,10 +472,36 @@ class PhaseEntityMatch:
         "12-SEP-25", FMCSA's legacy form and inside the window, was excluded,
         as was a date exactly on the lower bound.
 
+        A registration date inside a nested object passes the type check but
+        is only warned about, not refused. The top-level candidate query and
+        its sort script cannot see a nested field, so every candidate reads as
+        undated: the window keeps them all and the proximity sort ties them
+        all, and ordering falls to the key. Verified 2026-11-07 on a scratch
+        nested index, where a candidate registered six years outside the
+        window was still returned. Nothing is lost, which is why it does not
+        stop the sweep, but the dataset silently gets neither improvement.
+
         `wanted` maps field to "date" or "sortable" (see
         CandidateFinder.sort_fields). Returns True when every field passes.
         """
-        caps = self.es.field_caps(index=source_index, fields=sorted(wanted)).get("fields", {})
+        # Parent paths ride along in the same call: field_caps reports an
+        # object's own type, so a nested ancestor shows up as "nested".
+        parents = {
+            ".".join(field.split(".")[:depth])
+            for field, need in wanted.items()
+            if need == "date"
+            for depth in range(1, field.count(".") + 1)
+        }
+        caps = self.es.field_caps(index=source_index, fields=sorted(set(wanted) | parents)).get("fields", {})
+        nested = sorted(p for p in parents if "nested" in caps.get(p, {}))
+        if nested:
+            self.logger.warning(
+                "Source index {}: the registration date sits inside nested {}, which "
+                "the candidate search cannot read. The gap-window filter and "
+                "nearest-registration ordering are off for this sweep; ties fall to "
+                "the entity key. Map the date at the top level to enable them "
+                "(docs/adding-a-dataset.md, section 2b).".format(source_index, ", ".join(nested))
+            )
         problems = []
         for field, need in sorted(wanted.items()):
             types = set(caps.get(field, {}))

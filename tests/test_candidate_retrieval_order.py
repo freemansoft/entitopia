@@ -220,3 +220,29 @@ def test_preflight_refuses_a_text_key_and_an_unmapped_field(caplog):
     assert not phase._check_sort_field_types("h", {"Facility ID": "sortable", "add_date": "date"})
     assert "Facility ID is mapped as text" in caplog.text
     assert "add_date is not mapped" in caplog.text
+
+
+def test_preflight_warns_but_proceeds_when_the_registration_date_is_nested(caplog):
+    # A nested date passes the type check, but the top-level query cannot see
+    # it, so the window and proximity ordering silently switch off. Nothing is
+    # lost, so the sweep runs; the operator is told why it gained nothing.
+    phase = _phase({"dot_number": ["keyword"], "reg": ["nested"], "reg.d": ["date"]})
+    assert phase._check_sort_field_types("c", {"dot_number": "sortable", "reg.d": "date"})
+    assert "nested reg" in caplog.text
+    assert "gap-window filter and nearest-registration ordering are off" in caplog.text
+
+
+def test_preflight_stays_quiet_for_a_date_under_a_plain_object(caplog):
+    phase = _phase({"dot_number": ["keyword"], "reg": ["object"], "reg.d": ["date"]})
+    assert phase._check_sort_field_types("c", {"dot_number": "sortable", "reg.d": "date"})
+    assert caplog.text == ""
+
+
+def test_preflight_asks_for_every_ancestor_of_a_deep_date():
+    es = _FieldCapsES({"k": ["keyword"], "a": ["object"], "a.b": ["nested"], "a.b.c": ["date"]})
+    seen = []
+    original = es.field_caps
+    es.field_caps = lambda index, fields: seen.append(fields) or original(index, fields)
+    phase = PhaseEntityMatch(es=es, project="DOT-Commercial", one_step="x", project_config=None)
+    phase._check_sort_field_types("c", {"k": "sortable", "a.b.c": "date"})
+    assert seen == [["a", "a.b", "a.b.c", "k"]]

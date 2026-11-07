@@ -100,7 +100,7 @@ What your mappings must provide, because the sweep refuses to start otherwise:
 - **`entity.key` sortable**: keyword or numeric, not `text`. A text key fails every candidate search.
 - **`lifecycle.registration_date` mapped as `date`**. On a keyword field the candidate sort fails every search, and the window filter compares text, silently dropping dates in any form other than ISO, such as FMCSA's legacy `12-SEP-25`.
 
-**Keep the registration date out of a nested object.** Elasticsearch cannot read a nested field from the top-level candidate query or its sort script without a nested query, which this search does not use. The startup check does not catch it, and nothing is lost: every candidate is kept and ties fall back to the key. But the dataset gets neither the window nor the proximity ordering. The shutdown date has no such limit, because it is read from the predecessor's own record in Python.
+**Keep the registration date out of a nested object.** Elasticsearch cannot read a nested field from the top-level candidate query or its sort script without a nested query, which this search does not use. Nothing is lost: every candidate is kept and ties fall back to the key. But the dataset gets neither the window nor the proximity ordering, so the sweep logs a warning at startup naming the nested object rather than refusing to run. Verified 2026-11-07 on a scratch nested index, where a candidate registered six years outside the window was still returned. The shutdown date has no such limit, because it is read from the predecessor's own record in Python.
 
 ### 3. Verify against a live cluster
 

@@ -49,7 +49,7 @@
         },
         "registration_date": {
           "type": "string",
-          "description": "Path on the candidate. Besides scoring, the candidate search filters to the scorer's gap window on it and breaks score ties by nearness to the shutdown, so it must be mapped as a date (the sweep refuses to start otherwise) and should not sit in a nested object, where the search cannot see it and both effects silently switch off. See docs/adding-a-dataset.md, section 2b."
+          "description": "Path on the candidate. Besides scoring, the candidate search filters to the scorer's gap window on it and breaks score ties by nearness to the shutdown, so it must be mapped as a date (the sweep refuses to start otherwise) and should not sit in a nested object, where the search cannot see it and both effects switch off (the sweep warns at startup). See docs/adding-a-dataset.md, section 2b."
         },
         "shutdown_reason": { "type": "string" }
       }
