@@ -74,7 +74,7 @@ Work through these, consulting the documents above for the specifics:
 
 ### 2a. If your data has no dates, say so in the config
 
-A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. A project that does declare `lifecycle` must map `registration_date` as a `date`, and every project's `entity.key` must be sortable (keyword or numeric, not text): the candidate query filters and orders on them, and the sweep refuses to start otherwise, because a range over a keyword date would silently retrieve only undated records. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. A project that does declare `lifecycle` must map `registration_date` as a `date`, and every project's `entity.key` must be sortable (keyword or numeric, not text): the candidate query filters and orders on them, and the sweep refuses to start otherwise, because on a keyword date the candidate sort fails every search, and the window filter compares text, silently dropping dates in any form other than ISO, such as FMCSA's legacy `12-SEP-25`. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
 
 Two things that example is worth reading for:
 

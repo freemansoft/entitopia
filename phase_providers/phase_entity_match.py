@@ -465,9 +465,12 @@ class PhaseEntityMatch:
         project, filters and orders by the registration date. A key mapped as
         text fails every search, which the sweep would count as thousands of
         lookup errors instead of one clear message. A registration date mapped
-        as keyword is worse: the range filter compares strings, matches
-        nothing in the expected form, and quietly retrieves only the
-        candidates with no date at all.
+        as keyword fails the same way, because the proximity sort reads it as
+        a date. Were that sort ever skipped, the range filter alone would be
+        quieter and worse: it compares strings, so ISO dates happen to pass
+        but any other form drops out. Measured 2026-11-07 on a keyword field:
+        "12-SEP-25", FMCSA's legacy form and inside the window, was excluded,
+        as was a date exactly on the lower bound.
 
         `wanted` maps field to "date" or "sortable" (see
         CandidateFinder.sort_fields). Returns True when every field passes.

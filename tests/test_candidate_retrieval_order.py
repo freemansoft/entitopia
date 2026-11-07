@@ -207,8 +207,9 @@ def test_preflight_passes_a_date_registration_and_keyword_key():
 
 
 def test_preflight_refuses_a_keyword_registration_date(caplog):
-    # The silent case: a range over keyword compares strings and the sweep
-    # would retrieve only candidates with no date at all.
+    # On keyword the proximity sort fails every search, and the range compares
+    # strings, silently dropping any date not written as ISO (FMCSA's legacy
+    # "12-SEP-25" form among them). One clear refusal beats either.
     phase = _phase({"dot_number": ["keyword"], "add_date": ["keyword"]})
     assert not phase._check_sort_field_types("carriers-000001", {"dot_number": "sortable", "add_date": "date"})
     assert "add_date is mapped as keyword, needs date" in caplog.text
