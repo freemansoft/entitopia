@@ -74,12 +74,33 @@ Work through these, consulting the documents above for the specifics:
 
 ### 2a. If your data has no dates, say so in the config
 
-A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. A project that does declare `lifecycle` must map `registration_date` as a `date`, and every project's `entity.key` must be sortable (keyword or numeric, not text): the candidate query filters and orders on them, and the sweep refuses to start otherwise, because on a keyword date the candidate sort fails every search, and the window filter compares text, silently dropping dates in any form other than ISO, such as FMCSA's legacy `12-SEP-25`. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,627 pairs, and no framework code.
 
 Two things that example is worth reading for:
 
 - **Its metrics deliberately avoid the other project's vocabulary.** No `canary`, no `triage`. Those name a fraud shape, and a duplicate sweep over hospital records is finding legitimate multi-record facilities. Importing the words would make resemblance read as an accusation.
 - **Its name analyzer stops generic words, chosen by measurement.** `HOSPITAL` appears in 52.7% of facility names. Leaving such words in produced thousands of pairs sharing nothing else; stopping them removed 59% of the low band without losing a single pair above 0.70.
+
+### 2b. How candidate retrieval uses your config
+
+The candidate search has no settings of its own. Its order and its filter are built from settings you already write, so a new dataset gets them by filling those in correctly:
+
+| Retrieval behaviour                                                  | Built from                                                    | When it is absent                   |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- |
+| Last tie-break, which makes the order the same on every load         | `entity.key`                                                  | Cannot be: `entity.key` is required |
+| Among equal scores, the registration nearest the shutdown goes first | `lifecycle.registration_date` and `lifecycle.shutdown_date`   | Skipped; ties fall to the key       |
+| Filter to the gap window, so capped slots go to emittable candidates | those dates plus `scoring.min_gap_days` and/or `max_gap_days` | No filter                           |
+
+They are derived rather than configurable on purpose. The window must equal the scorer's own gap gate: set separately, it could be made narrower than the gate and drop pairs the scorer would have kept, with nothing reporting it. The tie-break must end on a unique field to be total, and the entity key is the one unique field every project declares.
+
+Why the order matters at all: most predecessors match more records than `max_candidates`, and BM25 ties hundreds of name matches at the cutoff. Sorted on BM25 alone, Lucene broke those ties by segment layout, which changes on every load; measured on unchanged DOT-Commercial data, 2026-11-06, a reload lost 2,234 pairs and gained 1,793, all 16 lost pairs scoring ≥ 0.60 among them.
+
+What your mappings must provide, because the sweep refuses to start otherwise:
+
+- **`entity.key` sortable**: keyword or numeric, not `text`. A text key fails every candidate search.
+- **`lifecycle.registration_date` mapped as `date`**. On a keyword field the candidate sort fails every search, and the window filter compares text, silently dropping dates in any form other than ISO, such as FMCSA's legacy `12-SEP-25`.
+
+**Keep the registration date out of a nested object.** Elasticsearch cannot read a nested field from the top-level candidate query or its sort script without a nested query, which this search does not use. The startup check does not catch it, and nothing is lost: every candidate is kept and ties fall back to the key. But the dataset gets neither the window nor the proximity ordering. The shutdown date has no such limit, because it is read from the predecessor's own record in Python.
 
 ### 3. Verify against a live cluster
 
