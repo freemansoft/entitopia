@@ -23,7 +23,7 @@
       "properties": {
         "key": {
           "type": "string",
-          "description": "The column this project calls its entity's identity. Framework code cannot know it, which is why it is configuration."
+          "description": "The column this project calls its entity's identity. Framework code cannot know it, which is why it is configuration. Also the last tie-break of the candidate search, which makes its order the same on every load, so it must be mapped sortable (keyword or numeric, not text); the sweep refuses to start otherwise. See docs/adding-a-dataset.md, section 2b."
         },
         "key_label": {
           "type": "string",
@@ -43,8 +43,14 @@
       "required": ["shutdown_date", "registration_date"],
       "description": "OPTIONAL. Its absence is how a duplicate-detection project is expressed: a dataset with no dated events can find that two records resemble each other but cannot claim one succeeded the other. Present, it is the single source of the dates both the temporal signal and the emitted gap_days are measured between — they used to hold separate copies with nothing checking they agreed.",
       "properties": {
-        "shutdown_date": { "type": "string" },
-        "registration_date": { "type": "string" },
+        "shutdown_date": {
+          "type": "string",
+          "description": "Path on the predecessor, read in Python, so it may be nested or keyword-mapped. The most recent parseable date is used. Also orders and bounds the candidate search: see registration_date."
+        },
+        "registration_date": {
+          "type": "string",
+          "description": "Path on the candidate. Besides scoring, the candidate search filters to the scorer's gap window on it and breaks score ties by nearness to the shutdown, so it must be mapped as a date (the sweep refuses to start otherwise) and should not sit in a nested object, where the search cannot see it and both effects switch off (the sweep warns at startup). See docs/adding-a-dataset.md, section 2b."
+        },
         "shutdown_reason": { "type": "string" }
       }
     },
@@ -304,9 +310,12 @@
         "max_pairs_per_predecessor": { "type": "integer", "minimum": 1 },
         "min_gap_days": {
           "type": "number",
-          "description": "Requires a lifecycle block to have any effect. Set without one, the gate is silently off — an operator's tightening that does nothing."
+          "description": "Requires a lifecycle block to have any effect. Set without one, the gate is silently off — an operator's tightening that does nothing. With max_gap_days, also applied as a filter on the candidate search, so the capped candidate slots go to records the gate could pass."
         },
-        "max_gap_days": { "type": "number" }
+        "max_gap_days": {
+          "type": "number",
+          "description": "Upper bound of the same gap gate as min_gap_days, and applied to the candidate search the same way."
+        }
       }
     }
   }

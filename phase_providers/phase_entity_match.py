@@ -45,6 +45,14 @@ BULK_THREAD_COUNT = 2
 # and discarding the whole run over one malformed record would be worse. At a
 # tenth of every comparison the cause has stopped being individual records.
 MAX_SCORING_ERROR_SHARE = 0.10
+# Field types Elasticsearch sorts from doc values. text is absent because it
+# needs fielddata, which is off by default, so a text entity key fails every
+# candidate search.
+_SORTABLE_TYPES = frozenset({
+    "keyword", "constant_keyword", "long", "integer", "short", "byte",
+    "unsigned_long", "double", "float", "half_float", "scaled_float",
+    "date", "date_nanos", "boolean", "ip", "version",
+})
 
 
 @dataclasses.dataclass(frozen=True)
@@ -197,13 +205,14 @@ class PhaseEntityMatch:
             config.signals,
             entity_config=self.entity_config,
             lifecycle=self.lifecycle,
+            scoring_config=config.scoring,
         )
         selector = PopulationSelector(self.es, source_index, config.population)
 
         ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
         )
-        if not ok:
+        if not ok or not self._check_sort_field_types(source_index, finder.sort_fields()):
             return
 
         ctx = self._build_context(source_index, config.signals, config)
@@ -448,6 +457,68 @@ class PhaseEntityMatch:
             )
             return False, resolved_index, stored_fingerprint
         return True, resolved_index, stored_fingerprint
+
+    def _check_sort_field_types(self, source_index, wanted):
+        """Refuse to sweep when a field the candidate search sorts or filters on has the wrong type.
+
+        The candidate search orders by the entity key and, for a lifecycle
+        project, filters and orders by the registration date. A key mapped as
+        text fails every search, which the sweep would count as thousands of
+        lookup errors instead of one clear message. A registration date mapped
+        as keyword fails the same way, because the proximity sort reads it as
+        a date. Were that sort ever skipped, the range filter alone would be
+        quieter and worse: it compares strings, so ISO dates happen to pass
+        but any other form drops out. Measured 2026-11-07 on a keyword field:
+        "12-SEP-25", FMCSA's legacy form and inside the window, was excluded,
+        as was a date exactly on the lower bound.
+
+        A registration date inside a nested object passes the type check but
+        is only warned about, not refused. The top-level candidate query and
+        its sort script cannot see a nested field, so every candidate reads as
+        undated: the window keeps them all and the proximity sort ties them
+        all, and ordering falls to the key. Verified 2026-11-07 on a scratch
+        nested index, where a candidate registered six years outside the
+        window was still returned. Nothing is lost, which is why it does not
+        stop the sweep, but the dataset silently gets neither improvement.
+
+        `wanted` maps field to "date" or "sortable" (see
+        CandidateFinder.sort_fields). Returns True when every field passes.
+        """
+        # Parent paths ride along in the same call: field_caps reports an
+        # object's own type, so a nested ancestor shows up as "nested".
+        parents = {
+            ".".join(field.split(".")[:depth])
+            for field, need in wanted.items()
+            if need == "date"
+            for depth in range(1, field.count(".") + 1)
+        }
+        caps = self.es.field_caps(index=source_index, fields=sorted(set(wanted) | parents)).get("fields", {})
+        nested = sorted(p for p in parents if "nested" in caps.get(p, {}))
+        if nested:
+            self.logger.warning(
+                "Source index {}: the registration date sits inside nested {}, which "
+                "the candidate search cannot read. The gap-window filter and "
+                "nearest-registration ordering are off for this sweep; ties fall to "
+                "the entity key. Map the date at the top level to enable them "
+                "(docs/adding-a-dataset.md, section 2b).".format(source_index, ", ".join(nested))
+            )
+        problems = []
+        for field, need in sorted(wanted.items()):
+            types = set(caps.get(field, {}))
+            allowed = {"date", "date_nanos"} if need == "date" else _SORTABLE_TYPES
+            if not types:
+                problems.append("{} is not mapped".format(field))
+            elif not types <= allowed:
+                problems.append("{} is mapped as {}, needs {}".format(field, "/".join(sorted(types)), need))
+        if problems:
+            self.logger.error(
+                "Source index {} cannot order or bound the candidate search: {}. "
+                "Fix the field mapping in index-mappings.json and reload, or "
+                "correct entity.key / lifecycle.registration_date in "
+                "entity-match.json.".format(source_index, "; ".join(problems))
+            )
+            return False
+        return True
 
     def _stamp_provenance(self, target_index, provenance):
         """Record on the candidates index which index's tokens its pairs were scored from.

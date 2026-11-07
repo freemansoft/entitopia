@@ -9,12 +9,21 @@ scoring always sees exactly what the index sees — no risk of a local
 double-metaphone implementation drifting from the plugin's.
 """
 
+import datetime
 import logging
 
-from matching.documents import EntityDoc
-from matching.signals import build_signal
+from matching.documents import EntityDoc, read_path
+from matching.signals import _latest_date, build_signal
 
 logger = logging.getLogger(__name__)
+
+# Distance in milliseconds between a candidate's registration and the
+# predecessor's shutdown. A candidate with no registration date sorts after
+# every dated one rather than failing the script.
+_PROXIMITY_SCRIPT = (
+    "if (doc[params.field].size() == 0) { return Long.MAX_VALUE; } "
+    "return Math.abs(doc[params.field].value.toInstant().toEpochMilli() - params.origin);"
+)
 
 
 class CandidateFinder:
@@ -35,6 +44,7 @@ class CandidateFinder:
         signal_configs,
         entity_config=None,
         lifecycle=None,
+        scoring_config=None,
     ):
         """Bind to the ES client/index and the configured signals.
 
@@ -59,6 +69,102 @@ class CandidateFinder:
         # candidate query: the signals are built from the whole config list, so
         # a temporal entry is constructed here too and would refuse without it.
         self.signals = [build_signal(c, lifecycle) for c in self.signal_configs]
+        # Kept to order and bound retrieval by the same dates and window the
+        # scorer judges a pair by; see _window_filter and _sort.
+        self.lifecycle = lifecycle
+        self.min_gap_days = getattr(scoring_config, "min_gap_days", None)
+        self.max_gap_days = getattr(scoring_config, "max_gap_days", None)
+
+    def sort_fields(self) -> dict[str, str]:
+        """Fields the retrieval query sorts or filters on, with the type each needs.
+
+        For the sweep's preflight. The window is a range query and the
+        proximity sort reads a date value, so on a keyword field the range
+        would compare strings and drop real candidates without an error.
+        "sortable" means any type Elasticsearch can sort without fielddata.
+        """
+        fields = {self.entity_key_field: "sortable"}
+        if self.lifecycle is not None:
+            fields[self.lifecycle.registration_date] = "date"
+        return fields
+
+    def _shutdown(self, pred_source):
+        """The predecessor's most recent shutdown, read exactly as the scorer reads it."""
+        if self.lifecycle is None:
+            return None
+        return _latest_date(read_path(pred_source, self.lifecycle.shutdown_date))
+
+    def _window_filter(self, shutdown):
+        """The scorer's gap window as a query filter, or [] when there is none.
+
+        The scorer drops any pair whose successor registered outside
+        [min_gap_days, max_gap_days] of the shutdown, so every candidate
+        outside it takes a slot under max_candidates and can never be emitted.
+        Measured 2026-11-06 on DOT-Commercial, applying it cut the median
+        predecessor's seed hits from 14,128 to 1,095.
+
+        It must keep everything the scorer would keep, or it turns a precision
+        gate into a recall loss: bounds are inclusive and rounded to whole
+        days because the scorer counts whole days, and a candidate with no
+        registration date is kept because the scorer reads that as "not
+        evaluable" and lets it through.
+        """
+        if shutdown is None or (self.min_gap_days is None and self.max_gap_days is None):
+            return []
+        bounds = {}
+        if self.min_gap_days is not None:
+            bounds["gte"] = (shutdown + datetime.timedelta(days=self.min_gap_days)).isoformat() + "||/d"
+        if self.max_gap_days is not None:
+            bounds["lte"] = (shutdown + datetime.timedelta(days=self.max_gap_days)).isoformat() + "||/d"
+        field = self.lifecycle.registration_date
+        return [
+            {
+                "bool": {
+                    "should": [
+                        {"range": {field: bounds}},
+                        {"bool": {"must_not": {"exists": {"field": field}}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        ]
+
+    def _sort(self, shutdown):
+        """A total order for the candidate search, so the cap cuts the same place every load.
+
+        Sorting on BM25 alone left ties to Lucene's internal document order,
+        which follows segment layout and changes on every load. Measured
+        2026-11-06: a reload of unchanged data lost 2,234 pairs and gained
+        1,793, and all 16 lost pairs scoring >= 0.60 sat in a block of 104 to
+        619 equal scores straddling the 500th slot.
+
+        Within a tie, the candidate registered nearest the shutdown goes first,
+        because that is what the temporal signal scores highest, so the cap
+        keeps the likelier successor. The entity key comes last because it is
+        the one field every project has and it is unique, which is what makes
+        the order total.
+        """
+        sort = [{"_score": {"order": "desc"}}]
+        if shutdown is not None:
+            origin = datetime.datetime.combine(shutdown, datetime.time(), tzinfo=datetime.UTC)
+            sort.append(
+                {
+                    "_script": {
+                        "type": "number",
+                        "order": "asc",
+                        "script": {
+                            "lang": "painless",
+                            "source": _PROXIMITY_SCRIPT,
+                            "params": {
+                                "field": self.lifecycle.registration_date,
+                                "origin": int(origin.timestamp() * 1000),
+                            },
+                        },
+                    }
+                }
+            )
+        sort.append({self.entity_key_field: {"order": "asc", "missing": "_last"}})
+        return sort
 
     def scored_subfields(self) -> set[str]:
         """Every "field.subfield" the configured signals read tokens from."""
@@ -109,16 +215,22 @@ class CandidateFinder:
             logger.debug("No seed clauses for predecessor %s", pred_id)
             return None, [], False
 
+        shutdown = self._shutdown(pred_source)
+        query = {
+            "bool": {
+                "should": clauses,
+                "minimum_should_match": 1,
+                "must_not": [{"ids": {"values": [pred_id]}}],
+            }
+        }
+        window = self._window_filter(shutdown)
+        if window:
+            query["bool"]["filter"] = window
         response = self.es.search(
             index=self.source_index,
             size=self.max_candidates,
-            query={
-                "bool": {
-                    "should": clauses,
-                    "minimum_should_match": 1,
-                    "must_not": [{"ids": {"values": [pred_id]}}],
-                }
-            },
+            query=query,
+            sort=self._sort(shutdown),
             track_total_hits=False,
         )
         hits = response["hits"]["hits"]

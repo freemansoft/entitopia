@@ -81,6 +81,27 @@ Two things that example is worth reading for:
 - **Its metrics deliberately avoid the other project's vocabulary.** No `canary`, no `triage`. Those name a fraud shape, and a duplicate sweep over hospital records is finding legitimate multi-record facilities. Importing the words would make resemblance read as an accusation.
 - **Its name analyzer stops generic words, chosen by measurement.** `HOSPITAL` appears in 52.7% of facility names. Leaving such words in produced thousands of pairs sharing nothing else; stopping them removed 59% of the low band without losing a single pair above 0.70.
 
+### 2b. How candidate retrieval uses your config
+
+The candidate search has no settings of its own. Its order and its filter are built from settings you already write, so a new dataset gets them by filling those in correctly:
+
+| Retrieval behaviour                                                  | Built from                                                    | When it is absent                   |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------- |
+| Last tie-break, which makes the order the same on every load         | `entity.key`                                                  | Cannot be: `entity.key` is required |
+| Among equal scores, the registration nearest the shutdown goes first | `lifecycle.registration_date` and `lifecycle.shutdown_date`   | Skipped; ties fall to the key       |
+| Filter to the gap window, so capped slots go to emittable candidates | those dates plus `scoring.min_gap_days` and/or `max_gap_days` | No filter                           |
+
+They are derived rather than configurable on purpose. The window must equal the scorer's own gap gate: set separately, it could be made narrower than the gate and drop pairs the scorer would have kept, with nothing reporting it. The tie-break must end on a unique field to be total, and the entity key is the one unique field every project declares.
+
+Why the order matters at all: most predecessors match more records than `max_candidates`, and BM25 ties hundreds of name matches at the cutoff. Sorted on BM25 alone, Lucene broke those ties by segment layout, which changes on every load; measured on unchanged DOT-Commercial data, 2026-11-06, a reload lost 2,234 pairs and gained 1,793, all 16 lost pairs scoring ≥ 0.60 among them.
+
+What your mappings must provide, because the sweep refuses to start otherwise:
+
+- **`entity.key` sortable**: keyword or numeric, not `text`. A text key fails every candidate search.
+- **`lifecycle.registration_date` mapped as `date`**. On a keyword field the candidate sort fails every search, and the window filter compares text, silently dropping dates in any form other than ISO, such as FMCSA's legacy `12-SEP-25`.
+
+**Keep the registration date out of a nested object.** Elasticsearch cannot read a nested field from the top-level candidate query or its sort script without a nested query, which this search does not use. Nothing is lost: every candidate is kept and ties fall back to the key. But the dataset gets neither the window nor the proximity ordering, so the sweep logs a warning at startup naming the nested object rather than refusing to run. Verified 2026-11-07 on a scratch nested index, where a candidate registered six years outside the window was still returned. The shutdown date has no such limit, because it is read from the predecessor's own record in Python.
+
 ### 3. Verify against a live cluster
 
 Configuration that parses can be entirely inert. The commands are in the top-level README; the discipline is: **after every change, ask the cluster what it actually did** rather than trusting that the config was accepted.
@@ -100,7 +121,7 @@ These are decisions, not lookups. They come up on every dataset.
 **But a field too weak to seed on is not the same as a field that should not seed.** These are opposite failures and both are real:
 
 - Seeding on a _common_ value floods the candidate set with noise. That is the rule above.
-- **Declining to seed on a rare, decisive one silently caps recall at zero for an entire fraud profile.** A shared vehicle identifier was scored but not seeded, so an entity that changed its name, address and phone while keeping its equipment could never be retrieved — no threshold, weight, or `max_candidates` value would surface it, because the query never returned the record at all. Raising `max_candidates` from 100 to 500 across a full sweep cost 4× the runtime and produced **zero** new top-tier findings, because relevance ranking already had the reachable ones near the top. The unreachable ones stayed unreachable.
+- **Declining to seed on a rare, decisive one silently caps recall at zero for an entire fraud profile.** A shared vehicle identifier was scored but not seeded, so an entity that changed its name, address and phone while keeping its equipment could never be retrieved — no threshold, weight, or `max_candidates` value would surface it, because the query never returned the record at all. Raising `max_candidates` from 100 to 500 across a full sweep cost 4× the runtime and produced **zero** new top-tier findings, because relevance ranking already had the reachable ones near the top. The unreachable ones stayed unreachable. (Near the top, but not all inside it: BM25 ties hundreds of name matches at the cutoff, and before the query sorted on a total order, which side of 500 a candidate landed on changed from one load to the next. Measured on unchanged data, 2026-11-06: 16 pairs scoring ≥ 0.60 appeared in one load's sweep and not the next.)
 
 The test is not "is this field rare enough to rank well" but **"if two records shared only this field, would I want to see the pair?"** If yes, it must seed, regardless of what else it does.
 
