@@ -248,12 +248,13 @@ actually running the pipeline against a live cluster, which is what
   small synthetic CSVs with just the columns each project's
   `index-mappings.json`/`enrichment-policies.json`/`pipelines.json`
   reference, which is enough to exercise every phase.
-- **Rerunning against an already-populated cluster is not clean.**
-  `index-create` on a date-suffixed index (`{now/d}`) that already
-  exists from an earlier run today logs a `resource_already_exists_exception`
-  warning and continues (alias/mapping/populate still proceed) — this
-  is expected idempotent behavior, not a failure, as long as you're
-  fine re-upserting the same `_id`s.
+- **A same-day rerun creates a new index.** `index-create` on a
+  date-suffixed index (`{now/d}`) that already exists from an earlier
+  run today takes the next generation (`-000002`, `-000003`, ...) and
+  moves the alias to it; later phases write to today's newest
+  generation. Earlier generations are left in place, so delete them
+  once they are no longer needed for comparison. A refused create is
+  now a run failure, not a warning.
 - **`DOT-Commercial/configuration/crashes` and `inspections` have no
   `index-mappings.json` or `index-settings.json`.** Only `index-config.json`
   exists for those two steps; `index-map` silently no-ops (config load

@@ -48,9 +48,10 @@ Ask the user for whatever isn't already clear:
    examples.
 
 If the sweep hasn't run yet, stop here: running it is a cluster write and the
-user's call. Point out the same-day merge hazard first. A sweep run on a date
-that already has `<prefix>-<today>-000001` merges into it and unions two
-configs.
+user's call. A sweep run on a date that already has
+`<prefix>-<today>-000001` lands in the next generation (`-000002`) and moves
+the alias, so the candidate is the newest generation, not `-000001`. Read the
+index name off the alias rather than assuming the suffix.
 
 ## The chain
 

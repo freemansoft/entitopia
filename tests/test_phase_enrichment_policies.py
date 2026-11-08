@@ -70,6 +70,9 @@ class FakeEs:
     def __init__(self, counts):
         self.counts = counts
         self.request_timeout = None
+        # No generations exist, so each policy keeps the index it was
+        # configured with; tests/test_dated_index_generations.py covers the rest.
+        self.indices = SimpleNamespace(get=lambda **kwargs: {})
 
     def options(self, request_timeout):
         self.request_timeout = request_timeout

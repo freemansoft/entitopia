@@ -75,7 +75,9 @@ class PhaseEnrichmentPolicies:
         failed = []
 
         for phase_config in all_phase_config:
-            elasticsearch_utils.replace_match_indicies_with_now_version(phase_config)
+            phase_config.match.indices = elasticsearch_utils.resolve_current_index(
+                self.es.indices, phase_config.match.indices
+            )
             enrich_client = client.EnrichClient(self.es)
 
             match_json = json.dumps(phase_config.match, default=vars)

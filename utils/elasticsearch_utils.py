@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 
 import requests
@@ -6,6 +7,10 @@ from elasticsearch import Elasticsearch, NotFoundError
 
 from utils import elasticsearch_utils, file_utils
 from utils.custom_logging_formatter import CustomFormatter
+
+# The trailing number on a dated index name, e.g. the 000001 in
+# carriers-2026.11.08-000001. See resolve_new_index.
+_GENERATION = re.compile(r"^(?P<stem>.*)-(?P<generation>\d+)$")
 
 
 def connect_to_es(es_connection_info):
@@ -92,33 +97,84 @@ def attach_alias(indices_client, index, alias, retain_existing=False):
     return indices_client.update_aliases(actions=actions)
 
 
-def replace_index_with_now_version(config):
-    # datetime.now().strftime('%Y.%m.%d-%H%m%S')
-    # datetime.now().strftime('%Y.%m.%d')
-    if "{now/d}" in config.index:
-        config.index = config.index.replace(
-            "{now/d}", datetime.now().strftime("%Y.%m.%d")
-        )
-    elif "{now/s}" in config.index:
-        config.index = config.index.replace(
-            "{now/s}", datetime.now().strftime("%Y.%m.%d")
-        )
+def _substitute_date(template):
+    """Replace the date placeholder with today's date.
+
+    `{now/s}` is still accepted, and still resolves to the day stamp, because
+    the code this replaced handled it that way and a config may rely on it.
+    """
+    today = datetime.now().strftime("%Y.%m.%d")
+    return template.replace("{now/d}", today).replace("{now/s}", today)
 
 
-def replace_match_indicies_with_now_version(config):
-    logger = logging.getLogger(__name__)
+def _generations(indices_client, name):
+    """Existing indexes that differ from `name` only in the trailing number.
 
-    # datetime.now().strftime('%Y.%m.%d-%H%m%S')
-    # datetime.now().strftime('%Y.%m.%d')
-    logger.debug("looking for now/d instances in {}".format(config.match.indices))
-    if "{now/d}" in config.match.indices:
-        config.match.indices = config.match.indices.replace(
-            "{now/d}", datetime.now().strftime("%Y.%m.%d")
-        )
-    elif "{now/s}" in config.match.indices:
-        config.match.indices = config.match.indices.replace(
-            "{now/s}", datetime.now().strftime("%Y.%m.%d")
-        )
+    Returns (stem, width, {generation: index}), or (None, 0, {}) for a name with
+    no trailing number. Filtered with an exact pattern after the wildcard
+    lookup because the wildcard alone also matches hand-made copies such as
+    `chameleon-candidates-2026.11.06-pretiebreak-000001`, a clone kept aside
+    for comparison, which is not a generation and must not be counted as one.
+    """
+    match = _GENERATION.match(name)
+    if not match:
+        return None, 0, {}
+    stem, digits = match.group("stem"), match.group("generation")
+    existing = indices_client.get(
+        index=stem + "-*", allow_no_indices=True, ignore_unavailable=True, expand_wildcards="all"
+    )
+    pattern = re.compile(re.escape(stem) + r"-(\d+)$")
+    found = {}
+    for index in existing:
+        hit = pattern.match(index)
+        if hit:
+            found[int(hit.group(1))] = index
+    return stem, len(digits), found
+
+
+def resolve_new_index(indices_client, template):
+    """The name index-create should create: today's, at the next free generation.
+
+    Exists because every index-config.json names its index
+    `<step>-{now/d}-000001`, so two runs on one day used to resolve to one
+    name. The second create was refused with resource_already_exists_exception,
+    which was logged as a warning, and every later phase wrote into the first
+    run's index. For a sweep that left a union of both runs under one name: new
+    pairs overwrote matching _ids and pairs the new run dropped stayed behind.
+
+    Taking the next generation instead gives the rerun a fresh index with the
+    current settings and leaves the earlier one intact to compare against. A
+    name with no trailing number has no next generation, so an existing one
+    refuses rather than falling back to the reuse this exists to prevent.
+    """
+    name = _substitute_date(template)
+    stem, width, found = _generations(indices_client, name)
+    if stem is None:
+        if indices_client.get(index=name, allow_no_indices=True, ignore_unavailable=True):
+            raise RuntimeError(
+                "Index {} already exists and its name has no trailing generation "
+                "number to advance. Delete it, or end the configured name in "
+                "-000001.".format(name)
+            )
+        return name
+    if not found:
+        return name
+    return "{}-{:0{}d}".format(stem, max(found) + 1, width)
+
+
+def resolve_current_index(indices_client, template):
+    """The index a phase after index-create should read or write: today's newest.
+
+    The counterpart to resolve_new_index, for index-map, index-populate,
+    entity-match and the enrich policies. Each phase resolves the name on its
+    own from the same template, so they agree with create only if they look up
+    what create made rather than re-deriving the configured name. Falls back to
+    the configured name when nothing exists yet, which is what these phases
+    targeted before generations existed.
+    """
+    name = _substitute_date(template)
+    _, _, found = _generations(indices_client, name)
+    return found[max(found)] if found else name
 
 
 def main():

@@ -38,6 +38,10 @@ class FakeIndicesClient:
         self.refuse = refuse
         self.calls = []
 
+    def get(self, **kwargs):
+        # No generations exist, so the configured index name stands.
+        return {}
+
     def put_mapping(self, index, properties):
         self.calls.append((index, properties))
         if self.refuse:

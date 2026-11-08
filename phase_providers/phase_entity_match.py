@@ -187,7 +187,9 @@ class PhaseEntityMatch:
         if not index_config:
             self.logger.error("No index-config.json for step {}".format(self.one_step))
             return
-        elasticsearch_utils.replace_index_with_now_version(index_config)
+        index_config.index = elasticsearch_utils.resolve_current_index(
+            self.es.indices, index_config.index
+        )
 
         source_index = config.source_index
         # Overrides the __init__ default. Held on the instance because

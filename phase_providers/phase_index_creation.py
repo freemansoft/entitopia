@@ -67,8 +67,10 @@ class PhaseindexCreate:
         self.logger.debug("loaded config {}".format(phase_config))
 
         if phase_config:
-            elasticsearch_utils.replace_index_with_now_version(phase_config)
             indiciesClient = client.IndicesClient(self.es)
+            phase_config.index = elasticsearch_utils.resolve_new_index(
+                indiciesClient, phase_config.index
+            )
 
             self.logger.info("Creating index {} ".format(phase_config.index))
             settings = self.get_index_settings()
@@ -95,7 +97,17 @@ class PhaseindexCreate:
                     )
                 )
             except BadRequestError as e:
-                self.logger.warning("Failed to create or update index: {}".format(e))
+                # Raised, not logged. This was a warning because the usual
+                # cause was a same-day rerun finding its own index already
+                # there; resolve_new_index now gives a rerun a fresh name, so a
+                # refusal means the settings themselves were rejected. Carrying
+                # on would let index-populate auto-create the index with dynamic
+                # mappings and none of the analyzers.
+                raise RuntimeError(
+                    "Elasticsearch refused to create index {}: {}".format(
+                        phase_config.index, e
+                    )
+                ) from e
 
             # Retention is opt-in per run (`--retain-aliases`) rather than
             # configurable per step: no step wants a fan-out alias, and a config

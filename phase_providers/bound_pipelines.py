@@ -132,17 +132,41 @@ def _step_phases(project_config, step):
     return []
 
 
-def configured_policies(project, project_config, step):
-    """(name, match dict) for each policy the step configures, with today's index substituted.
+def _indexes_this_run_creates(project, project_config):
+    """The configured index names of every step in this run that has index-create."""
+    created = set()
+    for one_step in getattr(project_config, "steps", []):
+        if "index-create" not in one_step.phases:
+            continue
+        config = file_utils.load_from_project_file(
+            project, project_config.configurationDir, one_step.name, "index-config.json"
+        )
+        if config:
+            created.add(config.index)
+    return created
 
-    Uses the same substitution the phase does, so the prediction compares
-    against exactly the index name the run would ask for.
+
+def configured_policies(es, project, project_config, step):
+    """(name, match dict) for each policy the step configures, with the index the run will ask for.
+
+    The policy phase reads the newest generation of today's index, so when an
+    earlier step in this same run creates that index, the policy will be asked
+    for the generation that create is about to make, not the one that exists
+    now. A same-day reload is where they differ: predicting the existing
+    generation would miss the block and let the run stop midway.
     """
     configs = file_utils.load_from_project_file(
         project, project_config.configurationDir, step, "enrichment-policies.json"
     )
+    created = _indexes_this_run_creates(project, project_config)
     for config in configs or []:
-        elasticsearch_utils.replace_match_indicies_with_now_version(config)
+        template = config.match.indices
+        resolve = (
+            elasticsearch_utils.resolve_new_index
+            if template in created
+            else elasticsearch_utils.resolve_current_index
+        )
+        config.match.indices = resolve(es.indices, template)
         yield config.name, json.loads(json.dumps(config.match, default=vars))
 
 
@@ -162,7 +186,7 @@ def predict_blocked(es, project, project_config):
         if "enrichment-policies" not in one_step.phases:
             continue
         step_pipeline = _step_pipeline(project, project_config, one_step.name)
-        for name, wanted in configured_policies(project, project_config, one_step.name):
+        for name, wanted in configured_policies(es, project, project_config, one_step.name):
             found = assess(name, one_step.name, one_step.phases, wanted, _existing_match(es, name),
                            pipelines, step_pipeline)
             if found:

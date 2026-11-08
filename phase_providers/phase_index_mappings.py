@@ -30,8 +30,10 @@ class PhaseIndexMappings:
         self.logger.debug("loaded config {}".format(index_mapping_config))
 
         if index_mapping_config:
-            elasticsearch_utils.replace_index_with_now_version(index_mapping_config)
             indiciesClient = client.IndicesClient(self.es)
+            index_mapping_config.index = elasticsearch_utils.resolve_current_index(
+                indiciesClient, index_mapping_config.index
+            )
             self.logger.debug("Processing {}".format(index_mapping_config))
             properties_json = json.dumps(
                 index_mapping_config.mappings.properties, default=vars
