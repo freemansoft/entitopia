@@ -1,0 +1,29 @@
+{
+  "skill_name": "entitopia-blog-writing",
+  "evals": [
+    {
+      "id": 0,
+      "name": "review-article-2",
+      "prompt": "examine the blog article docs/blog/2026-08-30-02-tuning-an-entity-matcher.md for style, substance, complexity and wording to make it clearer. just give me the review, don't edit anything yet",
+      "expected_output": "A review, no edits. Opens with orientation, then findings ranked by harm with line references and a proposed fix each; any flagged-entity name ranked first; figures checked against the README, code or cluster rather than the outline; scores never described as probabilities; prose word count reported against the outline's target; em dash and first-person counts reported; ends by asking which findings to apply.",
+      "files": ["docs/blog/2026-08-30-02-tuning-an-entity-matcher.md"]
+    },
+    {
+      "id": 1,
+      "name": "check-article-3-still-valid",
+      "prompt": "article 3 in docs/blog was drafted back in August. is it still accurate against the repo as it is now?",
+      "expected_output": "Finds the draft's baseline commit, walks the outline's Backed by column against main, and reports per claim: still true, true but stale, no longer true, with the no-longer-true list first. Catches at least that the README now lists eight hazards and that the 36,788 of 5,647,567 figure the draft quotes is recorded as retracted in the README. No edits.",
+      "files": ["docs/blog/2026-08-30-03-configuration-driven-matching.md"]
+    },
+    {
+      "id": 2,
+      "name": "tighten-article-4-title-and-headings",
+      "prompt": "the title of docs/blog/2026-08-30-04-closing-in-with-an-llm.md and a couple of its section headings read like verdicts or are hard to parse. tighten the title and the headings, and keep anything that has to match the title in sync",
+      "expected_output": "Works on a branch. Title and headings each state one concrete finding the section supports, with no figure changed and no hedge lost; the title gets a paraphrase test; the outline's article table is updated to the new title; first sentences adjusted where a heading now repeats them; prints the changed prose for the user to read and does not commit; verification output reported.",
+      "files": [
+        "docs/blog/2026-08-30-04-closing-in-with-an-llm.md",
+        "docs/blog/2026-08-30-blog-series-outline.md"
+      ]
+    }
+  ]
+}
