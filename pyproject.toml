@@ -10,7 +10,11 @@
 #     .venv/bin/python -m ruff format .
 
 [tool.ruff]
-target-version = "py311"
+# The project runs on Python 3.15 (.python-version). ruff 0.16.1 supports a
+# py315 target only under `preview`, which also switches on unstable rules and
+# warns on every run, so this targets its newest stable version. Raise it to
+# py315 once a ruff upgrade supports it without preview.
+target-version = "py314"
 line-length = 100
 exclude = [".venv", "__pycache__", ".superpowers"]
 
@@ -70,7 +74,7 @@ max-positional-args = 10
 
 [tool.ruff.lint.per-file-ignores]
 # The Python version gate at the top of this file must run BEFORE importing
-# anything that needs 3.11+ syntax, so the remaining imports cannot sit at the
+# anything that needs newer syntax, so the remaining imports cannot sit at the
 # top of the module. That ordering is the point of the check.
 "execute_project.py" = ["E402"]
 # README.md documents running scripts/ files directly

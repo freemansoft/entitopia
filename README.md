@@ -486,7 +486,7 @@ curl -s "http://localhost:9200/_cat/indices/hospitals*?h=index,docs.count&s=inde
 
 1. Start the local Elasticsearch (see above): `docker compose -f docker/compose.yml up -d --build`
 1. Clone this repo
-1. Requires Python 3.11 or higher
+1. Requires Python 3.15 or higher (`.python-version`)
 1. Create the virtualenv and install dependencies: `bash dependencies.sh`
    - Everything runs from `.venv`; never invoke the system Python.
 1. Create an `es_config.json` from `es_config_template.json`

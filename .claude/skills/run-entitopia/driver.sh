@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Driver for entitopia: brings up (or reuses) the project's Elasticsearch cluster with the
-# required analysis plugins, builds a Python 3.11+ venv, writes tiny synthetic
+# required analysis plugins, builds a Python 3.15 venv, writes tiny synthetic
 # fixture data (the real CMS/DOT download URLs go stale, see SKILL.md
 # Gotchas), runs the CSV -> Elasticsearch pipeline, and verifies documents
 # landed. Run from the repo root: .claude/skills/run-entitopia/driver.sh <cmd>

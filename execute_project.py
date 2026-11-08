@@ -1,6 +1,6 @@
 import sys
 
-MINIMUM_PYTHON_VERSION = (3, 11)
+MINIMUM_PYTHON_VERSION = (3, 15)
 
 if sys.version_info < MINIMUM_PYTHON_VERSION:
     sys.exit(

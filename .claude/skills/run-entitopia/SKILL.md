@@ -35,13 +35,13 @@ decisions in order, plus the hazards section of the top-level `README.md`.
   both example projects require them; without the plugins, index
   creation/mapping still "succeeds" but the custom analyzers silently
   fail with a 400 that's logged and swallowed).
-- Python 3.11+ (enforced at the top of `execute_project.py` and by
-  `dependencies.sh`; a `.python-version` pins `3.12`). This repo was
-  tested with Python 3.11.
+- Python 3.15 (`.python-version`; enforced at the top of
+  `execute_project.py` and by `dependencies.sh`). Homebrew installs it as
+  `python3.15`.
 
 ```bash
 docker --version
-python3 --version      # >= 3.11, used only to create .venv
+python3.15 --version   # used only to create .venv
 ```
 
 ## Setup
@@ -79,9 +79,9 @@ Everything runs from `.venv`; `bash dependencies.sh` creates it and installs
 pinned dependencies. Never invoke the system Python.
 
 ```bash
-bash dependencies.sh   # creates .venv and installs pinned deps
+PYTHON=python3.15 bash dependencies.sh   # creates .venv and installs pinned deps
 source .venv/bin/activate
-bash dependencies.sh          # fails fast on Python < 3.11
+bash dependencies.sh          # fails fast on Python < 3.15
 ```
 
 `es_config.json` (gitignored) must exist before `execute_project.py`
@@ -295,10 +295,13 @@ adds its test to this column.
 
 ## Troubleshooting
 
-- **`entitopia requires Python 3.11 or higher (found 3.9.x)`**: you're
-  on the system `/usr/bin/python3`. Use `.venv/bin/python` (or any 3.11+
-  interpreter) to create `.venv`, then `source .venv/bin/activate`
-  before running anything.
+- **`entitopia requires Python 3.15 or higher (found 3.9.x)`**: you're
+  on the system `/usr/bin/python3`. Create `.venv` with
+  `PYTHON=python3.15 bash dependencies.sh`, then run everything through
+  `.venv/bin/python`.
+- **`.venv runs Python 3.11.x, but entitopia requires 3.15+`**: the venv
+  predates the move to 3.15. Delete `.venv` and rerun
+  `PYTHON=python3.15 bash dependencies.sh`.
 - **`_count` / `_search` returns 0 hits right after a run that logged
   "Indexing N records"**: refresh-interval timing, not a failed load —
   `curl -X POST http://localhost:9200/<alias>/_refresh` then re-query.

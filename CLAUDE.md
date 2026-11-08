@@ -141,8 +141,12 @@ Never invoke bare `python3` or `pip3`. Use `.venv/bin/python` for every command
 — tests, scripts, and `execute_project.py` alike. The host machine's Python
 must not affect this project.
 
+The project runs on Python 3.15 (`.python-version`). Build the venv from it
+with `PYTHON=python3.15 bash dependencies.sh`; a `.venv` built on an older
+Python is refused by that script, so delete it and rebuild.
+
 ```bash
-bash dependencies.sh                     # creates .venv, installs into it
+PYTHON=python3.15 bash dependencies.sh   # creates .venv, installs into it
 .venv/bin/python -m pytest
 .venv/bin/python execute_project.py --project=DOT-Commercial
 ```

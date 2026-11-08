@@ -21,22 +21,20 @@ permissions:
 
 jobs:
   tests:
-    name: ruff and pytest (Python ${{ matrix.python }})
+    name: ruff and pytest
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.11 is the floor dependencies.sh enforces; 3.12 is .python-version.
-        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          # One version, the same one every local .venv is built from.
+          python-version-file: .python-version
           cache: pip
           cache-dependency-path: requirements.txt
       # The same script a developer runs, so CI installs exactly the pinned
       # requirements into .venv and nothing from the runner's own Python.
+      # The pinned numpy and pandas publish no 3.15 wheels, so the first run
+      # compiles them; the pip cache keeps the built wheels for later runs.
       - run: PYTHON=python bash dependencies.sh
       - run: .venv/bin/python -m ruff check .
       - run: .venv/bin/python -m pytest -q -rs
