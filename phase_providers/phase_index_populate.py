@@ -89,7 +89,9 @@ class PhaseIndexingPopulate:
         self.logger.debug("loaded config {}".format(index_config))
 
         if index_config:
-            elasticsearch_utils.replace_index_with_now_version(index_config)
+            index_config.index = elasticsearch_utils.resolve_current_index(
+                self.es.indices, index_config.index
+            )
             self.logger.debug("loaded config {}".format(index_config))
             # A --num-rows on the command line wins over the config file, so
             # one checkout can run against a small sample or the full download

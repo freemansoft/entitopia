@@ -351,6 +351,19 @@ If the **distinct key count** equals the CSV row count but the index holds fewer
 
 The fix is the enrich coordinator queue sizing in the Docker section above. Reruns are idempotent, so reloading fills the gap once the queue is large enough.
 
+### 8. Index names and same-day re-runs
+
+Every `index-config.json` names its index `<step>-{now/d}-000001`, so two runs on one day used to resolve to the same name. The second `index-create` was refused with `resource_already_exists_exception`, logged as a warning, and every later phase wrote into the first run's index. A re-sweep therefore produced a **union of two sweeps under one name**: pairs both runs emitted were overwritten by `_id`, and pairs only the earlier run emitted stayed behind. Nothing errored, and the earlier sweep was gone as a comparison baseline. The index settings were also not reapplied, so a same-day reload after an analyzer change kept the old analyzers.
+
+The trailing number is now a generation:
+
+- `index-create` takes the next free one. The first run of the day gets `-000001`, a second gets `-000002`, and the alias moves to it. The earlier index is left intact, so the two can be compared, and is deleted by hand when no longer needed.
+- `index-map`, `index-populate`, `entity-match` and the enrich policies use the **newest generation of today's index**, which is the one this run's `index-create` just made. Running one of those phases on its own with `--phase` therefore writes into today's newest index, as it did before.
+- A refused create now **fails the run**. The usual cause, a name collision, is gone, so a refusal means Elasticsearch rejected the settings. Carrying on would let `index-populate` auto-create the index with dynamic mappings and none of the analyzers.
+- The enrich-policy preflight predicts the same names, so it judges a same-day full reload the way it judges a reload on a new day: a policy that will need repointing and is held by a pipeline is reported before anything is written.
+
+Verified 2026-11-08 by running CMS-Providers `hospital-duplicates` twice: the runs created `hospital-duplicates-2026.11.08-000001` and `-000002`, each held the same 3,627 pair ids, and the alias ended on `-000002`.
+
 ## Framework code vs project-specific code
 
 The intent is that everything under the repository root is generic, and each project directory owns its own dataset specifics.
@@ -441,7 +454,7 @@ curl -X DELETE "http://localhost:9200/hospitals-*"
 curl -X DELETE "http://localhost:9200/hospitals-2026.08.19-000001"      # works
 ```
 
-The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That combines badly with `{now/d}`: a same-day re-run then writes into the index that was supposed to be gone, and its old documents are still there. Symptom to watch for — **a phase reporting more documents indexed than it emitted**. It happened here: a sweep emitting 3,627 pairs left a count of 7,347, because 4,751 pairs from the previous run had never been deleted.
+The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That used to combine badly with `{now/d}`: a same-day re-run wrote into the index that was supposed to be gone, and its old documents were still there. It happened here: a sweep emitting 3,627 pairs left a count of 7,347, because 4,751 pairs from the previous run had never been deleted. A same-day re-run now creates the next generation instead (`…-000002`, see [hazard 8](#8-index-names-and-same-day-re-runs)), so a surviving index no longer contaminates the next run, but it does still take up disk and keep its name.
 
 To find what is actually there before deleting anything:
 
@@ -514,7 +527,7 @@ Framework-level. Dataset-specific items live in each project's README.
 
    Measured against both source CSVs before changing anything, because the risk in a re-key is two rows collapsing onto one document: no keyed column in either file holds an empty string, a whitespace-only value, or the literal string `"None"`, and the distinct-id count is unchanged across the change on both — 395,269 → 395,269, and 4,931,415 → 4,931,415 (which includes 10,510 genuine duplicate keys that exist today and are unaffected). The re-keying is one-to-one on this extract; nothing collapses.
 
-   **What remains is the reload.** A reload into an index that already exists writes the ~4.89M re-keyed documents a second time under their new ids. `index-create` stamps the index name `{now/d}`, so a reload on a later day lands in a fresh index and is safe — a second reload on the _same_ day is the case to avoid.
+   **What remains is the reload.** A reload into an index that already exists writes the ~4.89M re-keyed documents a second time under their new ids. `index-create` stamps the index name `{now/d}` and takes the next generation when today's already exists, so every reload lands in a fresh index.
 
 1. Cleaning up on exit
 1. Enrichment policies bound to a live pipeline still cannot be **deleted**, so a policy whose _definition_ needs to change (different source index, different `enrich_fields`) still requires deleting the pipeline by hand, then rerunning the ingestion-setup step and reloading anything that was enriched from it. **Measured 2026-08-13**: a full reload left all six policies pointing at indexes twelve days superseded, and `carriers` was then built from them. The run now stops rather than finishing green — see the closed item below — but the manual, ordered recovery is unchanged. A real fix deletes and recreates the dependent pipelines around the policy rebuild.
