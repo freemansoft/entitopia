@@ -21,18 +21,14 @@ permissions:
 
 jobs:
   tests:
-    name: ruff and pytest (Python ${{ matrix.python }})
+    name: ruff and pytest
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.11 is the floor dependencies.sh enforces; 3.12 is .python-version.
-        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          # One version, the same one every local .venv is built from.
+          python-version-file: .python-version
           cache: pip
           cache-dependency-path: requirements.txt
       # The same script a developer runs, so CI installs exactly the pinned

@@ -22,22 +22,22 @@
 set -euo pipefail
 
 VENV_DIR=".venv"
-MINIMUM="3.11"
+MINIMUM="3.15"
 
 # Interpreter used only to CREATE the venv. Once .venv exists we use its own
 # interpreter and never consult the system Python again.
-BOOTSTRAP_PYTHON="${PYTHON:-python3}"
+BOOTSTRAP_PYTHON="${PYTHON:-python3.15}"
 
 if [ ! -x "${VENV_DIR}/bin/python" ]; then
     if ! command -v "${BOOTSTRAP_PYTHON}" >/dev/null 2>&1; then
         echo "Cannot find ${BOOTSTRAP_PYTHON} to create ${VENV_DIR}." >&2
-        echo "Set PYTHON=/path/to/python3.11 and re-run." >&2
+        echo "Set PYTHON=/path/to/python3.15 and re-run." >&2
         exit 1
     fi
 
-    "${BOOTSTRAP_PYTHON}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
+    "${BOOTSTRAP_PYTHON}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 15) else 1)' || {
         echo "entitopia requires Python ${MINIMUM} or higher (found $("${BOOTSTRAP_PYTHON}" --version))" >&2
-        echo "Set PYTHON=/path/to/python3.11 and re-run." >&2
+        echo "Set PYTHON=/path/to/python3.15 and re-run." >&2
         exit 1
     }
 
@@ -49,7 +49,7 @@ VENV_PYTHON="${VENV_DIR}/bin/python"
 
 # Re-check against the venv's own interpreter. A .venv built long ago by a
 # since-upgraded Python would otherwise slip past the bootstrap check above.
-"${VENV_PYTHON}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
+"${VENV_PYTHON}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 15) else 1)' || {
     echo "${VENV_DIR} runs $("${VENV_PYTHON}" --version), but entitopia requires ${MINIMUM}+." >&2
     echo "Delete ${VENV_DIR} and re-run this script to rebuild it." >&2
     exit 1
