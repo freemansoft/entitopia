@@ -68,6 +68,21 @@ class PhaseindexCreate:
 
         if phase_config:
             indiciesClient = client.IndicesClient(self.es)
+            if getattr(phase_config, "persistent", False):
+                kept = elasticsearch_utils.alias_targets(indiciesClient, phase_config.alias)
+                if kept:
+                    # A persistent index is a durable record that scripts
+                    # append to through the alias (measure_crash_lift.py's
+                    # validation runs). Creating a fresh index and moving the
+                    # alias onto it, as every other step does, hid every
+                    # recorded run without deleting anything. Rebuilding one
+                    # deliberately means removing its alias by hand first.
+                    self.logger.info(
+                        "Keeping persistent index {} behind alias {}; not creating {}".format(
+                            ", ".join(kept), phase_config.alias, phase_config.index
+                        )
+                    )
+                    return
             phase_config.index = elasticsearch_utils.resolve_new_index(
                 indiciesClient, phase_config.index
             )

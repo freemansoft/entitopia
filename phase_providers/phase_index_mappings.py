@@ -14,6 +14,26 @@ class PhaseIndexMappings:
         self.project_config = project_config
         self.logger = logging.getLogger(__name__)
 
+    def _target_index(self, indices_client, template):
+        """The index this run's mapping applies to.
+
+        Normally today's newest generation, which index-create just made. A
+        persistent step keeps the index its alias already names (see
+        PhaseindexCreate), so its mapping goes there instead; applying it to
+        today's name would hit an index that was deliberately not created.
+        """
+        index_config = file_utils.load_from_project_file(
+            self.project,
+            self.project_config.configurationDir,
+            self.one_step,
+            "index-config.json",
+        )
+        if index_config and getattr(index_config, "persistent", False):
+            kept = elasticsearch_utils.alias_targets(indices_client, index_config.alias)
+            if kept:
+                return ",".join(kept)
+        return elasticsearch_utils.resolve_existing_index(indices_client, template)
+
     def handle(self):
         self.logger.info(
             "Initiating step:{} Phase Handler: {}".format(
@@ -31,7 +51,7 @@ class PhaseIndexMappings:
 
         if index_mapping_config:
             indiciesClient = client.IndicesClient(self.es)
-            index_mapping_config.index = elasticsearch_utils.resolve_current_index(
+            index_mapping_config.index = self._target_index(
                 indiciesClient, index_mapping_config.index
             )
             self.logger.debug("Processing {}".format(index_mapping_config))

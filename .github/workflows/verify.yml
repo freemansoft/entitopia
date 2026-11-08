@@ -1,0 +1,61 @@
+# Runs the checks CLAUDE.md asks for before a commit, on every pull request,
+# so the regression tests that guard against this repo's silent failures
+# (a phase that logs success while writing quietly wrong data) cannot be
+# dropped or broken without someone seeing a red check.
+#
+# No Elasticsearch here: the tests that need the live cluster, or a sweep
+# baseline under a gitignored */data/ directory, skip themselves. A local run
+# with the cluster up still exercises more than this does.
+
+name: verify
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ruff and pytest (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor dependencies.sh enforces; 3.12 is .python-version.
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      # The same script a developer runs, so CI installs exactly the pinned
+      # requirements into .venv and nothing from the runner's own Python.
+      - run: PYTHON=python bash dependencies.sh
+      - run: .venv/bin/python -m ruff check .
+      - run: .venv/bin/python -m pytest -q -rs
+
+  prettier:
+    # Checks only the Markdown and JSON a pull request touches. Several older
+    # files predate the formatting rule; reformatting them all would bury
+    # unrelated churn in whichever PR turned this on.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: prettier --check on changed files
+        run: |
+          git diff -z --name-only --diff-filter=ACMR \
+            "origin/${{ github.base_ref }}...HEAD" -- '*.md' '*.json' \
+            | xargs -0 -r npx --yes prettier@3.3.3 --check

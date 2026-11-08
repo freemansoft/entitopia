@@ -250,7 +250,7 @@ flowchart LR
 
 ## Common data-loading hazards
 
-Every one of these was hit for real in at least one reference project, usually more than once. They share a signature: **the run reports success and the data is quietly wrong.** Read this section before adding a dataset.
+Every one of these was hit for real in at least one reference project, usually more than once. They share a signature: **the run reports success and the data is quietly wrong.** Read this section before adding a dataset. Each ends with the test that guards it, or says nothing does; a hazard with no test is avoided only by doing what it says.
 
 ### Measure the data first
 
@@ -266,6 +266,8 @@ It reports, per column: distinct count, blank rate, detected date formats, and t
 
 These measurements were previously done ad hoc, one throwaway snippet at a time, which is why the same mistakes recurred across datasets. Run it before configuring; act on every WARNING it prints.
 
+**Guarded by:** `tests/test_profile_dataset.py`.
+
 ### Then check the config against the data
 
 Profiling tells you what a column contains. It cannot tell you what that column will _become_, because that depends on the mappings — and **an unpinned column is indexed as `text` regardless of what its values look like**, since the loader hands Elasticsearch strings so the mappings can do the typing. `scripts/check_mapping_coverage.py` compares the two:
@@ -278,6 +280,8 @@ Profiling tells you what a column contains. It cannot tell you what that column 
 For each step it reports columns with no pin (and the type their own values argue for), pins naming a column the CSV no longer has, and non-ISO date columns — which are the one case where neither `text` nor a naive `date` pin is right. It exits non-zero when anything is unpinned, so it can gate a reload.
 
 This exists because the two halves were never compared. When the loader stopped inferring types, 66 fields across three DOT-Commercial datasets silently changed type, with no error anywhere; the four datasets that were already fully pinned moved not one field. Run both scripts before configuring, and again before any reload.
+
+**Guarded by:** `tests/test_mapping_coverage.py`.
 
 ### 1. Dynamic type inference silently drops or breaks documents
 
@@ -294,6 +298,8 @@ Observed failures, each verified against a mapping rather than inferred from a c
 
 The pins stay — `keyword` is right for these columns regardless — but the danger was the opposite of what had been written down. **A column was at risk precisely when it was _uniformly_ numeric in the file pandas saw**, because pandas then handed Elasticsearch actual numbers: `Hospital_General_Information.csv`'s ZIP column inferred `int64`. A mixed column was self-protecting; a clean one was the trap. That is no longer a live hazard — the loader now reads every column with `dtype=str`, so the mappings do the typing and pandas types nothing (see the closed item on leading zeros). It is recorded because of how the wrong version survived: both retracted entries described plausible mechanics in convincing detail — a named exception, concurrency, row counts to five figures — and lasted across three documents for weeks because the inference was assumed from the data, never read from a mapping. Checking took two `curl`s.
 
+**Guarded by:** `tests/test_csv_load_utils.py` (every column loads as a string, so the mappings do the typing), `tests/test_mapping_coverage.py` (unpinned columns are reported) and `tests/test_dot_number_join_contract.py` (every joined dataset pins `dot_number` as `keyword`; its pipeline cases need the cluster).
+
 ### 2. Legacy date formats, and why mapping them as `date` is worse
 
 Source data frequently carries non-ISO dates. FMCSA supplies Oracle-style `01-JUN-74`. Elasticsearch's dynamic date detection does not recognize it, so the field silently becomes text.
@@ -309,19 +315,27 @@ The framework's answer, and the pattern to copy:
 
 When a date is only ever read client-side, mapping it `keyword` is the safer choice — ISO strings still sort and range-query correctly because they compare lexicographically.
 
+**Guarded by:** partly. `tests/test_profile_dataset.py` checks that `dd-MMM-yy` columns are flagged, and `tests/test_signals.py` pins the century pivot for dates the scorer parses. No test runs the Painless conversion in the ingest pipelines.
+
 ### 3. Analyzers referencing columns that no longer exist are silently inert
 
 Elasticsearch accepts a mapping for a field that never appears in the data. It applies nothing, and dynamically maps the real column as plain `text` instead. All three CMS-Providers datasets shipped this way after CMS renamed its columns: the phonetic and cleaning analyzers were configured, looked correct, and never ran.
 
 **Verify analyzers against real data, not against the mapping file.** `GET <index>/_analyze` and a `_mapping` check on the actual field names will catch this in seconds.
 
+**Guarded by:** `tests/test_config_liveness.py`, which covers the validate phase's check of every field the config names against the live mapping.
+
 ### 4. Validation samples left switched on in production config
 
 `num_rows` in `index-config.json` caps the load. A sample left at `50000` makes a "full" run silently truncate — and if that index then feeds an enrichment policy, the truncation propagates into everything enriched from it. Set `num_rows: null` for full loads.
 
+**Guarded by:** nothing. Check `num_rows` by hand before a full load.
+
 ### 5. Missing `id_field` duplicates every row on rerun
 
 Without `id_field`, Elasticsearch generates document IDs, so re-running a load against the same index appends rather than overwrites. Set `id_field` to a natural key, or to a JSON list of columns that `compute_id()` joins with `|` into a deterministic composite key. Verify the key is actually unique against the full dataset before trusting it.
+
+**Guarded by:** `tests/test_id_utils.py` and `tests/test_phase_index_populate.py` pin deterministic keys, including the fallback for a row whose key is blank. Nothing requires a step to set `id_field`.
 
 ### 6. Enrichment policies go stale without erroring
 
@@ -334,6 +348,8 @@ An enrich policy is a **point-in-time snapshot** of its source index. It does no
 **After rebuilding policies, check the enrich index document count** rather than trusting an `acknowledged: true`. `phase_enrichment_policies.py` now does this for you: it compares each enrich index against its source and logs an ERROR when the enrich index is empty while the source is not. That is the difference between a run that reports success and a run you can believe.
 
 The measured signature of the bug, for recognition: the step completes in **~1 second** and the enrich index holds **0 documents**. Correctly rebuilt, the same step takes **~3 minutes** and the counts match exactly.
+
+**Guarded by:** `tests/test_phase_enrichment_policies.py` (a stale or empty policy fails the run) and `tests/test_bound_pipelines.py` (the preflight and `--fix-bound-pipelines`).
 
 ### 7. Enrichment back-pressure drops documents, and the count looks like deduplication
 
@@ -351,6 +367,8 @@ If the **distinct key count** equals the CSV row count but the index holds fewer
 
 The fix is the enrich coordinator queue sizing in the Docker section above. Reruns are idempotent, so reloading fills the gap once the queue is large enough.
 
+**Guarded by:** nothing. The fix is the queue sizing in `docker/compose.yml`, and no test checks the `N of M documents failed` line.
+
 ### 8. Index names and same-day re-runs
 
 Every `index-config.json` names its index `<step>-{now/d}-000001`, so two runs on one day used to resolve to the same name. The second `index-create` was refused with `resource_already_exists_exception`, logged as a warning, and every later phase wrote into the first run's index. A re-sweep therefore produced a **union of two sweeps under one name**: pairs both runs emitted were overwritten by `_id`, and pairs only the earlier run emitted stayed behind. Nothing errored, and the earlier sweep was gone as a comparison baseline. The index settings were also not reapplied, so a same-day reload after an analyzer change kept the old analyzers.
@@ -358,11 +376,13 @@ Every `index-config.json` names its index `<step>-{now/d}-000001`, so two runs o
 The trailing number is now a generation:
 
 - `index-create` takes the next free one. The first run of the day gets `-000001`, a second gets `-000002`, and the alias moves to it. The earlier index is left intact, so the two can be compared, and is deleted by hand when no longer needed.
-- `index-map`, `index-populate`, `entity-match` and the enrich policies use the **newest generation of today's index**, which is the one this run's `index-create` just made. Running one of those phases on its own with `--phase` therefore writes into today's newest index, as it did before.
+- `index-map`, `index-populate`, `entity-match` and the enrich policies use the **newest generation of today's index**, which is the one this run's `index-create` just made. Running one of those phases on its own with `--phase` therefore writes into today's newest index, as it did before. When no index exists for today, `index-map`, `index-populate` and `entity-match` refuse rather than let Elasticsearch auto-create one without the analyzers. A step marked `"persistent": true` in `index-config.json` (today only `chameleon-validation`) keeps the index its alias already names instead of taking a new generation.
 - A refused create now **fails the run**. The usual cause, a name collision, is gone, so a refusal means Elasticsearch rejected the settings. Carrying on would let `index-populate` auto-create the index with dynamic mappings and none of the analyzers.
 - The enrich-policy preflight predicts the same names, so it judges a same-day full reload the way it judges a reload on a new day: a policy that will need repointing and is held by a pipeline is reported before anything is written.
 
 Verified 2026-11-08 by running CMS-Providers `hospital-duplicates` twice: the runs created `hospital-duplicates-2026.11.08-000001` and `-000002`, each held the same 3,627 pair ids, and the alias ended on `-000002`.
+
+**Guarded by:** `tests/test_dated_index_generations.py`, `tests/test_rerun_guards.py` and `tests/test_alias_swap.py`. The `run-entitopia` skill's re-run table lists the other ways a re-run hides earlier work, with their guards.
 
 ## Framework code vs project-specific code
 
@@ -481,7 +501,7 @@ curl -s "http://localhost:9200/_cat/indices/hospitals*?h=index,docs.count&s=inde
 .venv/bin/python -m ruff check .        # must report "All checks passed!"
 ```
 
-Unit tests need no cluster — the matching and scoring logic is pure functions over token sets, deliberately so. Anything touching mappings, analyzers, pipelines, or enrichment needs the Docker cluster.
+Unit tests need no cluster — the matching and scoring logic is pure functions over token sets, deliberately so. Anything touching mappings, analyzers, pipelines, or enrichment needs the Docker cluster. Tests that need the cluster skip when it is not running. The `verify` GitHub Actions workflow runs ruff and pytest on every pull request, without a cluster, and prettier on the Markdown and JSON the pull request changes.
 
 Conventions for working in this repo — comment style, linting, the `.venv` rule, Elasticsearch client usage — are in [CLAUDE.md](CLAUDE.md).
 

@@ -150,6 +150,29 @@ bash dependencies.sh                     # creates .venv, installs into it
 `requirements.txt` pins every version, direct and transitive. Add dependencies
 there, pinned — never `pip install` ad hoc into the venv.
 
+## Guards live in tests; keep them running
+
+Most fixes in this repo are guards against a silent failure: a phase that
+logged success while writing quietly wrong data. Each guard is pinned by a
+regression test whose module docstring tells the incident behind it
+(`tests/test_rerun_guards.py`, `tests/test_alias_swap.py`, and so on). The
+README's data-loading hazards and the `run-entitopia` re-run table each name
+the test that guards them, or say that nothing does.
+
+- **Run the whole suite before every commit**, not just the file you changed:
+  `.venv/bin/python -m pytest`. A change in one phase routinely breaks a guard
+  in another. The `verify` workflow runs ruff and pytest on every pull request
+  (and prettier on the Markdown and JSON it touches). It has no Elasticsearch,
+  so tests that need the cluster or a local sweep baseline skip there; run
+  with the cluster up locally.
+- **Say so in the PR when a change touches a guard.** Deleting, skipping or
+  weakening a test, loosening an assertion, or changing a test's fake (a fake
+  that answers differently can make a guard pass for the wrong reason) each
+  need a line in the PR description naming the guard and why it still holds.
+- **A new guard gets a test and an entry.** Write the test first, with a
+  module docstring stating the failure it prevents, and name it in the README
+  hazard or re-run table row it covers.
+
 ## Elasticsearch client calls
 
 Pass explicit keyword arguments, never `body=`. `body` is deprecated in
@@ -192,6 +215,12 @@ before it is written down.
 Writes are a different matter: creating, deleting or reindexing against a
 loaded cluster destroys work that takes hours to rebuild, so confirm those
 first even though the allowlist does not distinguish them.
+
+Before re-running a step, sweep or measurement script against a loaded
+cluster, read the re-run table in the `run-entitopia` skill ("Re-running on a
+loaded cluster"). It lists what each re-run overwrites, hides or mixes —
+same-day index generations, aliases moving off populated indexes, baselines
+and review verdicts overwritten — and the safe move for each.
 
 The container runtime is Colima, not Docker Desktop. Start the VM first, sized
 for the 6 GB heap `docker/compose.yml` sets: `colima start --cpu 6 --memory 12`.
