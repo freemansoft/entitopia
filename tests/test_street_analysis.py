@@ -23,8 +23,8 @@ TEST_INDEX = "test-street-analysis"
 # index-settings.json files rather than generated from one shared source, so
 # nothing stops them from drifting apart. Listed here (rather than diffing
 # whole files) because the surrounding name-matching sections legitimately
-# differ per project — DOT-Commercial has a carrier-suffix stop list and
-# double-metaphone/beider-morse phonetics that CMS-Providers does not — so a
+# differ per project — DOT-Commercial has a carrier-suffix stop list, a
+# beider-morse arm and a longer phonetic code than CMS-Providers — so a
 # whole-file comparison would fail on day one for reasons that have nothing
 # to do with street matching.
 OTHER_SETTINGS_PATHS = [
