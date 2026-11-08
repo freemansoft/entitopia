@@ -15,7 +15,7 @@
         "filter": {
           "phonetic": {
             "type": "phonetic",
-            "encoder": "metaphone"
+            "encoder": "double_metaphone"
           },
           "street_suffix_canon": {
             "type": "synonym",
