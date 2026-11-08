@@ -17,11 +17,11 @@
     },
     {
       "id": 2,
-      "name": "tighten-article-4-title-and-headings",
-      "prompt": "the title of docs/blog/2026-08-30-04-closing-in-with-an-llm.md and a couple of its section headings read like verdicts or are hard to parse. tighten the title and the headings, and keep anything that has to match the title in sync",
+      "name": "tighten-article-2-title-and-headings",
+      "prompt": "the title of docs/blog/2026-08-30-02-tuning-an-entity-matcher.md and a couple of its section headings read like verdicts or are hard to parse. tighten the title and the headings, and keep anything that has to match the title in sync",
       "expected_output": "Works on a branch. Title and headings each state one concrete finding the section supports, with no figure changed and no hedge lost; the title gets a paraphrase test; the outline's article table is updated to the new title; first sentences adjusted where a heading now repeats them; prints the changed prose for the user to read and does not commit; verification output reported.",
       "files": [
-        "docs/blog/2026-08-30-04-closing-in-with-an-llm.md",
+        "docs/blog/2026-08-30-02-tuning-an-entity-matcher.md",
         "docs/blog/2026-08-30-blog-series-outline.md"
       ]
     }
