@@ -23,13 +23,21 @@
     },
     "source": {
       "type": "string",
-      "description": "CSV filename, resolved under the project's data directory. Absent for an index a phase WRITES rather than loads — the chameleon-candidates and chameleon-validation indexes have no source file. That is why `source` is not unconditionally required: instead, any key that only means something while loading (id_field, num_rows, skip_rows, pipeline) requires it, so a real dataset config cannot omit it while an output index can."
+      "description": "CSV filename, resolved under the project's data directory. Absent for an index a phase WRITES rather than loads \u2014 the chameleon-candidates and chameleon-validation indexes have no source file. That is why `source` is not unconditionally required: instead, any key that only means something while loading (id_field, num_rows, skip_rows, pipeline) requires it, so a real dataset config cannot omit it while an output index can."
     },
     "id_field": {
       "description": "Natural key. A list composes a deterministic composite id. Absent means Elasticsearch generates one, which duplicates every row on rerun.",
       "oneOf": [
-        { "type": "string" },
-        { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
       ]
     },
     "num_rows": {
@@ -45,6 +53,10 @@
     "pipeline": {
       "type": "string",
       "description": "Ingest pipeline to route documents through on load."
+    },
+    "persistent": {
+      "type": "boolean",
+      "description": "Marks an index that scripts keep appending to through its alias, such as chameleon-validation's measured runs. When the alias already names an index, index-create keeps it instead of creating a new one and moving the alias, which would hide every recorded document without deleting it, and index-map updates the kept index. Rebuilding a persistent index on purpose means removing its alias by hand first. Defaults to false."
     }
   }
 }

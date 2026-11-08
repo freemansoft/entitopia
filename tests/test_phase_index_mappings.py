@@ -39,8 +39,9 @@ class FakeIndicesClient:
         self.calls = []
 
     def get(self, **kwargs):
-        # No generations exist, so the configured index name stands.
-        return {}
+        # The index exists, as it does after index-create, so these tests reach
+        # put_mapping rather than stopping at the missing-index guard.
+        return {"carriers-2026.08.13-000001": {}}
 
     def put_mapping(self, index, properties):
         self.calls.append((index, properties))

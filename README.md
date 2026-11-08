@@ -358,7 +358,7 @@ Every `index-config.json` names its index `<step>-{now/d}-000001`, so two runs o
 The trailing number is now a generation:
 
 - `index-create` takes the next free one. The first run of the day gets `-000001`, a second gets `-000002`, and the alias moves to it. The earlier index is left intact, so the two can be compared, and is deleted by hand when no longer needed.
-- `index-map`, `index-populate`, `entity-match` and the enrich policies use the **newest generation of today's index**, which is the one this run's `index-create` just made. Running one of those phases on its own with `--phase` therefore writes into today's newest index, as it did before.
+- `index-map`, `index-populate`, `entity-match` and the enrich policies use the **newest generation of today's index**, which is the one this run's `index-create` just made. Running one of those phases on its own with `--phase` therefore writes into today's newest index, as it did before. When no index exists for today, `index-map`, `index-populate` and `entity-match` refuse rather than let Elasticsearch auto-create one without the analyzers. A step marked `"persistent": true` in `index-config.json` (today only `chameleon-validation`) keeps the index its alias already names instead of taking a new generation.
 - A refused create now **fails the run**. The usual cause, a name collision, is gone, so a refusal means Elasticsearch rejected the settings. Carrying on would let `index-populate` auto-create the index with dynamic mappings and none of the analyzers.
 - The enrich-policy preflight predicts the same names, so it judges a same-day full reload the way it judges a reload on a new day: a policy that will need repointing and is held by a pipeline is reported before anything is written.
 

@@ -177,6 +177,35 @@ def resolve_current_index(indices_client, template):
     return found[max(found)] if found else name
 
 
+def resolve_existing_index(indices_client, template):
+    """resolve_current_index for a phase that writes, refusing when there is nothing to write into.
+
+    A phase run on its own with --phase, on a later day than its step's
+    index-create, resolves to today's name, which no index carries yet.
+    Elasticsearch auto-creates an index on first write, so the load used to
+    land in an index with dynamic mappings and none of the configured
+    analyzers, and the run reported success. Refusing names the fix instead.
+    """
+    name = resolve_current_index(indices_client, template)
+    if indices_client.get(index=name, allow_no_indices=True, ignore_unavailable=True):
+        return name
+    raise RuntimeError(
+        "No index {} exists: this step's index-create has not run today. A phase "
+        "run on its own writes into today's index, so run the whole step "
+        "(--step=<step>) to create it first. Writing anyway would let "
+        "Elasticsearch auto-create it with dynamic mappings and none of the "
+        "configured analyzers.".format(name)
+    )
+
+
+def alias_targets(indices_client, alias):
+    """The indexes `alias` names, sorted; empty when the alias does not exist."""
+    try:
+        return sorted(indices_client.get_alias(name=alias))
+    except NotFoundError:
+        return []
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     root_logger = logging.getLogger()

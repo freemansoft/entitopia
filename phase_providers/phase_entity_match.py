@@ -187,7 +187,7 @@ class PhaseEntityMatch:
         if not index_config:
             self.logger.error("No index-config.json for step {}".format(self.one_step))
             return
-        index_config.index = elasticsearch_utils.resolve_current_index(
+        index_config.index = elasticsearch_utils.resolve_existing_index(
             self.es.indices, index_config.index
         )
 

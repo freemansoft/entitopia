@@ -89,7 +89,7 @@ class PhaseIndexingPopulate:
         self.logger.debug("loaded config {}".format(index_config))
 
         if index_config:
-            index_config.index = elasticsearch_utils.resolve_current_index(
+            index_config.index = elasticsearch_utils.resolve_existing_index(
                 self.es.indices, index_config.index
             )
             self.logger.debug("loaded config {}".format(index_config))

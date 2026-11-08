@@ -1,4 +1,5 @@
 {
   "index": "chameleon-validation-{now/d}-000001",
-  "alias": "chameleon-validation-000001"
+  "alias": "chameleon-validation-000001",
+  "persistent": true
 }
