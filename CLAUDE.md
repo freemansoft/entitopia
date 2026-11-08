@@ -193,6 +193,12 @@ Writes are a different matter: creating, deleting or reindexing against a
 loaded cluster destroys work that takes hours to rebuild, so confirm those
 first even though the allowlist does not distinguish them.
 
+Before re-running a step, sweep or measurement script against a loaded
+cluster, read the re-run table in the `run-entitopia` skill ("Re-running on a
+loaded cluster"). It lists what each re-run overwrites, hides or mixes —
+same-day index generations, aliases moving off populated indexes, baselines
+and review verdicts overwritten — and the safe move for each.
+
 The container runtime is Colima, not Docker Desktop. Start the VM first, sized
 for the 6 GB heap `docker/compose.yml` sets: `colima start --cpu 6 --memory 12`.
 Homebrew's `docker` lives in `/opt/homebrew/bin`, which a non-login shell may
