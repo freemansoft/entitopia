@@ -454,8 +454,8 @@ class PhaseEntityMatch:
         if missing:
             self.logger.error(
                 "Source index {} is missing scored subfields: {}. Recreate and "
-                "reload the carriers index with the updated index-settings.json "
-                "and index-mappings.json.".format(source_index, ", ".join(missing))
+                "reload it with the step's current index-settings.json and "
+                "index-mappings.json.".format(source_index, ", ".join(missing))
             )
             return False, resolved_index, stored_fingerprint
         return True, resolved_index, stored_fingerprint
