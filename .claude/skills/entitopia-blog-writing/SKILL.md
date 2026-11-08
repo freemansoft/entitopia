@@ -27,7 +27,7 @@ Four sources govern the work, and they do not overlap:
 | Source                                                        | Owns                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The repo and the live cluster                                 | Every figure and every mechanism. The READMEs, the design spec, the code, the commit history, and `http://localhost:9200`. When a draft and the repo disagree, the repo wins; when the repo's prose and a fresh measurement disagree, the measurement wins and the repo gets updated. |
-| `docs/blog/2026-08-30-blog-series-outline.md`                 | The series plan: the four articles, each one's audience and thesis, what each owns, the section budgets, the production notes, and the source index.                                                                                                                                  |
+| `docs/blog/2026-08-30-blog-series-outline.md`                 | The series plan: the articles, each one's audience and thesis, what each owns, the section budgets, the production notes, the open items, and the source index.                                                                                                                       |
 | CLAUDE.md "Never name a real entity that the matcher flagged" | Which names may appear. The `anonymization-check` skill runs it.                                                                                                                                                                                                                      |
 | This skill                                                    | How to write, review, verify, and publish. The full rules, with reasons and examples, are in `references/style-rules.md`.                                                                                                                                                             |
 
@@ -235,9 +235,16 @@ Whatever the platform:
 - **Paraphrase commit `972df7e`, never quote it.** Its message names two flagged
   entities and predates the naming rule; rewriting history was ruled out
   (outline production note 1).
-- **Render each mermaid fence to an image for any platform that does not run
-  mermaid,** and leave the fence in the draft as the editable source. Do not
-  commit the rendered image unless the user asks.
+- **Render each mermaid fence to a PNG for any platform that does not run
+  mermaid,** and leave the fence in the draft as the editable source. Copy
+  the fence body to a `.mmd` file in the scratchpad and render it with
+  `npx --yes @mermaid-js/mermaid-cli@12.0.0 -i diagram.mmd -o diagram.png -s 2 -b white`
+  (`-s 2` for a sharp image on high-density screens, `-b white` so the diagram
+  does not vanish on a dark theme). Its first run downloads a headless
+  Chromium, so say so before running it. Re-render whenever the fence changes,
+  and look at each PNG before handing it over: a label that fits in the
+  Markdown preview can be clipped in the image. Do not commit the rendered
+  image unless the user asks.
 - **A terms table's `<details>` block** needs a platform that keeps raw HTML;
   check the preview before publishing.
 - **Pin the figure links.** Re-point links to README sections and docs that
@@ -294,21 +301,27 @@ Paste the output when reporting; a summary without numbers is not a check.
 ````bash
 A=docs/blog/2026-08-30-02-tuning-an-entity-matcher.md; BASE=main
 
-# Length. Prose excludes fenced blocks, table rows and URLs: aim for the
-# outline's target, justify past 2,000 in the outline, hard cap 3,000. The
-# on-page figure adds the tables back, which is what the reader scrolls, soft
-# ceiling 3,500. Mermaid source stays out of both: it renders as an image.
+# Length, with and without tables. "Without tables" is the prose the length
+# rules govern: aim for the outline's target, justify past 2,000 in the
+# outline, hard cap 3,000. "With tables" adds the table cells back, which is
+# what the reader scrolls: soft ceiling 3,500. Code blocks are reported
+# separately; mermaid source counts nowhere, since it publishes as a PNG.
+# URLs and table separator rows count nowhere.
 .venv/bin/python - "$A" <<'EOF'
 import re, sys
+def words(s):
+    s = re.sub(r'\(https?://[^)]*\)', '', s)
+    return len(re.sub(r'https?://\S+', '', s).split())
 raw = open(sys.argv[1], encoding="utf-8").read()
-t = re.sub(r'```.*?```', '', raw, flags=re.S)
-t = re.sub(r'^\|.*$', '', t, flags=re.M)
-t = re.sub(r'\(https?://[^)]*\)', '', t)
-t = re.sub(r'https?://\S+', '', t)
-onpage = re.sub(r'```mermaid.*?```', '', raw, flags=re.S)
-onpage = re.sub(r'\(https?://[^)]*\)', '', onpage)
-onpage = re.sub(r'https?://\S+', '', onpage)
-print('prose words:', len(t.split()), '  on-page words:', len(onpage.split()))
+body = re.sub(r'```mermaid.*?```', '', raw, flags=re.S)
+code = sum(words(b) - 2 for b in re.findall(r'```.*?```', body, flags=re.S))
+body = re.sub(r'```.*?```', '', body, flags=re.S)
+rows = [r for r in re.findall(r'^\|.*$', body, flags=re.M)
+        if not re.fullmatch(r'[|\s:-]+', r)]
+tables = sum(words(r.replace('|', ' ')) for r in rows)
+prose = words(re.sub(r'^\|.*$', '', body, flags=re.M))
+print(f'without tables: {prose}   tables: {tables}   '
+      f'with tables: {prose + tables}   code blocks: {code}')
 EOF
 
 # Figures: compare numeric token counts, not presence. A trim can drop a figure
@@ -440,8 +453,9 @@ Section order and article shape; Altitude)
 - [ ] Section order carries the argument: one thread per section, mechanism
       before verdict, no incident told twice.
 - [ ] Title survives the paraphrase test; the outline's article table matches it.
-- [ ] Prose near the outline's target, with any excess past 2,000 justified in
-      the outline, and the on-page count under about 3,500.
+- [ ] Word count reported with and without tables: without tables near the
+      outline's target, any excess past 2,000 justified in the outline; with
+      tables under about 3,500.
 - [ ] Altitude: highlights, decision points and controls stay; per-run detail
       moves behind a link to the README or doc that holds it, and every such
       cut names the link that absorbs it.
@@ -460,6 +474,7 @@ Section order and article shape; Altitude)
 **Visuals, tables, sources** (Diagrams and code blocks; Presentation;
 Attribution; Cross-article references)
 
+- [ ] At least one diagram, of the article's central mechanism.
 - [ ] Diagrams use the prose's names and draw exclusive branches as branches.
 - [ ] Code and config blocks show the fragment that carries the point.
 - [ ] Table sections run intro, table, commentary; no table cut.

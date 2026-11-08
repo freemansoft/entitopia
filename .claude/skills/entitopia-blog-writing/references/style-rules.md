@@ -218,7 +218,7 @@ Most rewriting is a term doing two jobs at once, or two terms doing one job.
 ## 6. Openings
 
 **Every article is standalone.** A reader arrives from a search result or a
-single link, not from article 1, and the articles are read in no fixed order.
+single link, not from the first article, and the articles are read in no fixed order.
 Nothing may depend on another article having been read: each one says what the
 project does, what data it reads, and what it produces, and expands a term the
 first time that article uses it.
@@ -359,10 +359,12 @@ One kind of sentence earns the length: a short list, where the words come from
 items rather than clauses and no item needs explaining. Outside that, treat 25
 as a split point rather than a judgment call.
 
-**A list whose items want explaining belongs in bullets.** Inside a sentence each
-item gets a comma and nothing else, so a reader who needs to know what an item
-means has nowhere to look. Keep the inline form only where the items are bare
-figures or names that speak for themselves.
+**A list whose items want explaining belongs in a table or in bullets.** Inside
+a sentence each item gets a comma and nothing else, so a reader who needs to
+know what an item means has nowhere to look. Keep the inline form only where the
+items are bare figures or names that speak for themselves. Between a table and
+bullets, prefer the table (section 13): bullets are for items that differ in
+shape.
 
 Splitting adds a word or three each time, so this rule and the length target
 pull against each other. The ceiling wins. Take the length out of content, by
@@ -417,6 +419,12 @@ Habits to cut on sight:
 
 ## 10. Diagrams and code blocks
 
+- **Every article carries at least one diagram,** drawn as a mermaid fence in
+  the draft. It shows the article's central mechanism: the stages a record
+  passes through, or the decision a reader has to make. A reader skimming the
+  page should be able to tell what the article is about from the diagram
+  alone. The fence is the editable source; the published post shows a PNG
+  rendered from it (SKILL.md, Prepare for publication).
 - **A diagram says what the prose says, in the prose's names.** Label a stage
   "retrieval", not with a function name, and do not label a phase with a
   command-line flag.
@@ -430,7 +438,7 @@ Habits to cut on sight:
 - **Show the fragment that carries the point**, not the whole file: the one
   multi-field mapping, the one filter definition, the one `_analyze` call and
   its tokens. At most one code or config block per two sections, except where
-  the outline budgets more (article 1 carries four).
+  the outline budgets more.
 - **Every config fragment is copied from `main`**, not retyped, and its file is
   linked beside it. A retyped fragment drifts from the repo the first time the
   config changes.
@@ -479,17 +487,24 @@ wants the current file. A commit hash quoted in prose links to
 ## 13. Presentation
 
 - **Length: the outline sets each article's target; justify past 2,000, hard cap
-  3,000.** Prose excludes fenced code and diagram blocks, table rows, and link
-  URLs; measure with the command in `SKILL.md`, not `wc -w` on the raw file. An
+  3,000.** These limits apply to the count without tables, which excludes
+  fenced code and diagram blocks, table rows, and link URLs. Measure with the
+  command in `SKILL.md`, not `wc -w` on the raw file, and report both counts,
+  with and without tables. An
   article past 2,000 needs its reason recorded in its outline entry. One that
   outgrows the cap gets trimmed or split, with the outline updated if split.
-- **Watch the on-page count too, with a soft ceiling near 3,500.** The prose
-  figure excludes tables, so it understates what the reader scrolls. Prose can
+- **Watch the count with tables too, with a soft ceiling near 3,500.** The count
+  without tables understates what the reader scrolls. Prose can
   be trimmed to target while the article gets longer on screen, which is why
   both numbers are worth reading.
-- **Prefer a table to a prose list** anywhere a section compares more than two
-  things, or enumerates measured values. The outline's "table only for a
-  measured comparison" rule is superseded.
+- **Use a table wherever one works, instead of bullets or a prose list.** A
+  table works when the items share attributes: each has a name and the same
+  two or more facts, such as a figure, a source, a verdict or a fix. One row per
+  item, one column per attribute, and the reader compares down a column instead
+  of re-reading each bullet. It also works anywhere a section compares more
+  than two things or enumerates measured values. Keep bullets for items that
+  differ in shape, or where each needs a sentence of its own that no column
+  could hold; keep numbered lists for steps in order.
 - **A table section runs intro, table, then commentary.** The intro is one or two
   sentences saying what the table holds and what to look for in it. After the
   table, the rows that carry a finding get a paragraph each. A row the reader
@@ -526,8 +541,7 @@ of the argument.
 - **Tell an incident once.** Where it appears in the intro and again in the first
   section, the intro keeps the setup and the section keeps the account. Across
   the series, an incident told in two articles serves a different point in
-  each (the outline's note on article 1 section 2 and article 4 section 3), or
-  one of them links.
+  each, or one of them links.
 - **Group the sections so the close echoes the body.** A takeaway list orders
   its items the way the body ordered the findings behind them.
 - **Give each table its configuration** when the article spans more than one:
