@@ -33,8 +33,6 @@ jobs:
           cache-dependency-path: requirements.txt
       # The same script a developer runs, so CI installs exactly the pinned
       # requirements into .venv and nothing from the runner's own Python.
-      # The pinned numpy and pandas publish no 3.15 wheels, so the first run
-      # compiles them; the pip cache keeps the built wheels for later runs.
       - run: PYTHON=python bash dependencies.sh
       - run: .venv/bin/python -m ruff check .
       - run: .venv/bin/python -m pytest -q -rs
