@@ -199,3 +199,35 @@ def test_declared_subfields_are_accepted(subfield):
         ]
     )
     assert config_liveness.check(_FakeES(), raw, "t") == []
+
+
+def _address_signal(state_field):
+    return {
+        "type": "address",
+        "weight": 0.2,
+        "fields": ["legal_name"],
+        "exact_subfield": "clean",
+        "fuzzy_subfield": "clean",
+        "fuzzy_scale": 0.7,
+        "state_field": state_field,
+    }
+
+
+def test_an_address_state_field_absent_from_the_mapping_is_reported():
+    # The address signal once read a hard-coded "phy_state" on an index that
+    # had "State" instead: the state read as missing, every pair counted as
+    # cross-state, and every fuzzy hospital address match was halved with
+    # nothing reported. The field it reads is now config, and checked here.
+    raw = _config(signals=[_address_signal("phy_state")])
+    errors = config_liveness.check(_FakeES(), raw, "t")
+    assert any("phy_state" in e and "state_field" in e for e in errors)
+
+
+def test_an_address_state_field_the_mapping_declares_passes():
+    raw = _config(signals=[_address_signal("dot_number")])
+    assert config_liveness.check(_FakeES(), raw, "t") == []
+
+
+def test_a_null_state_field_is_not_checked():
+    raw = _config(signals=[_address_signal(None)])
+    assert config_liveness.check(_FakeES(), raw, "t") == []

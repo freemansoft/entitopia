@@ -171,6 +171,9 @@ def test_a_duplicate_detection_config_without_lifecycle_validates():
                 # real CMS sweep, so this test was encoding the same wrong
                 # assumption it was meant to guard against.
                 "fuzzy_scale": 0.7,
+                # Required for the same reason: the field this used to
+                # default to does not exist in the hospital data.
+                "state_field": "State",
             },
         ],
         "scoring": {"min_total_score": 0.5, "min_signals": 1},
@@ -188,3 +191,19 @@ def test_every_registered_signal_type_is_allowed_by_the_schema():
     schema = json.loads(_SCHEMA_PATH.read_text())
     allowed = set(schema["properties"]["signals"]["items"]["properties"]["type"]["enum"])
     assert set(SIGNAL_TYPES) == allowed
+
+
+def test_an_address_signal_without_state_field_is_rejected():
+    # The hard-coded phy_state halved every fuzzy hospital address match
+    # because a default answered a question no one asked. Required, like
+    # fuzzy_scale, so each project says which field holds its state.
+    raw = copy.deepcopy(_SHIPPED)
+    del _signal(raw, "address")["state_field"]
+    errors = config_schema.validate_mapping("entity-match", raw, "mutated")
+    assert any("state_field" in e for e in errors)
+
+
+def test_an_address_signal_may_declare_no_state_field():
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "address")["state_field"] = None
+    assert not config_schema.validate_mapping("entity-match", raw, "mutated")

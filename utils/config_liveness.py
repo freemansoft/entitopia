@@ -58,7 +58,10 @@ def _walk(properties, prefix=""):
 def _signal_field_paths(raw):
     """Every source path the configured signals read, with the key that named it."""
     for signal in raw.get("signals", []) or []:
-        for key in ("fields", "phone_fields", "text_fields", "name_field"):
+        # state_field is listed because the address signal once hard-coded
+        # "phy_state", a field the hospital index does not have, and nothing
+        # here could see it: every fuzzy hospital address match was halved.
+        for key in ("fields", "phone_fields", "text_fields", "name_field", "state_field"):
             value = signal.get(key)
             if isinstance(value, str):
                 yield signal.get("type"), key, value

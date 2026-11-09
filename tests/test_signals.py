@@ -219,6 +219,7 @@ def address_cfg(**overrides):
         "exact_subfield": "clean",
         "fuzzy_subfield": "tokens",
         "fuzzy_scale": 0.7,
+        "state_field": "phy_state",
     }
     base.update(overrides)
     return cfg(**base)
@@ -272,6 +273,54 @@ def test_address_exact_match_across_states_is_not_halved():
 def test_address_returns_none_when_no_address_data():
     signal = build_signal(address_cfg())
     assert signal.score(make_doc(), make_doc(), ScoringContext()) is None
+
+
+# The address signal used to read a hard-coded "phy_state", DOT-Commercial's
+# column name. CMS-Providers' hospitals carry "State" instead, so the state read
+# as missing on both sides, every pair counted as cross-state, and every fuzzy
+# hospital address match was halved with no error. These pin the configured
+# field and the rule that a missing state is not a different state.
+
+_FUZZY_PAIR_TOKENS = (
+    {"Address.clean": {"123 main street"}, "Address.tokens": {"123", "main", "street"}},
+    {"Address.clean": {"123 main street suite 4"}, "Address.tokens": {"123", "main", "street", "suite", "4"}},
+)
+
+
+def _hospital_address_signal(state_field="State"):
+    return build_signal(address_cfg(fields=["Address"], state_field=state_field))
+
+
+def test_address_reads_the_configured_state_field():
+    signal = _hospital_address_signal()
+    pred = make_doc(source={"State": "OR"}, tokens=dict(_FUZZY_PAIR_TOKENS[0]))
+    cand = make_doc(source={"State": "OR"}, tokens=dict(_FUZZY_PAIR_TOKENS[1]))
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.7)
+
+
+def test_address_cross_state_penalty_uses_the_configured_field():
+    signal = _hospital_address_signal()
+    pred = make_doc(source={"State": "OR"}, tokens=dict(_FUZZY_PAIR_TOKENS[0]))
+    cand = make_doc(source={"State": "TX"}, tokens=dict(_FUZZY_PAIR_TOKENS[1]))
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.35)
+
+
+def test_address_missing_state_is_not_a_different_state():
+    # Missing data neither helps nor hurts: with a state on one side only,
+    # nothing says the two are in different states.
+    signal = _hospital_address_signal()
+    pred = make_doc(source={"State": "OR"}, tokens=dict(_FUZZY_PAIR_TOKENS[0]))
+    cand = make_doc(source={}, tokens=dict(_FUZZY_PAIR_TOKENS[1]))
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.7)
+
+
+def test_address_null_state_field_never_applies_the_penalty():
+    # A dataset with no state column says so with null, rather than having
+    # the penalty applied or skipped by an unseen default.
+    signal = _hospital_address_signal(state_field=None)
+    pred = make_doc(source={"State": "OR"}, tokens=dict(_FUZZY_PAIR_TOKENS[0]))
+    cand = make_doc(source={"State": "TX"}, tokens=dict(_FUZZY_PAIR_TOKENS[1]))
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.7)
 
 
 def identifier_cfg():
