@@ -74,7 +74,7 @@ Work through these, consulting the documents above for the specifics:
 
 ### 2a. If your data has no dates, say so in the config
 
-A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,698 pairs, and no framework code.
+A dataset with identity fields and no lifecycle events can find duplicates but not succession. That is expressed by **omitting the `lifecycle` block** and setting `population.mode` to `all-entities`: no temporal signal, no gap guards, no direction claimed. `CMS-Providers/configuration/hospital-duplicates/` is a worked example — four config files, 5,419 records, 3,835 pairs, and no framework code.
 
 Two things that example is worth reading for:
 

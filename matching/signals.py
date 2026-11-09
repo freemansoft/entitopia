@@ -254,6 +254,17 @@ class NameOverlapSignal(Signal):
 CROSS_STATE_FUZZY_PENALTY = 0.5
 
 
+def _state_value(doc, state_field):
+    """The document's state, trimmed and uppercased, or None when unknown."""
+    if not state_field:
+        return None
+    value = doc.value(state_field)
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    return text or None
+
+
 class AddressSignal(Signal):
     """Street similarity, exact first then fuzzy.
 
@@ -270,9 +281,17 @@ class AddressSignal(Signal):
         fuzzy_subfield = self.config.fuzzy_subfield
         fuzzy_scale = float(self.config.fuzzy_scale)
 
-        pred_state = pred.value("phy_state")
-        cand_state = cand.value("phy_state")
-        same_state = bool(pred_state) and pred_state == cand_state
+        # Read from config, never assumed. This was a literal "phy_state",
+        # DOT-Commercial's column, so on CMS-Providers' hospitals (which
+        # carry "State") the state read as missing on both sides and every
+        # fuzzy hospital address match was halved, with nothing logged.
+        # Required by the schema; null means the dataset has no state column.
+        state_field = self.config.state_field
+        pred_state = _state_value(pred, state_field)
+        cand_state = _state_value(cand, state_field)
+        # A missing state is not a different state: penalize only when both
+        # are known and differ, so absent data neither helps nor hurts.
+        cross_state = bool(pred_state) and bool(cand_state) and pred_state != cand_state
 
         best = None
         saw_any_data = False
@@ -292,7 +311,7 @@ class AddressSignal(Signal):
                     score = 1.0
                 else:
                     score = containment(pred_fuzzy, cand_fuzzy) * fuzzy_scale
-                    if not same_state:
+                    if cross_state:
                         # "100 MAIN ST" exists in every state. An exact match
                         # across states stays strong; a fuzzy one does not.
                         score *= CROSS_STATE_FUZZY_PENALTY

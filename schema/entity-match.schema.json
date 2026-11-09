@@ -175,6 +175,10 @@
           "exact_subfield": { "type": "string" },
           "fuzzy_subfield": { "type": "string" },
           "fuzzy_scale": { "type": "number", "minimum": 0, "maximum": 1 },
+          "state_field": {
+            "type": ["string", "null"],
+            "description": "address only. The source field holding each record's state, used to halve a fuzzy address match between records in different states. null means the dataset has no state column, so the penalty never applies. Required: it used to be a hard-coded \"phy_state\", which CMS-Providers' hospitals lack, so every fuzzy hospital address match was halved without a word."
+          },
           "phone_fields": { "type": "array", "items": { "type": "string" } },
           "text_fields": { "type": "array", "items": { "type": "string" } },
           "name_field": { "type": "string" },
@@ -212,7 +216,13 @@
           {
             "if": { "properties": { "type": { "const": "address" } }, "required": ["type"] },
             "then": {
-              "required": ["fields", "exact_subfield", "fuzzy_subfield", "fuzzy_scale"],
+              "required": [
+                "fields",
+                "exact_subfield",
+                "fuzzy_subfield",
+                "fuzzy_scale",
+                "state_field"
+              ],
               "additionalProperties": false,
               "description": "fuzzy_scale is REQUIRED even though AddressSignal could default it. Two reasons. It is de facto required already -- matching/signals.py reads config.fuzzy_scale with no default, so omitting it raised AttributeError on every scored pair, and a second project hit that on its first sweep with config this schema had passed as valid. And it is a weighting decision rather than a detail: it sets what a fuzzy address match is worth against an exact one, so a silent default would change what every address score means without anyone choosing it.",
               "properties": {
@@ -223,7 +233,8 @@
                 "fields": true,
                 "exact_subfield": true,
                 "fuzzy_subfield": true,
-                "fuzzy_scale": true
+                "fuzzy_scale": true,
+                "state_field": true
               }
             }
           },

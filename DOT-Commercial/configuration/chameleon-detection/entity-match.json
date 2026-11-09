@@ -63,7 +63,8 @@
       "fields": ["phy_street", "mailing_street"],
       "exact_subfield": "clean",
       "fuzzy_subfield": "tokens",
-      "fuzzy_scale": 0.7
+      "fuzzy_scale": 0.7,
+      "state_field": "phy_state"
     },
     {
       "type": "exact-identifier",
