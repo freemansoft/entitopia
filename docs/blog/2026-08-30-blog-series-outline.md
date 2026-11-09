@@ -209,6 +209,20 @@ for it is thinner than the outline implied. Check the source before padding it.
 3. **Then add each article's diagram** (production note 6), drawn from the rewritten
    text rather than from this plan, because a rewrite can change which mechanism the
    article turns on.
+4. **Finish the project changes the articles depend on before publishing any of
+   them.** Both are README open work items:
+
+   - **A typo-tolerant name signal.** Article 1 measures that the phonetic encoders
+     fall below a coin flip on one-letter typos and recommends a typo-tolerant
+     matcher the project does not have. Add the signal, re-sweep, compare by pair
+     id, then update Article 1's "today" sentence and takeaway with the measured
+     result.
+   - **The hard-coded `phy_state` in `AddressSignal`.** It halves every fuzzy
+     hospital address match. Fix it, re-sweep `hospital-duplicates`, and carry the
+     measured effect into Article 3 as a fourth defect the second dataset exposed.
+
+   Rewrite Articles 2 and 3 after both changes, so they describe the finished
+   matcher.
 
 ## Source index
 
