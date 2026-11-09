@@ -37,7 +37,8 @@
       "fields": ["Address"],
       "exact_subfield": "clean",
       "fuzzy_subfield": "tokens",
-      "fuzzy_scale": 0.7
+      "fuzzy_scale": 0.7,
+      "state_field": "State"
     },
     {
       "type": "exact-identifier",

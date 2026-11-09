@@ -56,7 +56,7 @@ Each step runs the same three phases — `index-create`, `index-map`, `index-pop
 
 1. No enrichment exists. The `Ind_PAC_ID`-to-facility and facility-to-hospital relationships shown dashed above could be materialized with enrichment policies, the way DOT-Commercial denormalizes five datasets onto its carriers index.
 1. Affiliations extend to more than hospitals, so `facillity-affiliations` is broader than its name suggests.
-1. **Only `hospitals` matches; `doctors-clinicians` and `facillity-affiliations` still only load.** The `hospital-duplicates` step sweeps 5,419 facilities in `all-entities` mode and emits 3,698 pairs (2026-11-08). The other two datasets have the analyzers configured and nothing querying them. `doctors-clinicians` is the obvious next one — 3.39M rows and a three-part composite key, so it is a different size of problem, not a copy of this one.
+1. **Only `hospitals` matches; `doctors-clinicians` and `facillity-affiliations` still only load.** The `hospital-duplicates` step sweeps 5,419 facilities in `all-entities` mode and emits 3,835 pairs (2026-11-08). The other two datasets have the analyzers configured and nothing querying them. `doctors-clinicians` is the obvious next one — 3.39M rows and a three-part composite key, so it is a different size of problem, not a copy of this one.
 
 1. **The hospitals mapping pins 7 of 38 columns.** The extract grew and the mapping did not follow, so 31 columns are dynamically mapped — the first hazard in the [top-level README](../README.md). Nothing currently reads them, so nothing is broken today; the ones the sweep touches are all pinned. It matters the moment someone filters or aggregates on a quality-rating column and finds a term query matching zero documents.
 
