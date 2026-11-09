@@ -54,8 +54,7 @@
       "weight": 0.06,
       "fields": ["legal_name", "dba_name"],
       "subfield": "clean",
-      "cross_field": true,
-      "fuzzy_edits": "AUTO:4,6"
+      "cross_field": true
     },
     {
       "type": "address",

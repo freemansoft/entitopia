@@ -129,6 +129,16 @@ The test is not "is this field rare enough to rank well" but **"if two records s
 
 **Averaging cannot express "this one fact settles it".** A weighted mean dilutes a decisive signal in proportion to how many other signals exist. A shared vehicle identifier at its original weight of 0.08 contributed ~0.11 to a pair sharing nothing else, well under a 0.35 floor, so the strongest available evidence was discarded while weaker corroborated pairs passed. Raising the weight enough to clear the floor unaided (~0.46 here) makes that signal dominate every _other_ pair it touches, which is a worse outcome. Mark the signal `conclusive` instead: it is a guard, not a weight, so it changes only the pairs where that evidence stands alone.
 
+**Choose each name matcher on your own sweep, not on a benchmark.** A matcher that wins on synthetic edits can still lose on real data, because synthetic edits test whether a true variant survives, not how many unrelated names sit one edit apart. Fuzzy word matching (`fuzzy_edits`) kept the most edited carrier names of any matcher at a 1% false-match rate, then added 3,725 to 7,177 mostly unrelated carrier pairs and 541 hospital pairs on the real sweeps, so both shipped projects leave it off. Run the same process for any new dataset before turning on a matcher that changes how names compare:
+
+1. Measure the candidates on the dataset's own name field: `scripts/compare_name_matchers.py` for exact words, fuzzy words, edit distance and trigrams, and `scripts/compare_phonetic_encoders.py` for the phonetic encoders.
+2. Run the sweep with the setting and without it, and compare the two by pair id with `scripts/compare_pair_ids.py`. Equal counts prove nothing: a pair lost and a pair gained in one score band cancel.
+3. Break the lost and gained pairs down by score band and by what they matched on, and count how many existing pairs crossed each top tier.
+4. Read a sample of the gained pairs and the tier crossings locally, and never copy the names anywhere.
+5. Keep the setting only when the pairs it adds look like real matches.
+
+Where the data comes from predicts the answer. Typos are rare in a curated or validated registry, and the ones that exist may be deliberate. They are common in data people type in themselves, such as CRM records, which is where typo tolerance is most likely to pay.
+
 **Check whether a new dataset can join at all.** Every dataset currently in the project links via a shared identifier. One that has no such key is not a drop-in enrichment source — it needs either a fuzzy pre-join or a parallel sweep whose output corroborates the main one. That distinction changes the size of the work substantially, so resolve it before estimating.
 
 **Flag inconsistencies you notice in passing, even outside your task.** The recurring failure here is a mismatch nobody looked for — a join field typed differently on two sides, an analyzer naming a column that was renamed, an enrichment carrying a payload that gets discarded at the last hop. Several real bugs were found exactly that way, including the `dot_number` type boundary now recorded in the open work items, which surfaced while assessing an unrelated candidate dataset.
