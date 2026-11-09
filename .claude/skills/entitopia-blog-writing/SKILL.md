@@ -306,13 +306,15 @@ A=docs/blog/2026-08-30-02-tuning-an-entity-matcher.md; BASE=main
 # outline, hard cap 3,000. "With tables" adds the table cells back, which is
 # what the reader scrolls: soft ceiling 3,500. Code blocks are reported
 # separately; mermaid source counts nowhere, since it publishes as a PNG.
-# URLs and table separator rows count nowhere.
+# URLs, table separator rows and the closing `## Source` section count
+# nowhere: the Source section is the same boilerplate in every article.
 .venv/bin/python - "$A" <<'EOF'
 import re, sys
 def words(s):
     s = re.sub(r'\(https?://[^)]*\)', '', s)
     return len(re.sub(r'https?://\S+', '', s).split())
 raw = open(sys.argv[1], encoding="utf-8").read()
+raw = re.split(r'^## Source\s*$', raw, flags=re.M)[0]
 body = re.sub(r'```mermaid.*?```', '', raw, flags=re.S)
 code = sum(words(b) - 2 for b in re.findall(r'```.*?```', body, flags=re.S))
 body = re.sub(r'```.*?```', '', body, flags=re.S)
@@ -380,8 +382,68 @@ for n, x in sorted(zip(lens, sents), reverse=True)[:10]:
         print(n, x[:90])
 EOF
 
+# Clauses: at most two per sentence. Counts joins (a comma before and/but/so/
+# which/while/because, a semicolon, a colon before lowercase, or a
+# subordinating word); two or more joins means three clauses. Split at the
+# second join. Some noun clauses are flagged too; split those when it reads
+# as easily.
+.venv/bin/python - "$A" <<'EOF'
+import re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+t = re.sub(r'```.*?```', '', t, flags=re.S); t = re.sub(r'^\|.*$', '', t, flags=re.M)
+t = re.sub(r'^#.*$', '', t, flags=re.M); t = re.sub(r'<[^>]+>', '', t)
+t = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', t); t = re.sub(r'`[^`]*`', 'X', t)
+JOIN = re.compile(r";|:\s+[a-z]|,\s+(?:and|but|or|so|yet|while|which|where|when|because|though|although|since|then)\b"
+                  r"|\s(?:because|although|though|whereas|unless|until|while|which|whose|where)\s", re.I)
+sents = []
+for para in re.split(r'\n\s*\n|\n(?=\s*(?:[-*]|\d+\.)\s)', t):
+    for x in re.split(r'(?<=[.!?])[*"\)]*\s+', para):
+        x = ' '.join(x.split())
+        if len(x.split()) > 2: sents.append(x)
+hits = [(len(JOIN.findall(x)), x) for x in sents]
+over = [h for h in hits if h[0] >= 2]
+print(f'sentences {len(sents)}  with 3+ clauses (2+ joins): {len(over)}')
+for n, x in over: print(f'  {n + 1} clauses: {x[:120]}')
+EOF
+
 # The reversal tic ("It was not.", "They are not."). Count before fixing one.
 grep -nE '\b(It|They|That|This|The [a-z]+) (is|are|was|were) not\.' "$A"
+
+# Sentences opening on a conjunction or a preposition, and passive verbs. Every
+# hit is a rewrite: put the subject first, and name who or what acts. A
+# be-verb before an -ed adjective ("may be related") is a false positive;
+# reword it anyway so the check stays quiet.
+.venv/bin/python - "$A" <<'EOF'
+import re, sys
+t = open(sys.argv[1], encoding="utf-8").read()
+t = re.sub(r'```.*?```', '', t, flags=re.S)
+t = re.sub(r'^\|.*$', '', t, flags=re.M)
+t = re.sub(r'<[^>]+>', '', t)
+t = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', t)
+OPENERS = set('''and but or nor so yet also about above across after against
+along among around as at before behind below beside between beyond by despite
+during for from in inside into like near of off on onto over past per since
+through to toward under until upon via with within without'''.split())
+IRREGULAR = set('''built made set kept held known shown given taken done found
+seen written chosen run read left sent paid put told brought cut driven drawn
+hidden meant broken'''.split())
+sents = []
+for para in re.split(r'\n\s*\n|\n(?=\s*(?:[-*]|\d+\.)\s)', t):
+    if para.lstrip().startswith('#'):
+        sents.append(' '.join(para.lstrip('# ').split()))
+        continue
+    for x in re.split(r'(?<=[.!?])[*`"\)]*\s+', para):
+        x = ' '.join(x.split())
+        if len(x.split()) > 2:
+            sents.append(x)
+for x in sents:
+    first = re.sub(r'^[^A-Za-z]+', '', x).split(' ')[0].lower()
+    if first in OPENERS:
+        print('OPENER: ', x[:100])
+    m = re.search(r"\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?(\w+)\b", x, re.I)
+    if m and (m.group(1).lower().endswith('ed') or m.group(1).lower() in IRREGULAR):
+        print('PASSIVE:', m.group(0), '|', x[:90])
+EOF
 
 # Paragraphs opening on a clause before the subject: a subordinate clause, a
 # purpose infinitive ("To check ..."), or a noun clause as subject ("Where X
@@ -460,16 +522,20 @@ Section order and article shape; Altitude)
       moves behind a link to the README or doc that holds it, and every such
       cut names the link that absorbs it.
 - [ ] Each term defined once; every cross-reference resolves.
-- [ ] Terms table, if any, folded in `<details>` with the heading outside.
+- [ ] A terms table, folded in `<details>` with the heading outside, covering every
+      Elasticsearch and matching term the article uses.
 - [ ] Takeaway is a list the reader can act on, and ends on a fact.
 
 **Register** (Register)
 
 - [ ] No em dashes, first-person singular, amplifiers, or closing flourish.
-- [ ] Active voice, no paragraph opening on a clause before its subject, and no
-      "X is where / why / what" copula sentence standing in for an actor and a
-      verb.
+- [ ] No passive voice, in sentences or headings: every clause names its actor.
+- [ ] No sentence opens on a conjunction (And, But, So) or a preposition (For,
+      On, Against), and no paragraph opens on a clause before its subject.
+- [ ] No "X is where / why / what" copula sentence standing in for an actor and
+      a verb.
 - [ ] Sentence mean near 14 words, and nothing past 25 that does not earn it.
+- [ ] At most two clauses per sentence: one main, plus one subordinate or joined.
 
 **Visuals, tables, sources** (Diagrams and code blocks; Presentation;
 Attribution; Cross-article references)
@@ -478,5 +544,6 @@ Attribution; Cross-article references)
 - [ ] Diagrams use the prose's names and draw exclusive branches as branches.
 - [ ] Code and config blocks show the fragment that carries the point.
 - [ ] Table sections run intro, table, commentary; no table cut.
+- [ ] Ends with a `## Source` section linking the GitHub repo.
 - [ ] Repo on the first screen, source beside each table, absolute GitHub URLs
       throughout, repo and source both linked at the close.

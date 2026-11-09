@@ -20,9 +20,11 @@ an article stays in the series only while it carries evidence no other article d
 
 **Article 1 was re-scoped on 2026-11-08.** The first draft toured one mapping and
 restated the analyzer reference the DOT README already publishes. The new Article 1
-answers the question readers actually search for, which fuzzy matcher suits which
-field, and backs it with a measured comparison of six matchers. Draft
-`2026-08-30-01-schema-for-fuzzy-matching.md` is rewritten in place for it.
+answers the question readers search for, how to tell that two listings are the same
+business when nothing matches exactly, and backs it with a measured comparison of
+six matchers. The draft was rewritten in place and renamed from
+`2026-08-30-01-schema-for-fuzzy-matching.md` to
+`2026-08-30-01-finding-the-same-business.md`.
 
 **The LLM article was dropped on 2026-11-08.** Its evidence was the thinnest of the
 four, and the series is stronger as three articles about matching. Its draft has been
@@ -37,11 +39,11 @@ the worked example rather than as the thesis. A reader running a provider direct
 customer MDM, or a supplier deduplication project should be able to follow the whole
 series without caring about trucking.
 
-| #   | Working title                                                  | Primary audience                    | Target words | One-line thesis                                                                                                                 |
-| --- | -------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Choosing a fuzzy matcher, field by field                       | Search engineers, ER / MDM builders | 1,725        | Pick a matcher by the kind of difference you expect, and test it against the look-alikes your search returns, not random pairs. |
-| 2   | Tuning an entity matcher: the knobs that actually moved recall | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
-| 3   | Configuration-driven matching, and the failures that passed    | Data and platform engineers         | 1,775        | A second dataset is the cheapest test a framework gets, and every failure it and a re-run found reported success.               |
+| #   | Working title                                                          | Primary audience                    | Target words | One-line thesis                                                                                                                 |
+| --- | ---------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Finding the same business when names and addresses don't match exactly | Search engineers, ER / MDM builders | 1,725        | Pick a matcher by the kind of difference you expect, and test it against the look-alikes your search returns, not random pairs. |
+| 2   | Tuning an entity matcher: the knobs that actually moved recall         | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
+| 3   | Configuration-driven matching, and the failures that passed            | Data and platform engineers         | 1,775        | A second dataset is the cheapest test a framework gets, and every failure it and a re-run found reported success.               |
 
 Each article stands alone and cross-links to the others. Series total: ~5,600 words.
 
@@ -64,7 +66,7 @@ for it is thinner than the outline implied. Check the source before padding it.
 
 ---
 
-## Article 1 — Choosing a fuzzy matcher, field by field
+## Article 1 — Finding the same business when names and addresses don't match exactly
 
 - **Audience:** engineers asked to make Elasticsearch match records that no exact query
   will join (names with variant spellings, abbreviated business names, addresses that
@@ -88,7 +90,7 @@ for it is thinner than the outline implied. Check the source before padding it.
 | ---------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. The problem, stated generically                         | 125   | Two records, same real-world entity, no field matches exactly. Separate agencies, separate keys, no join. Fraud, dedupe, MDM, provider directories are the same shape.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `README.md` § Purpose, Glossary                                                                                                                                                                    |
 | 2. Why not vector search                                   | 150   | You _declare_ an equivalence in Elasticsearch and review it in one file. A model's similarity is whatever it learned and cannot be asserted into; when it is wrong, the recourse is a different model. And nothing decides what you would embed: one field, or the whole record serialized? Argue from **control and the undefined unit**, not model capability, which decays.                                                                                                                                                                                                                                                                                                                                                                                                                                                      | design spec § "The question that started this"                                                                                                                                                     |
-| 3. Random pairs flatter every matcher                      | 250   | The headline. Against random unrelated names, all six matchers scored AUC 0.97–1.00. Against look-alikes the search returns, they spread from 0.72 to 0.93: double-metaphone 0.785, Beider-Morse 0.718, exact tokens 0.755, fuzzy tokens 0.902, whole-name edit distance 0.852, character trigrams 0.932. Phonetic codes collide fully on more than 1% of look-alikes, so name alone cannot decide a pair. The diagram: a decision flow from "what kind of difference do you expect?" to a matcher.                                                                                                                                                                                                                                                                                                                                 | `scripts/compare_name_matchers.py`; `carriers-2026.11.06-000001`                                                                                                                                   |
+| 3. Random pairs flatter every matcher                      | 250   | The headline. Against random unrelated names, all six matchers scored AUC 0.97–1.00. Against look-alikes the search returns, they spread from 0.72 to 0.93: double-metaphone 0.785, Beider-Morse 0.718, exact tokens 0.755, fuzzy tokens 0.902, whole-name edit distance 0.852, character trigrams 0.932. Phonetic codes collide fully on more than 1% of look-alikes, so name alone cannot decide a pair. A candidate diagram, settled after the rewrite: a decision flow from "what kind of difference do you expect?" to a matcher.                                                                                                                                                                                                                                                                                              | `scripts/compare_name_matchers.py`; `carriers-2026.11.06-000001`                                                                                                                                   |
 | 4. Phonetic encoders: what they catch and what breaks them | 225   | Double-metaphone and Beider-Morse each collide pairs the other keeps apart (live `_analyze`: `KNIGHT`/`NIGHT`, `STEPHENS`/`STEVENS` only under double-metaphone; `SMITH`/`SCHMIDT` only under Beider-Morse). Both handle respelling and word order. A one-letter typo breaks them: AUC 0.446 and 0.328 on typos, worse than chance, because the typo changes the code while look-alikes share it. `max_code_len` 4→6 because four characters over-collide on company words; Beider-Morse pinned to english+spanish because language guessing is unstable. On hospital names the encoder barely matters: `double_metaphone` at length 4 led plain `metaphone` by about 0.01 AUC on three seeds, `max_code_len` is silently ignored by plain `metaphone`, and DOT's length 6 scored below the default, so the setting is per dataset. | `DOT-Commercial/README.md` § Name and address analyzers; `index-settings.json`; `scripts/compare_name_matchers.py`; `scripts/compare_phonetic_encoders.py`; `CMS-Providers/README.md` encoder item |
 | 5. Strip the words every name shares, before encoding      | 150   | Nearly every name ends in LLC/INC/TRUCKING. Scoring happens in Python, so there is no BM25 IDF to discount them. The stop filter runs before phonetic encoding and only in the phonetic analyzers; `.clean` keeps the full name. A name that is entirely suffixes reduces to zero tokens: "no signal", not "no match". CMS-Providers needed its own list of generic hospital words.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | same; commit `61ff602`                                                                                                                                                                             |
 | 6. Edit distance and n-grams: where they win               | 200   | Neither is in the sweep, and the article says so. Whole-name edit distance catches typos and respellings (AUC 0.996, 0.995) and fails word order (0.492, no better than chance). Fuzzy tokens with `AUTO` edits catch typos (0.999) but not abbreviation (0.585). Character trigrams are the best single matcher overall (0.932) yet catch only 13% of edits at a 1% false-match rate. The case for combining: each kind of edit has a matcher that catches it and one that does not.                                                                                                                                                                                                                                                                                                                                               | `scripts/compare_name_matchers.py`                                                                                                                                                                 |
@@ -192,19 +194,21 @@ for it is thinner than the outline implied. Check the source before padding it.
    query samples.
 5. **Suggested publication order:** 1 → 2 → 3.
 6. **Diagrams.** Every article carries at least one mermaid diagram, rendered to PNG for
-   publication (the skill's Prepare for publication mode). No draft has one yet.
+   publication (the skill's Prepare for publication mode). Each is drawn after its
+   article's rewrite (open item 3).
 
 ## Open items
 
 1. **Remove a dropped article's draft in the same change that drops it** from the table
    above, so `docs/blog/` never holds a draft nobody plans to publish. The LLM article's
    draft was removed on 2026-11-08.
-2. **Add a diagram to every draft** (production note 6). Article 1's is the decision flow
-   from "what kind of difference?" to a matcher.
-3. **Rewrite each article** against its entry above, one branch per article. The
+2. **Rewrite each article** against its entry above, one branch per article. The
    2026-08-30 drafts are source material, not a base to patch: each is rewritten in
    place, keeping what still holds and checking every figure against the repo and the
    live cluster.
+3. **Then add each article's diagram** (production note 6), drawn from the rewritten
+   text rather than from this plan, because a rewrite can change which mechanism the
+   article turns on.
 
 ## Source index
 
