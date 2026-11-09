@@ -840,6 +840,23 @@ def test_name_token_fuzzy_edits_keeps_none_for_an_empty_name():
     assert signal.score(pred, cand, ScoringContext()) is None
 
 
+def test_name_token_fuzzy_edits_honours_custom_thresholds():
+    # AUTO:4,6 leaves three-letter words, mostly initials, to exact matching.
+    signal = build_signal(
+        cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean", fuzzy_edits="AUTO:4,6")
+    )
+    pred = make_doc(tokens={"legal_name.clean": {"qxz", "quillby"}})
+    cand = make_doc(tokens={"legal_name.clean": {"qyz", "quilby"}})
+    assert signal.score(pred, cand, ScoringContext()) == pytest.approx(0.5 * (1 / 3) + 0.5 * (1 / 2))
+
+
+def test_name_token_with_malformed_fuzzy_edits_fails_when_built():
+    with pytest.raises(ValueError):
+        build_signal(
+            cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean", fuzzy_edits="AUTO:6,4")
+        )
+
+
 def test_fuzzy_edits_does_not_change_the_evidence_source():
     # Typo tolerance changes how one field is compared, not which field is
     # read, so min_signals must still count it as the same evidence.

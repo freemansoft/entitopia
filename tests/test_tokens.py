@@ -15,6 +15,7 @@ from matching.tokens import (
     levenshtein,
     normalize_phone,
     normalize_text_identifier,
+    parse_fuzzy_edits,
 )
 
 
@@ -88,6 +89,33 @@ def test_auto_edit_budget_follows_elasticsearch():
     # No edits up to 2 letters, one up to 5, two beyond: the same thresholds
     # as fuzziness: AUTO, so the scorer credits what a fuzzy query would.
     assert [auto_edit_budget(w) for w in ("AB", "ABC", "ABCDE", "ABCDEF")] == [0, 1, 1, 2]
+
+
+def test_auto_edit_budget_takes_elasticsearch_style_thresholds():
+    # AUTO:4,6 gives three-letter words no budget. On the carrier sweep of
+    # 2026-11-08, 3,447 of 7,177 pairs that plain AUTO added owed their only
+    # fuzzy credit to three-letter words one letter apart, usually initials.
+    budgets = [auto_edit_budget(w, low=4, high=6) for w in ("ABC", "ABCD", "ABCDE", "ABCDEF")]
+    assert budgets == [0, 1, 1, 2]
+
+
+def test_parse_fuzzy_edits_reads_auto_and_its_thresholds():
+    assert parse_fuzzy_edits("AUTO") == (3, 6)
+    assert parse_fuzzy_edits("AUTO:4,6") == (4, 6)
+
+
+@pytest.mark.parametrize("spec", ["AUTO:6,4", "AUTO:0,6", "AUTO:4", "auto", "2"])
+def test_parse_fuzzy_edits_rejects_what_elasticsearch_would_not_mean(spec):
+    # Raised when the signal is built, so a bad value stops the run before any
+    # pair is scored rather than failing on every pair.
+    with pytest.raises(ValueError):
+        parse_fuzzy_edits(spec)
+
+
+def test_fuzzy_overlap_with_a_higher_low_threshold_matches_three_letter_words_exactly():
+    assert fuzzy_blended_overlap({"qxz"}, {"qyz"}) == 1.0
+    assert fuzzy_blended_overlap({"qxz"}, {"qyz"}, low=4, high=6) == 0.0
+    assert fuzzy_blended_overlap({"quillby"}, {"quilby"}, low=4, high=6) == 1.0
 
 
 def test_levenshtein_counts_single_letter_edits():

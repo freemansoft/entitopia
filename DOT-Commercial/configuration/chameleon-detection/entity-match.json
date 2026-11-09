@@ -55,7 +55,7 @@
       "fields": ["legal_name", "dba_name"],
       "subfield": "clean",
       "cross_field": true,
-      "fuzzy_edits": "AUTO"
+      "fuzzy_edits": "AUTO:4,6"
     },
     {
       "type": "address",

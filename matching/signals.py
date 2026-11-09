@@ -19,6 +19,7 @@ from matching.tokens import (
     fuzzy_blended_overlap,
     normalize_phone,
     normalize_text_identifier,
+    parse_fuzzy_edits,
 )
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,12 @@ class NameOverlapSignal(Signal):
     weighted independently.
     """
 
+    def __init__(self, config):
+        """Parse fuzzy_edits once, so a malformed value fails before any pair is scored."""
+        super().__init__(config)
+        spec = getattr(config, "fuzzy_edits", None)
+        self._fuzzy_thresholds = None if spec is None else parse_fuzzy_edits(spec)
+
     type_names = ("name-phonetic", "name-token")
 
     def score(self, pred, cand, ctx):
@@ -211,11 +218,13 @@ class NameOverlapSignal(Signal):
         cross_field = getattr(self.config, "cross_field", False)
         # Opt-in typo tolerance for word comparison. The schema allows it on
         # name-token only: an edit between sound codes means nothing.
-        overlap = (
-            fuzzy_blended_overlap
-            if getattr(self.config, "fuzzy_edits", None) == "AUTO"
-            else blended_overlap
-        )
+        if self._fuzzy_thresholds is None:
+            overlap = blended_overlap
+        else:
+            low, high = self._fuzzy_thresholds
+
+            def overlap(a, b):
+                return fuzzy_blended_overlap(a, b, low, high)
 
         if cross_field:
             pairings = [(p, c) for p in fields for c in fields]

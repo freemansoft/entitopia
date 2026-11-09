@@ -50,12 +50,32 @@ def blended_overlap(a: set[str], b: set[str]) -> float | None:
     return 0.5 * jaccard(a, b) + 0.5 * containment(a, b)
 
 
-# Elasticsearch's fuzziness: AUTO thresholds: no edits for a word of up to 2
-# letters, one edit up to 5, two beyond. Copied so the scorer credits exactly
-# what a fuzzy match query would; a looser budget on short words makes every
-# two- and three-letter word collide with dozens of others.
-AUTO_NO_EDITS_MAX_LEN = 2
-AUTO_ONE_EDIT_MAX_LEN = 5
+# Elasticsearch's fuzziness: AUTO thresholds, the defaults of AUTO:low,high:
+# no edits below 3 letters, one below 6, two from 6 on. Copied so the scorer
+# credits exactly what a fuzzy match query would; a looser budget on short
+# words makes every two- and three-letter word collide with dozens of others.
+AUTO_LOW = 3
+AUTO_HIGH = 6
+_FUZZY_EDITS = re.compile(r"AUTO(?::(\d+),(\d+))?")
+
+
+def parse_fuzzy_edits(spec: str) -> tuple[int, int]:
+    """The (low, high) word lengths a fuzzy_edits value means, in Elasticsearch's terms.
+
+    Accepts "AUTO" and "AUTO:low,high" because that is the syntax a reader
+    already knows from fuzzy queries. Called when a signal is built, so a
+    malformed value stops the run before any pair is scored; raising per pair
+    instead would surface as thousands of scoring errors.
+    """
+    match = _FUZZY_EDITS.fullmatch(spec) if isinstance(spec, str) else None
+    if match is None:
+        raise ValueError(f'fuzzy_edits must be "AUTO" or "AUTO:low,high", not {spec!r}')
+    if match.group(1) is None:
+        return AUTO_LOW, AUTO_HIGH
+    low, high = int(match.group(1)), int(match.group(2))
+    if not 1 <= low < high:
+        raise ValueError(f"fuzzy_edits {spec!r} needs 1 <= low < high")
+    return low, high
 
 
 def levenshtein(a: str, b: str) -> int:
@@ -71,21 +91,21 @@ def levenshtein(a: str, b: str) -> int:
     return prev[-1]
 
 
-def auto_edit_budget(word: str) -> int:
-    """The edits Elasticsearch's fuzziness: AUTO allows for a word this long."""
-    if len(word) <= AUTO_NO_EDITS_MAX_LEN:
+def auto_edit_budget(word: str, low: int = AUTO_LOW, high: int = AUTO_HIGH) -> int:
+    """The edits Elasticsearch's fuzziness: AUTO:low,high allows for a word this long."""
+    if len(word) < low:
         return 0
-    return 1 if len(word) <= AUTO_ONE_EDIT_MAX_LEN else 2
+    return 1 if len(word) < high else 2
 
 
-def _within_budget(x: str, y: str) -> bool:
+def _within_budget(x: str, y: str, low: int, high: int) -> bool:
     # The shorter word sets the budget. That keeps the test symmetric, and it
     # stops a long word from licensing a two-edit match to a short one.
-    budget = auto_edit_budget(min(x, y, key=len))
+    budget = auto_edit_budget(min(x, y, key=len), low, high)
     return abs(len(x) - len(y)) <= budget and levenshtein(x, y) <= budget
 
 
-def _max_fuzzy_matching(a: set[str], b: set[str]) -> int:
+def _max_fuzzy_matching(a: set[str], b: set[str], low: int, high: int) -> int:
     """Most words of a that can each be paired with a distinct word of b.
 
     A maximum bipartite matching rather than a greedy pass: greedy pairing
@@ -94,7 +114,7 @@ def _max_fuzzy_matching(a: set[str], b: set[str]) -> int:
     """
     left = sorted(a)
     right = sorted(b)
-    edges = [[j for j, y in enumerate(right) if _within_budget(x, y)] for x in left]
+    edges = [[j for j, y in enumerate(right) if _within_budget(x, y, low, high)] for x in left]
     partner = [-1] * len(right)
 
     def augment(i: int, seen: list[bool]) -> bool:
@@ -109,7 +129,9 @@ def _max_fuzzy_matching(a: set[str], b: set[str]) -> int:
     return sum(augment(i, [False] * len(right)) for i in range(len(left)))
 
 
-def fuzzy_blended_overlap(a: set[str], b: set[str]) -> float | None:
+def fuzzy_blended_overlap(
+    a: set[str], b: set[str], low: int = AUTO_LOW, high: int = AUTO_HIGH
+) -> float | None:
     """blended_overlap, with two words counted equal within the AUTO edit budget.
 
     Exists for the typo the exact form cannot see. `blended_overlap` needs
@@ -122,10 +144,14 @@ def fuzzy_blended_overlap(a: set[str], b: set[str]) -> float | None:
     Each word pairs at most once, so repeating a word cannot inflate the
     score. With every word matching exactly this equals blended_overlap.
     None when either set is empty, as there.
+
+    `low` and `high` are AUTO:low,high's thresholds. Plain AUTO (3, 6) gave
+    three-letter words one edit, and on the 2026-11-08 carrier sweep that let
+    initials one letter apart account for about half the pairs it added.
     """
     if not a or not b:
         return None
-    matched = _max_fuzzy_matching(a, b)
+    matched = _max_fuzzy_matching(a, b, low, high)
     jaccard_like = matched / (len(a) + len(b) - matched)
     containment_like = matched / min(len(a), len(b))
     return 0.5 * jaccard_like + 0.5 * containment_like
