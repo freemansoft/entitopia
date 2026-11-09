@@ -1,5 +1,42 @@
 # Configuration-driven matching across datasets
 
+## Terms used in this article
+
+<details>
+<summary>Show the terms</summary>
+
+| Term                                            | What it means here                                                                                                                                                            |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project / step / phase                          | A project is a directory of configuration; it runs steps in order, and each step runs phases such as creating an index or loading data.                                       |
+| Index                                           | Elasticsearch's name for a collection of stored listings and their searchable forms. It is closer to a database table than to a database index.                               |
+| Alias                                           | A stable name that points at one index, so a rebuilt index can replace the old one without changing the name the code uses.                                                   |
+| Mapping                                         | An index's schema: which fields it has, each field's type, and which analyzer processes each one.                                                                             |
+| Analyzer                                        | Elasticsearch's rules for turning text into the pieces it stores and searches, called tokens: split into words, lowercase, drop punctuation, replace synonyms, encode sounds. |
+| Token                                           | One piece of text an analyzer produces and stores, such as one word or one sound code.                                                                                        |
+| Multi-field / subfield                          | One source value stored several ways at once. Each stored version is a subfield with its own analyzer, such as `legal_name.phonetic` for the sound codes.                     |
+| Phonetic encoder                                | An analyzer filter that replaces a word with a code for how it sounds, so `SMITH` and `SMYTH` produce the same code.                                                          |
+| Ingest pipeline                                 | Elasticsearch processing that transforms each record as it is loaded.                                                                                                         |
+| Enrich policy / enrich index                    | Elasticsearch's way to copy fields from one index into records of another during loading, like a join done at load time.                                                      |
+| Back-pressure                                   | Elasticsearch rejecting load requests when it is too busy, which drops records if the loader does not retry.                                                                  |
+| Seed query                                      | The search that retrieval runs, built from the signals allowed to fetch candidates.                                                                                           |
+| Candidate                                       | A listing the seed query returns as a possible match. Only candidates are ever scored.                                                                                        |
+| Signal                                          | One per-field comparison in the scorer, such as name sound codes or a shared phone number, returning a score from 0 to 1 or no value when the field is missing.               |
+| Signal registry                                 | The code's table of signal types, which configuration chooses from by name.                                                                                                   |
+| Not evaluable (`None`) vs no similarity (`0.0`) | A signal returns `None` when it has no data to compare and `0.0` when it compared and found nothing. The scorer drops the first and counts the second.                        |
+| Weight                                          | A signal's configured share of the pair score.                                                                                                                                |
+| Renormalization                                 | Dividing by the weights of the signals that could be evaluated, so missing data neither helps nor hurts a pair.                                                               |
+| Guard                                           | A rule a pair must pass to be reported at all, such as a minimum number of independent signals.                                                                               |
+| Conclusive signal                               | A signal whose match reports the pair even when the blended score falls below the floor, for evidence that settles the question alone.                                        |
+| Terms aggregation                               | An Elasticsearch query that counts how many listings carry each value of a field.                                                                                             |
+| Sweep                                           | One run of the matcher over every business in a population, writing scored pairs to an index.                                                                                 |
+| Selector                                        | The configured rule that picks which businesses a sweep examines, such as carriers with an out-of-service order.                                                              |
+| Predecessor / successor                         | In the carrier project, a business that was shut down and a later one that may be the same business reopened.                                                                 |
+| Profiler                                        | The project's script that measures a dataset's columns before anyone configures matching on them.                                                                             |
+| Fingerprint vs filter                           | A fingerprint field can identify one business; a filter field, with few distinct values, can only narrow a population.                                                        |
+| More terms                                      | The project's [README glossary](https://github.com/freemansoft/entitopia/blob/main/README.md#glossary) defines these and the rest of its vocabulary.                          |
+
+</details>
+
 ## The problem is not fraud, it is identity
 
 Two records, two source systems, no shared key. One says a business is at a
@@ -243,3 +280,8 @@ The test is the rename. Strip the domain noun out of a component's name and see
 whether the description still makes sense. `vin-overlap` did not survive it and
 became `shared-token`. The predecessor selector does not survive it either, and
 still has the old name.
+
+## Source
+
+The code, configuration and measurements behind this article are in the
+[entitopia repository on GitHub](https://github.com/freemansoft/entitopia).

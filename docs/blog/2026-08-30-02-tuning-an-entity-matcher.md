@@ -1,5 +1,38 @@
 # Tuning an entity matcher: the knobs that actually moved recall
 
+## Terms used in this article
+
+<details>
+<summary>Show the terms</summary>
+
+| Term                                            | What it means here                                                                                                                                              |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Token                                           | One piece of text an analyzer produces and stores, such as one word or one sound code.                                                                          |
+| Phonetic encoder                                | An analyzer filter that replaces a word with a code for how it sounds, so `SMITH` and `SMYTH` produce the same code.                                            |
+| BM25 / relevance score                          | How Elasticsearch ranks search results, counting rarer words for more. It orders the candidates; it is not the pair score.                                      |
+| Inverse document frequency                      | A search-engine weighting that counts a word for less the more listings contain it.                                                                             |
+| Retrieval                                       | The first stage: a search that fetches candidate listings for each business. Also called blocking.                                                              |
+| Seed query                                      | The search that retrieval runs, built from the signals allowed to fetch candidates.                                                                             |
+| Candidate                                       | A listing the seed query returns as a possible match. Only candidates are ever scored.                                                                          |
+| Signal                                          | One per-field comparison in the scorer, such as name sound codes or a shared phone number, returning a score from 0 to 1 or no value when the field is missing. |
+| Not evaluable (`None`) vs no similarity (`0.0`) | A signal returns `None` when it has no data to compare and `0.0` when it compared and found nothing. The scorer drops the first and counts the second.          |
+| Weight                                          | A signal's configured share of the pair score.                                                                                                                  |
+| Renormalization                                 | Dividing by the weights of the signals that could be evaluated, so missing data neither helps nor hurts a pair.                                                 |
+| Jaccard                                         | Shared items divided by all distinct items in two sets.                                                                                                         |
+| Containment                                     | Shared items divided by the size of the smaller set, so a subset scores as a full match.                                                                        |
+| Guard                                           | A rule a pair must pass to be reported at all, such as a minimum number of independent signals.                                                                 |
+| Evidence source                                 | The underlying field a signal reads. Several signals reading one field count as one source.                                                                     |
+| Conclusive signal                               | A signal whose match reports the pair even when the blended score falls below the floor, for evidence that settles the question alone.                          |
+| Terms aggregation                               | An Elasticsearch query that counts how many listings carry each value of a field.                                                                               |
+| Frequency scan                                  | A terms aggregation run before scoring to find values shared by too many listings to identify anyone.                                                           |
+| `keyword`                                       | A field type stored exactly as written, as one token, for exact matching.                                                                                       |
+| Sweep                                           | One run of the matcher over every business in a population, writing scored pairs to an index.                                                                   |
+| Precision / recall                              | Precision: the share of reported pairs that are real matches. Recall: the share of real matches that get reported.                                              |
+| Uncalibrated score                              | A score with no tested link to real outcomes. A 0.9 does not mean a 90% chance of the same business.                                                            |
+| More terms                                      | The project's [README glossary](https://github.com/freemansoft/entitopia/blob/main/README.md#glossary) defines these and the rest of its vocabulary.            |
+
+</details>
+
 ## Retrieval and scoring are different problems
 
 An entity matcher has two stages, and only one of them sets your ceiling.
@@ -258,3 +291,8 @@ another, and hides the fact that it was ever a guess.
 - **Guards third.** Confirm they count independent evidence rather than signal
   instances.
 - **Weights last.** They are the most visible knob and they moved the least.
+
+## Source
+
+The code, configuration and measurements behind this article are in the
+[entitopia repository on GitHub](https://github.com/freemansoft/entitopia).
