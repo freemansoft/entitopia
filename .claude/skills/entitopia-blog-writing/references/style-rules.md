@@ -179,6 +179,11 @@ Most rewriting is a term doing two jobs at once, or two terms doing one job.
   not the words: "seed" as a verb for retrieval and "seed" as the seed query's
   clause are two senses in one paragraph.
 
+- **Never write a bare "model".** Say "embedding model", "language model" or
+  "LLM", or name the thing ("the scorer", "the weights"). A reader of a
+  technical post in this decade reads a bare "model" as an LLM, so "choose a
+  different model" in a paragraph about vector search sends them to the wrong
+  technology.
 - **One name per concept, taken from the code, config or Glossary.** Blocking,
   seeding and retrieval name one stage; pick the repo's term ("retrieval", with
   "classically called blocking" once) and keep it. The top-level README's
@@ -279,8 +284,8 @@ paragraph.
 
 ## 8. Terms tables and definitions
 
-- **A dense article can carry a "Terms used in this article" table** after the
-  opening. Table rows do not count against the length cap, so the table is also
+- **Every article carries a "Terms used in this article" table** after the
+  opening, before the first finding. Table rows do not count against the length cap, so the table is also
   cheap. Draw definitions from the README Glossary and link it.
 - **Fold the table, not the heading.** The table sits in a `<details>` block
   whose `<summary>` reads `Show the terms`, and the heading stays outside the
@@ -301,6 +306,14 @@ paragraph.
   </details>
   ```
 
+- **Write the table for a technical reader who does not know Elasticsearch.**
+  Every Elasticsearch term the article uses gets a row: index, mapping,
+  analyzer, tokenizer, filter, subfield, `keyword`, `fuzziness`, `_analyze`, and
+  any API or setting the prose names. So does every term from search or
+  matching theory (inverse document frequency, AUC, recall). General
+  programming terms (query, field, string) do not. Warn where an Elasticsearch
+  meaning differs from the everyday one: an Elasticsearch index is closer to a
+  database table than to a database index.
 - **Define each term once.** A term defined in the terms table is not defined
   again in the body.
 - **After moving or deleting a section, check every "next section", "above", and
@@ -319,10 +332,30 @@ in the failures, so they get specifics: the formula, the pattern, the measured
 consequence. Report negative results as plainly as wins; they must not read as
 apologies.
 
-**Write a technical blog post, not a research paper.** Active voice, and one idea
-per sentence at the lengths below. A paper hides the actor behind a passive
-("the documents were dropped"); a post names it ("Elasticsearch rejected the
-whole document"). Do not name it as a person.
+**Write a technical blog post, not a research paper.** One idea per sentence at
+the lengths below. A paper hides the actor behind a passive ("the documents
+were dropped"); a post names it ("Elasticsearch rejected the whole document").
+Do not name it as a person.
+
+**No passive voice.** Every clause names who or what acts. "Beider-Morse is
+pinned to English" becomes "The project pins Beider-Morse to English"; "the
+run can be repeated" becomes "anyone can repeat the run". A reduced passive
+counts too: "set to 6, chosen because" hides who chose. Headings follow the
+same rule: "Words ... must be stopped" becomes "Stop the words ...". When the
+actor is unknown or does not matter, rebuild the sentence around the thing
+that changed ("the share fell from 59% to 0%"), not around a passive verb. A
+be-verb before an adjective that ends in -ed ("may be related") is not a
+passive, but the check below flags it; reword it rather than argue with the
+check.
+
+**Open every sentence on its subject.** No sentence starts with a conjunction
+(And, But, Or, So, Yet, Also) or a preposition (For, On, In, At, Against,
+Across, With, Under, After, Before, By, From, To, Of). "And it finds likely
+matches" becomes "It also finds likely matches"; "On 600 hospital names, the
+script scored" becomes "The script scored ... on 600 hospital names"; "Against
+random pairs, all six score" becomes "All six score ... against random pairs".
+A leading phrase makes the reader hold a condition before they know what it
+qualifies, and a leading "And" reads as speech, not prose.
 
 **Lead a paragraph with its subject, not a subordinate clause.** A paragraph that
 opens on "Because", "Since", "While", "Although", "When" or "Given" makes the
@@ -354,6 +387,16 @@ Flesch-Kincaid reading tests treat 20 words as the upper end of comfortable, so
 a mean near 14 leaves room for the occasional longer sentence. A sentence past
 25 words is nearly always two ideas wanting a period between them, and the
 usual cause is a definition wedged between a subject and its verb.
+
+**At most two clauses per sentence.** One main clause, plus at most one
+subordinate or joined clause. A third clause, joined by a comma and "and", a
+semicolon, "which", "while" or "because", is the second idea the 25-word
+ceiling exists to catch, and it hides inside short sentences too: "X kept two
+spaces where Y had one, and under a keyword tokenizer those are different
+tokens" is 21 words and three clauses. Split it at the second join. The check
+in `SKILL.md` counts joins, so it flags some noun clauses that are not
+separate ideas ("measures which forms to use"); split those anyway when it
+reads as easily.
 
 One kind of sentence earns the length: a short list, where the words come from
 items rather than clauses and no item needs explaining. Outside that, treat 25
@@ -467,8 +510,10 @@ able to reach the source:
    `https://github.com/freemansoft/entitopia`.
 2. **Beside the artifact under discussion.** A reproduced table or config
    fragment needs its source link next to it, not in the closing paragraph.
-3. **Close.** The repo and the README or doc the figures came from, both URLs
-   spelled out.
+3. **Close, in a `## Source` section.** Every article ends with a `## Source`
+   section after its takeaway. It links the repository,
+   `https://github.com/freemansoft/entitopia`, and the README or doc the
+   figures came from, as absolute URLs.
 
 **All links are absolute GitHub URLs.** Repo-relative paths break the moment an
 article leaves the repository. This applies to inline artifact names too:
@@ -488,7 +533,8 @@ wants the current file. A commit hash quoted in prose links to
 
 - **Length: the outline sets each article's target; justify past 2,000, hard cap
   3,000.** These limits apply to the count without tables, which excludes
-  fenced code and diagram blocks, table rows, and link URLs. Measure with the
+  fenced code and diagram blocks, table rows, link URLs, and the closing
+  `## Source` section. Measure with the
   command in `SKILL.md`, not `wc -w` on the raw file, and report both counts,
   with and without tables. An
   article past 2,000 needs its reason recorded in its outline entry. One that
