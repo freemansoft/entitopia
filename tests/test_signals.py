@@ -767,3 +767,35 @@ def test_similarity_signals_declare_no_exact_evidence():
         )
     )
     assert signal.exact_evidence_fields() == []
+
+
+def test_name_token_with_fuzzy_edits_credits_a_typo():
+    # The gap scripts/compare_name_matchers.py measured: a one-letter typo in
+    # the distinctive word cost exact word matching the whole word.
+    exact = build_signal(cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean"))
+    fuzzy = build_signal(
+        cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean", fuzzy_edits="AUTO")
+    )
+    pred = make_doc(tokens={"legal_name.clean": {"quillby", "freight"}})
+    cand = make_doc(tokens={"legal_name.clean": {"quilby", "freight"}})
+    assert exact.score(pred, cand, ScoringContext()) < 1.0
+    assert fuzzy.score(pred, cand, ScoringContext()) == 1.0
+
+
+def test_name_token_fuzzy_edits_keeps_none_for_an_empty_name():
+    signal = build_signal(
+        cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean", fuzzy_edits="AUTO")
+    )
+    pred = make_doc(tokens={"legal_name.clean": set()})
+    cand = make_doc(tokens={"legal_name.clean": {"quilby"}})
+    assert signal.score(pred, cand, ScoringContext()) is None
+
+
+def test_fuzzy_edits_does_not_change_the_evidence_source():
+    # Typo tolerance changes how one field is compared, not which field is
+    # read, so min_signals must still count it as the same evidence.
+    plain = build_signal(cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean"))
+    fuzzy = build_signal(
+        cfg(type="name-token", weight=0.06, fields=["legal_name"], subfield="clean", fuzzy_edits="AUTO")
+    )
+    assert plain.evidence_key == fuzzy.evidence_key

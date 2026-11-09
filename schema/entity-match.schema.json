@@ -168,6 +168,10 @@
           "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
           "subfield": { "type": "string" },
           "cross_field": { "type": "boolean" },
+          "fuzzy_edits": {
+            "enum": ["AUTO"],
+            "description": "name-token only. Counts two words equal when they are within Elasticsearch's fuzziness: AUTO edit budget (none up to 2 letters, one up to 5, two beyond), so a one-letter typo no longer costs the whole word. Absent means exact words."
+          },
           "exact_subfield": { "type": "string" },
           "fuzzy_subfield": { "type": "string" },
           "fuzzy_scale": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -193,9 +197,17 @@
                 "conclusive": true,
                 "fields": true,
                 "subfield": true,
-                "cross_field": true
+                "cross_field": true,
+                "fuzzy_edits": true
               }
             }
+          },
+          {
+            "if": {
+              "properties": { "type": { "const": "name-phonetic" } },
+              "required": ["type"]
+            },
+            "then": { "not": { "required": ["fuzzy_edits"] } }
           },
           {
             "if": { "properties": { "type": { "const": "address" } }, "required": ["type"] },

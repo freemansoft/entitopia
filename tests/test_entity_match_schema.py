@@ -188,3 +188,23 @@ def test_every_registered_signal_type_is_allowed_by_the_schema():
     schema = json.loads(_SCHEMA_PATH.read_text())
     allowed = set(schema["properties"]["signals"]["items"]["properties"]["type"]["enum"])
     assert set(SIGNAL_TYPES) == allowed
+
+
+def test_fuzzy_edits_is_accepted_on_a_name_token_signal():
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-token")["fuzzy_edits"] = "AUTO"
+    assert not config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+def test_fuzzy_edits_is_rejected_on_a_phonetic_signal():
+    # Edit distance over sound codes measures nothing: SM0 and SM1 are not
+    # "one typo apart" in any sense a reader would trust.
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-phonetic")["fuzzy_edits"] = "AUTO"
+    assert config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+def test_fuzzy_edits_accepts_only_auto():
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-token")["fuzzy_edits"] = 3
+    assert config_schema.validate_mapping("entity-match", raw, "mutated")

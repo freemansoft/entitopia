@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from elasticsearch import Elasticsearch
 
-from matching.tokens import blended_overlap
+from matching.tokens import auto_edit_budget, blended_overlap, fuzzy_blended_overlap, levenshtein
 
 # One false match in a hundred is a working rate for a reviewable queue; the
 # recall a matcher keeps at that rate is what a reader can act on, where AUC
@@ -73,12 +73,6 @@ RESPELLINGS = [
 ]
 SUFFIXES = ["LLC", "INC", "CORP", "CO", "LTD"]
 
-# Elasticsearch's `fuzziness: AUTO` boundaries: no edits up to 2 characters,
-# one up to 5, two beyond. Copied so the fuzzy-token matcher credits exactly
-# what a fuzzy `match` query would.
-AUTO_NO_EDITS_MAX_LEN = 2
-AUTO_ONE_EDIT_MAX_LEN = 5
-
 # An interior typo or transposition needs a letter either side of the edit,
 # and a transposition needs two interior letters, so shorter words are skipped.
 MIN_EDITABLE_WORD = 4
@@ -90,19 +84,6 @@ ABBREVIATED_LEN = 4
 MIN_WORDS_TO_DROP = 3
 MIN_WORDS_TO_REORDER = 2
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-
-def levenshtein(a: str, b: str) -> int:
-    """Edit distance, the measure Elasticsearch's `fuzziness` bounds."""
-    if len(a) < len(b):
-        a, b = b, a
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
 
 
 def edit_similarity(a: str, b: str) -> float | None:
@@ -127,32 +108,18 @@ def trigram_similarity(a: str, b: str) -> float | None:
 
 
 def auto_fuzziness(token: str) -> int:
-    """Elasticsearch's `fuzziness: AUTO` edit budget for a token of this length."""
-    if len(token) <= AUTO_NO_EDITS_MAX_LEN:
-        return 0
-    return 1 if len(token) <= AUTO_ONE_EDIT_MAX_LEN else 2
+    """Elasticsearch's `fuzziness: AUTO` edit budget; the scorer's own, re-exported."""
+    return auto_edit_budget(token)
 
 
 def fuzzy_token_overlap(a: list[str], b: list[str]) -> float | None:
-    """The sweep's blended overlap, with tokens equal when within AUTO edits.
+    """The name-token signal's typo-tolerant overlap, the function the scorer runs.
 
-    What a `match` query with `fuzziness: AUTO` would credit, scored the way
-    the sweep scores token sets, so the comparison with exact tokens changes
-    one thing only. Each token in b is used once, so repeating a word cannot
-    inflate the overlap.
+    Delegates to matching.tokens so this measurement and the shipped signal
+    cannot drift apart: a figure quoted from this script describes the
+    scorer, not a copy of it.
     """
-    if not a or not b:
-        return None
-    used, matched = set(), 0
-    for x in a:
-        for j, y in enumerate(b):
-            if j not in used and levenshtein(x, y) <= auto_fuzziness(x):
-                used.add(j)
-                matched += 1
-                break
-    jaccard = matched / (len(a) + len(b) - matched)
-    containment = matched / min(len(a), len(b))
-    return 0.5 * jaccard + 0.5 * containment
+    return fuzzy_blended_overlap(set(a), set(b))
 
 
 def _edit_first_word(name: str, rng: random.Random, edit) -> str | None:

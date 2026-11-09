@@ -16,6 +16,7 @@ from matching.documents import EntityDoc, ScoringContext, read_path
 from matching.tokens import (
     blended_overlap,
     containment,
+    fuzzy_blended_overlap,
     normalize_phone,
     normalize_text_identifier,
 )
@@ -208,6 +209,13 @@ class NameOverlapSignal(Signal):
         fields = list(self.config.fields)
         subfield = self.config.subfield
         cross_field = getattr(self.config, "cross_field", False)
+        # Opt-in typo tolerance for word comparison. The schema allows it on
+        # name-token only: an edit between sound codes means nothing.
+        overlap = (
+            fuzzy_blended_overlap
+            if getattr(self.config, "fuzzy_edits", None) == "AUTO"
+            else blended_overlap
+        )
 
         if cross_field:
             pairings = [(p, c) for p in fields for c in fields]
@@ -216,7 +224,7 @@ class NameOverlapSignal(Signal):
 
         best = None
         for pred_field, cand_field in pairings:
-            score = blended_overlap(
+            score = overlap(
                 pred.token_set(pred_field, subfield),
                 cand.token_set(cand_field, subfield),
             )
