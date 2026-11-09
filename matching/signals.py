@@ -16,8 +16,10 @@ from matching.documents import EntityDoc, ScoringContext, read_path
 from matching.tokens import (
     blended_overlap,
     containment,
+    fuzzy_blended_overlap,
     normalize_phone,
     normalize_text_identifier,
+    parse_fuzzy_edits,
 )
 
 logger = logging.getLogger(__name__)
@@ -202,12 +204,27 @@ class NameOverlapSignal(Signal):
     weighted independently.
     """
 
+    def __init__(self, config):
+        """Parse fuzzy_edits once, so a malformed value fails before any pair is scored."""
+        super().__init__(config)
+        spec = getattr(config, "fuzzy_edits", None)
+        self._fuzzy_thresholds = None if spec is None else parse_fuzzy_edits(spec)
+
     type_names = ("name-phonetic", "name-token")
 
     def score(self, pred, cand, ctx):
         fields = list(self.config.fields)
         subfield = self.config.subfield
         cross_field = getattr(self.config, "cross_field", False)
+        # Opt-in typo tolerance for word comparison. The schema allows it on
+        # name-token only: an edit between sound codes means nothing.
+        if self._fuzzy_thresholds is None:
+            overlap = blended_overlap
+        else:
+            low, high = self._fuzzy_thresholds
+
+            def overlap(a, b):
+                return fuzzy_blended_overlap(a, b, low, high)
 
         if cross_field:
             pairings = [(p, c) for p in fields for c in fields]
@@ -216,7 +233,7 @@ class NameOverlapSignal(Signal):
 
         best = None
         for pred_field, cand_field in pairings:
-            score = blended_overlap(
+            score = overlap(
                 pred.token_set(pred_field, subfield),
                 cand.token_set(cand_field, subfield),
             )

@@ -12,6 +12,8 @@ import copy
 import json
 from pathlib import Path
 
+import pytest
+
 from matching.signals import SIGNAL_TYPES
 from utils import config_schema
 
@@ -191,6 +193,33 @@ def test_every_registered_signal_type_is_allowed_by_the_schema():
     schema = json.loads(_SCHEMA_PATH.read_text())
     allowed = set(schema["properties"]["signals"]["items"]["properties"]["type"]["enum"])
     assert set(SIGNAL_TYPES) == allowed
+
+
+def test_fuzzy_edits_is_accepted_on_a_name_token_signal():
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-token")["fuzzy_edits"] = "AUTO"
+    assert not config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+def test_fuzzy_edits_is_rejected_on_a_phonetic_signal():
+    # Edit distance over sound codes measures nothing: SM0 and SM1 are not
+    # "one typo apart" in any sense a reader would trust.
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-phonetic")["fuzzy_edits"] = "AUTO"
+    assert config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+def test_fuzzy_edits_accepts_auto_with_thresholds():
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-token")["fuzzy_edits"] = "AUTO:4,6"
+    assert not config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+@pytest.mark.parametrize("value", [3, "AUTO:4", "fuzzy", "auto"])
+def test_fuzzy_edits_rejects_anything_but_auto_forms(value):
+    raw = copy.deepcopy(_SHIPPED)
+    _signal(raw, "name-token")["fuzzy_edits"] = value
+    assert config_schema.validate_mapping("entity-match", raw, "mutated")
 
 
 def test_an_address_signal_without_state_field_is_rejected():

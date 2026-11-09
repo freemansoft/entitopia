@@ -44,8 +44,8 @@ def test_auto_fuzziness_matches_elasticsearch_budgets(cnm):
 def test_fuzzy_token_overlap_credits_a_typo_but_uses_each_token_once(cnm):
     # One typo inside AUTO's budget scores as a full match.
     assert cnm.fuzzy_token_overlap(["SMITH", "EXPRESS"], ["SMYTH", "EXPRESS"]) == 1.0
-    # A repeated word cannot claim the same partner twice.
-    assert cnm.fuzzy_token_overlap(["SMITH", "SMITH"], ["SMITH"]) == pytest.approx(0.75)
+    # Two near-identical words cannot both claim one partner.
+    assert cnm.fuzzy_token_overlap(["SMITH", "SMYTH"], ["SMITH"]) == pytest.approx(0.75)
     assert cnm.fuzzy_token_overlap([], ["SMITH"]) is None
 
 

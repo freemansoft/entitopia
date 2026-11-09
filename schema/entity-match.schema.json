@@ -168,6 +168,11 @@
           "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
           "subfield": { "type": "string" },
           "cross_field": { "type": "boolean" },
+          "fuzzy_edits": {
+            "type": "string",
+            "pattern": "^AUTO(:[0-9]+,[0-9]+)?$",
+            "description": "name-token only. Counts two words equal when they are within Elasticsearch's fuzziness edit budget, so a one-letter typo no longer costs the whole word. \"AUTO\" is AUTO:3,6: no edits below 3 letters, one below 6, two from 6 on. \"AUTO:4,6\" leaves three-letter words, mostly initials, to exact matching. Absent means exact words."
+          },
           "exact_subfield": { "type": "string" },
           "fuzzy_subfield": { "type": "string" },
           "fuzzy_scale": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -197,9 +202,17 @@
                 "conclusive": true,
                 "fields": true,
                 "subfield": true,
-                "cross_field": true
+                "cross_field": true,
+                "fuzzy_edits": true
               }
             }
+          },
+          {
+            "if": {
+              "properties": { "type": { "const": "name-phonetic" } },
+              "required": ["type"]
+            },
+            "then": { "not": { "required": ["fuzzy_edits"] } }
           },
           {
             "if": { "properties": { "type": { "const": "address" } }, "required": ["type"] },
