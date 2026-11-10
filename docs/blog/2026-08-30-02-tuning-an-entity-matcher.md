@@ -68,8 +68,7 @@ counting as a match. The scorer decides what gets reported. A pair the search
 never returned cannot reach the scorer, so no threshold or weight can recover
 it.
 
-The diagram shows the order the parts run in. The last section gives the order
-to tune them. The
+The diagram shows the order the parts run in. The last section gives the tuning order. The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#inside-entity-match)
 draws the same flow with the code's own names.
 
