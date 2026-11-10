@@ -1,4 +1,4 @@
-# Use Elasticsearch to match businesses when their data differs accidentally or on purpose
+# Use Elasticsearch to match businesses when the data differs deliberately or accidentally
 
 Entity resolution determines whether two listings in your systems are the same
 real-world business. Two things make it hard: data quality and human
