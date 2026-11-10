@@ -73,10 +73,10 @@ registered soon after. A match there may mean the business reopened under a new
 name. The hospital project asks it about any two hospitals. A match there may
 mean one hospital is listed twice.
 
-One question lets one set of code answer both. Each sweep picks the listings to
-start from. It searches for possible matches for each one, then scores each
-pair. The carrier sweep starts from shut-down carriers and searches only
-listings registered near the shutdown. The hospital sweep starts from every
+The same code answers that question for both projects. Each sweep picks the
+listings to start from. It searches for possible matches for each one, then
+scores each pair. The carrier sweep starts from shut-down carriers and searches
+only listings registered near the shutdown. The hospital sweep starts from every
 hospital. Configuration holds those choices, along with the fields to compare
 and their weights. The search and the scoring are code.
 
