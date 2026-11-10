@@ -169,6 +169,16 @@ the test that guards them, or say that nothing does.
   (and prettier on the Markdown and JSON it touches). It has no Elasticsearch,
   so tests that need the cluster or a local sweep baseline skip there; run
   with the cluster up locally.
+
+  **Exception: a commit whose diff touches only `*.md` files may skip pytest
+  and ruff.** No test reads a committed Markdown file, so such a diff cannot
+  change a result, and the `verify` workflow still runs both on the pull
+  request. Run `prettier@3.3.3 --check` on the changed files and the
+  anonymization check as usual. The exception ends the moment the diff touches
+  anything else, including JSON: tests load the project configs. If a test
+  ever starts reading a Markdown file, delete this exception in the same
+  change.
+
 - **Say so in the PR when a change touches a guard.** Deleting, skipping or
   weakening a test, loosening an assertion, or changing a test's fake (a fake
   that answers differently can make a guard pass for the wrong reason) each
