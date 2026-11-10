@@ -42,7 +42,7 @@ series without caring about trucking.
 | #   | Working title                                                                            | Primary audience                    | Target words | One-line thesis                                                                                                                 |
 | --- | ---------------------------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Use Elasticsearch to match businesses when the data differs deliberately or accidentally | Search engineers, ER / MDM builders | 1,725        | Pick a matcher by the kind of difference you expect, and test it against the look-alikes your search returns, not random pairs. |
-| 2   | Tuning an entity matcher: the knobs that actually moved recall                           | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
+| 2   | Tuning an entity matcher: fix the candidate search before the weights                    | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
 | 3   | Configuration-driven matching, and the failures that passed                              | Data and platform engineers         | 1,775        | A second dataset is the cheapest test a framework gets, and every failure it and a re-run found reported success.               |
 
 Each article stands alone and cross-links to the others. Series total: ~5,600 words.
@@ -102,7 +102,7 @@ for it is thinner than the outline implied. Check the source before padding it.
 
 ---
 
-## Article 2 — Tuning an entity matcher: the knobs that actually moved recall
+## Article 2 — Tuning an entity matcher: fix the candidate search before the weights
 
 - **Audience:** developers working on entity matching and MDM-style projects where they
   are looking for subtle or soft relationships: the ones who already have a matcher
