@@ -9,10 +9,6 @@ times. A regulator wants to know whether a trucking company it shut down has
 reopened under a new name. That company may be working to avoid detection.
 Either way, the names and addresses rarely match letter for letter.
 
-Elasticsearch finds likely matches among millions of listings with one search,
-so nothing has to compare every listing with every other. It can also store each
-name several ways at once.
-
 [entitopia](https://github.com/freemansoft/entitopia) is an open-source project
 for this kind of entity resolution on Elasticsearch. Two sample projects test
 the idea on public data. One reads the US register of motor carriers, about 2.1
@@ -20,7 +16,8 @@ million companies, and looks for carriers that reopened under a new identity.
 The other reads the Medicare list of 5,419 hospitals and looks for duplicate
 listings. Both projects run in the same two stages:
 
-1. A search fetches the listings that may be the same business as each one.
+1. An Elasticsearch search fetches the listings that may be the same business
+   as each one, so nothing has to compare every listing with every other.
 2. A Python scorer combines a score per field, called a signal, into one score
    for the pair.
 
