@@ -1,7 +1,7 @@
 # Tuning an entity matcher: fix the candidate search before the weights
 
 An entity matcher decides whether two listings describe the same real-world
-business. Once one runs, it produces a list of likely pairs, and someone notices
+business. Once it runs, it produces a list of likely pairs, and someone notices
 a match it missed. The usual response is to lower the threshold or change the
 weights. Neither helps when the missing listing never reached the scorer.
 
@@ -74,21 +74,24 @@ draws the same flow with the code's own names.
 
 ```mermaid
 flowchart TB
-  subgraph R["1. Candidate search: what can be found"]
-    SL["Seed list"] --> CS["Search for each shut-down carrier<br/>limited to 500 candidates"]
-  end
   subgraph X["2. Ignored values: what is not evidence"]
+    direction LR
     DL["Declared list"] --> IV["Ignored values"]
     FS["Frequency scan"] --> IV
   end
+  subgraph R["1. Candidate search: what can be found"]
+    direction LR
+    SL["Seed list"] --> CS["Search for each shut-down carrier<br/>limited to 500 candidates"]
+  end
   subgraph C["Scoring: what is reported"]
+    direction LR
     SG["Signals score each field"] --> WA["4. Weighted average<br/>of signals with data"]
     WA --> GD{"3. Guards: evidence,<br/>identity, floor"}
+    GD --> PR["Pair written to the sweep index"]
   end
-  CS --> SG
-  IV --> SL
-  IV --> SG
-  GD --> PR["Pair written to the sweep index"]
+  X -- "skipped by the search" --> R
+  X -- "skipped by the scorer" --> C
+  R -- "candidates" --> C
 ```
 
 ## The seed list sets the ceiling on what the matcher finds
@@ -105,10 +108,10 @@ Adding the agent to the list would return near-random listings and push real
 matches past the 500-candidate limit. The project scores the filing agent but
 keeps it off the seed list.
 
-**Leaving out a rare, decisive value hides a whole class of match.** The project
+**Leaving out a rare, decisive value hides a whole class of matches.** The project
 once scored shared vehicle identifiers without seeding on them. A carrier that
-changed its name, address and phone but kept its trucks never reached the
-scorer. No threshold, weight or candidate limit could find it. Vehicle
+changed its name, address, and phone but kept its trucks never reached the
+scorer. No threshold, weight, or candidate limit could find it. Vehicle
 identifiers then joined the seed list. Measured on the full dataset, every 400
 shut-down carriers searched gained 257 newer carriers that only the vehicle seed
 returned.
@@ -301,7 +304,7 @@ newer carrier also registered within a year of the shutdown.
 
 The scores carry no tested link to real outcomes. Nobody has labeled which pairs
 are the same business. A 0.9 is a ranking, not a probability. A high score
-routinely reflects a shared filing agent, a corporate parent or a placeholder
+routinely reflects a shared filing agent, a corporate parent, or a placeholder
 the lists missed. A person reads the queue, and the score decides only the
 order.
 
@@ -338,7 +341,7 @@ pairs.
 
 ## Source
 
-The code, configuration and measurements behind this article are in the
+The code, configuration, and measurements behind this article are in the
 [entitopia repository on GitHub](https://github.com/freemansoft/entitopia). The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#inside-entity-match)
 describes the matcher, and the [DOT-Commercial
