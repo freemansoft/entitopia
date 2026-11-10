@@ -1,7 +1,7 @@
-# Finding the same business when names and addresses don't match exactly
+# Matching businesses in Elasticsearch when names and addresses differ by accident or on purpose
 
-Entity resolution decides whether two listings in your systems are the same
-real-world business. Two things make it hard: the quality of the data and human
+Entity resolution determines whether two listings in your systems are the same
+real-world business. Two things make it hard: data quality and human
 ingenuity. A sales team finds the same customer on two accounts:
 `QUILLBY FREIGHT LLC` on one and `QUILBY FREIGHT INC` on the other. Both sit at
 the same street, written two ways. A buyer's vendor list carries one supplier three
