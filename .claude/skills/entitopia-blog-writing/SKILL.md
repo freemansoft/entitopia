@@ -263,13 +263,18 @@ Whatever the platform:
 - **Render each mermaid fence to a PNG for any platform that does not run
   mermaid,** and leave the fence in the draft as the editable source. Copy
   the fence body to a `.mmd` file in the scratchpad and render it with
-  `npx --yes @mermaid-js/mermaid-cli@11.16.0 -i diagram.mmd -o diagram.png -s 2 -b white`
+  `npx --yes -p @mermaid-js/mermaid-cli@12.2.0 -p mermaid@12.2.0 mmdc -i diagram.mmd -o diagram.png -s 2 -b white`
   (`-s 2` for a sharp image on high-density screens, `-b white` so the diagram
-  does not vanish on a dark theme). The pin is the version that rendered
-  Article 2's diagram on 2026-11-10; raise it only after re-rendering a
-  diagram and looking at it. Run it under Node 22.12 or later, the floor of
-  the puppeteer it pulls in. An older Node fails with an ESM loader stack
-  trace rather than a version error, so check `node -v` first. Its first run
+  does not vanish on a dark theme). The pin matches the mermaid GitHub
+  renders, so the published image and the fence a reader opens in the repo
+  come from one renderer; a diagram that renders locally but not on GitHub
+  breaks the repo copy. GitHub publishes no version, but a fence holding only
+  `info` prints it; GitHub users reported 12.2.0 in November 2026. Pin
+  `mermaid` as well as the CLI: the CLI asks for `mermaid@^12.2.0`, and the CLI
+  pin alone loaded 12.3.0 on 2026-11-10. Render the same `info` fence locally
+  to confirm the version before trusting a pin. Run it under Node 22.13 or
+  later, the CLI's floor. An older Node fails with an ESM loader stack trace
+  rather than a version error, so check `node -v` first. Its first run
   downloads a headless Chromium, so say so before running it. Re-render
   whenever the fence changes, and look at each PNG before handing it over: a
   label that fits in the Markdown preview can be clipped in the image. Do not
