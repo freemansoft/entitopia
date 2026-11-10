@@ -1,7 +1,7 @@
 # Tuning an entity matcher: fix the candidate search before the weights
 
 An entity matcher decides whether two listings describe the same real-world
-business. Once one runs, it produces a list of likely pairs, and someone notices
+business. Once it runs, it produces a list of likely pairs, and someone notices
 a match it missed. The usual response is to lower the threshold or change the
 weights. Neither helps when the missing listing never reached the scorer.
 
@@ -68,27 +68,36 @@ counting as a match. The scorer decides what gets reported. A pair the search
 never returned cannot reach the scorer, so no threshold or weight can recover
 it.
 
-The diagram numbers those three parts in the order to tune them. The
+The diagram shows the order the parts run in. The last section gives the tuning order. The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#inside-entity-match)
 draws the same flow with the code's own names.
 
 ```mermaid
 flowchart TB
-  subgraph R["1. Candidate search: what can be found"]
-    SL["Seed list"] --> CS["Search for each shut-down carrier<br/>limited to 500 candidates"]
+  subgraph X["Before the sweep: two reads of the carrier register"]
+    direction LR
+    REG[("Carrier register<br/>about 2.1 million listings")]
+    REG --> PK["Pick shut-down carriers:<br/>an out-of-service order<br/>since 2020"]
+    REG --> FS["Frequency scan:<br/>values on too<br/>many listings"]
+    FS --> IV["Ignored values"]
+    DL["Declared list:<br/>known placeholders"] --> IV
   end
-  subgraph X["2. Ignored values: what is not evidence"]
-    DL["Declared list"] --> IV["Ignored values"]
-    FS["Frequency scan"] --> IV
+  subgraph R["For each shut-down carrier: candidate search"]
+    direction LR
+    SV["Its values in<br/>seed-list fields"] --> DR["Drop<br/>ignored values"]
+    DR --> CS["Search the register,<br/>up to 500 candidates"]
   end
-  subgraph C["Scoring: what is reported"]
-    SG["Signals score each field"] --> WA["4. Weighted average<br/>of signals with data"]
-    WA --> GD{"3. Guards: evidence,<br/>identity, floor"}
+  subgraph C["For each candidate: scoring"]
+    direction LR
+    SG["Signals score each field,<br/>skipping ignored values"] --> GD{"Enough evidence<br/>and an identity<br/>signal?"}
+    GD -- yes --> WA["Weighted average<br/>of signals with data"]
+    WA --> FL{"0.35 or more, or<br/>a conclusive<br/>signal?"}
+    FL -- yes --> PR["Pair written"]
+    GD -- no --> NO["Pair dropped"]
+    FL -- no --> NO
   end
-  CS --> SG
-  IV --> SL
-  IV --> SG
-  GD --> PR["Pair written to the sweep index"]
+  X --> R
+  R --> C
 ```
 
 ## The seed list sets the ceiling on what the matcher finds
@@ -105,10 +114,10 @@ Adding the agent to the list would return near-random listings and push real
 matches past the 500-candidate limit. The project scores the filing agent but
 keeps it off the seed list.
 
-**Leaving out a rare, decisive value hides a whole class of match.** The project
+**Leaving out a rare, decisive value hides a whole class of matches.** The project
 once scored shared vehicle identifiers without seeding on them. A carrier that
-changed its name, address and phone but kept its trucks never reached the
-scorer. No threshold, weight or candidate limit could find it. Vehicle
+changed its name, address, and phone but kept its trucks never reached the
+scorer. No threshold, weight, or candidate limit could find it. Vehicle
 identifiers then joined the seed list. Measured on the full dataset, every 400
 shut-down carriers searched gained 257 newer carriers that only the vehicle seed
 returned.
@@ -301,7 +310,7 @@ newer carrier also registered within a year of the shutdown.
 
 The scores carry no tested link to real outcomes. Nobody has labeled which pairs
 are the same business. A 0.9 is a ranking, not a probability. A high score
-routinely reflects a shared filing agent, a corporate parent or a placeholder
+routinely reflects a shared filing agent, a corporate parent, or a placeholder
 the lists missed. A person reads the queue, and the score decides only the
 order.
 
@@ -338,7 +347,7 @@ pairs.
 
 ## Source
 
-The code, configuration and measurements behind this article are in the
+The code, configuration, and measurements behind this article are in the
 [entitopia repository on GitHub](https://github.com/freemansoft/entitopia). The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#inside-entity-match)
 describes the matcher, and the [DOT-Commercial
