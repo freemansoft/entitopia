@@ -68,30 +68,37 @@ counting as a match. The scorer decides what gets reported. A pair the search
 never returned cannot reach the scorer, so no threshold or weight can recover
 it.
 
-The diagram numbers those three parts in the order to tune them. The
+The diagram shows the order the parts run in. The last section gives the order
+to tune them. The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#inside-entity-match)
 draws the same flow with the code's own names.
 
 ```mermaid
 flowchart TB
-  subgraph X["2. Ignored values: what is not evidence"]
+  subgraph X["Before the sweep: two reads of the carrier register"]
     direction LR
-    DL["Declared list"] --> IV["Ignored values"]
-    FS["Frequency scan"] --> IV
+    REG[("Carrier register<br/>about 2.1 million listings")]
+    REG --> PK["Pick shut-down carriers:<br/>an out-of-service order<br/>since 2020"]
+    REG --> FS["Frequency scan:<br/>values on too<br/>many listings"]
+    FS --> IV["Ignored values"]
+    DL["Declared list:<br/>known placeholders"] --> IV
   end
-  subgraph R["1. Candidate search: what can be found"]
+  subgraph R["For each shut-down carrier: candidate search"]
     direction LR
-    SL["Seed list"] --> CS["Search for each shut-down carrier<br/>limited to 500 candidates"]
+    SV["Its values in<br/>seed-list fields"] --> DR["Drop<br/>ignored values"]
+    DR --> CS["Search the register,<br/>up to 500 candidates"]
   end
-  subgraph C["Scoring: what is reported"]
+  subgraph C["For each candidate: scoring"]
     direction LR
-    SG["Signals score each field"] --> WA["4. Weighted average<br/>of signals with data"]
-    WA --> GD{"3. Guards: evidence,<br/>identity, floor"}
-    GD --> PR["Pair written to the sweep index"]
+    SG["Signals score each field,<br/>skipping ignored values"] --> GD{"Enough evidence<br/>and an identity<br/>signal?"}
+    GD -- yes --> WA["Weighted average<br/>of signals with data"]
+    WA --> FL{"0.35 or more, or<br/>a conclusive<br/>signal?"}
+    FL -- yes --> PR["Pair written"]
+    GD -- no --> NO["Pair dropped"]
+    FL -- no --> NO
   end
-  X -- "skipped by the search" --> R
-  X -- "skipped by the scorer" --> C
-  R -- "candidates" --> C
+  X --> R
+  R --> C
 ```
 
 ## The seed list sets the ceiling on what the matcher finds
