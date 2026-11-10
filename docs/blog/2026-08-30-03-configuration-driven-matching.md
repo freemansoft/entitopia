@@ -13,9 +13,10 @@ shut down and that may have reopened under a new name. Another looks for
 duplicate listings among 5,419 Medicare hospitals.
 
 We used the hospital project as a test dataset to see if we could do entity
-matching only with configuration. It partially worked. The hospital sweep runs
-from four configuration files, after four fixes to shared code that the carrier
-project never triggered. Every failure in this article shares one signature: the run
+matching only with configuration. It partially worked. Testing with the hospital
+data found four defects in shared code that the carrier data had never
+triggered. Each one is now fixed, and the hospital sweep runs from four
+configuration files. Every failure in this article shares one signature: the run
 reported success, and the data was quietly wrong.
 
 [Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
@@ -64,17 +65,20 @@ Expect different values on your own data.
 
 </details>
 
-## A fraud search and a duplicate search run the same code
+## Fraud detection and deduplication ask the same question
 
-The carrier sweep hunts for possible fraud. It still runs the same matching code
-as the hospital sweep, which hunts for duplicates. The two differ in the
-population each one starts from. The carrier sweep starts from carriers with an
-active out-of-service order dated 2020 or later, and searches for newer
-listings. The hospital sweep starts from every hospital and searches for its
-duplicates. A customer deduplication would start from every customer.
+Both projects ask whether two listings describe the same business. The carrier
+project asks it about a carrier a regulator shut down and a carrier that
+registered soon after. A match there may mean the business reopened under a new
+name. The hospital project asks it about any two hospitals. A match there may
+mean one hospital is listed twice.
 
-The search, the scoring and the guards are code. The population, the fields,
-the weights and the thresholds are configuration.
+One question lets one set of code answer both. Each sweep picks the listings to
+start from. It searches for possible matches for each one, then scores each
+pair. The carrier sweep starts from shut-down carriers and searches only
+listings registered near the shutdown. The hospital sweep starts from every
+hospital. Configuration holds those choices, along with the fields to compare
+and their weights. The search and the scoring are code.
 
 ## Seven phases read each step's configuration from JSON
 
