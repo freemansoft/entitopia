@@ -263,13 +263,17 @@ Whatever the platform:
 - **Render each mermaid fence to a PNG for any platform that does not run
   mermaid,** and leave the fence in the draft as the editable source. Copy
   the fence body to a `.mmd` file in the scratchpad and render it with
-  `npx --yes @mermaid-js/mermaid-cli@12.0.0 -i diagram.mmd -o diagram.png -s 2 -b white`
+  `npx --yes @mermaid-js/mermaid-cli@11.16.0 -i diagram.mmd -o diagram.png -s 2 -b white`
   (`-s 2` for a sharp image on high-density screens, `-b white` so the diagram
-  does not vanish on a dark theme). Its first run downloads a headless
-  Chromium, so say so before running it. Re-render whenever the fence changes,
-  and look at each PNG before handing it over: a label that fits in the
-  Markdown preview can be clipped in the image. Do not commit the rendered
-  image unless the user asks.
+  does not vanish on a dark theme). The pin is the version that rendered
+  Article 2's diagram on 2026-11-10; raise it only after re-rendering a
+  diagram and looking at it. Run it under Node 22.12 or later, the floor of
+  the puppeteer it pulls in. An older Node fails with an ESM loader stack
+  trace rather than a version error, so check `node -v` first. Its first run
+  downloads a headless Chromium, so say so before running it. Re-render
+  whenever the fence changes, and look at each PNG before handing it over: a
+  label that fits in the Markdown preview can be clipped in the image. Do not
+  commit the rendered image unless the user asks.
 - **A terms table's `<details>` block** needs a platform that keeps raw HTML.
   Blogger's HTML view keeps it, and the fold works on the published post;
   check the preview on any other platform.
