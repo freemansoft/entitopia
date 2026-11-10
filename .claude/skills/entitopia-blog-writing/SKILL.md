@@ -15,8 +15,9 @@ description: >
 # Writing and reviewing the entitopia blog series
 
 The articles in `docs/blog/` explain what this repository learned about entity
-resolution with Elasticsearch: the schema, the matcher's tuning, the
-configuration-driven framework, and working with an LLM. The reader is a
+resolution with Elasticsearch, in three parts: choosing how to match each field,
+tuning the matcher, and the configuration-driven framework. The outline's
+Published table says which are live and where. The reader is a
 developer outside this repo who arrived from a search result and has never
 heard of FMCSA or chameleon carriers. Two consequences drive most of what
 follows: every article has to stand alone, and every sentence is a claim the
@@ -31,12 +32,9 @@ Four sources govern the work, and they do not overlap:
 | CLAUDE.md "Never name a real entity that the matcher flagged" | Which names may appear. The `anonymization-check` skill runs it.                                                                                                                                                                                                                      |
 | This skill                                                    | How to write, review, verify, and publish. The full rules, with reasons and examples, are in `references/style-rules.md`.                                                                                                                                                             |
 
-The outline's **House style** section predates this skill. It has no rule
-against em dashes (its own prose uses them), it allows a table only for a
-measured comparison, and it asks for numbered sections that none of the drafts
-use. Where the two disagree, this skill wins, because it carries the reasons.
-A human reading the outline cannot see that precedence, so the House style
-section should be cut to a pointer here.
+The outline's **House style** section is a pointer here. Where an older line
+elsewhere in the outline disagrees with this skill, this skill wins, because it
+carries the reasons.
 
 ## Setup for any pass
 
@@ -287,6 +285,20 @@ Whatever the platform:
   style rules).
 - **State the extract once.** Every article carries one point-in-time sentence
   (outline production note 2), naming the extract date its counts come from.
+
+After the user publishes:
+
+- **Check the live post against the repo, word for word.** Fetch the post,
+  strip its tags, and diff its words with the converter's output for the
+  article. Expect only the diagram image in place of each placeholder and any
+  revision-history line the user adds. Any other difference means the post and
+  the repo copy have diverged; say where, and ask which one is right.
+- **Record it in the outline's Published table:** the post date as Blogger
+  shows it, the URL, the title as published (it can differ from the H1), the
+  commit whose text the post matches, and the commit its links are pinned to.
+- **A change to a published article goes in both places,** the post and the
+  repo copy, or the table says how they differ. A later article's link to it
+  uses the Blogger URL, not the GitHub copy.
 
 ## Using subagents
 

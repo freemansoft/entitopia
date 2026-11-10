@@ -474,6 +474,31 @@ Habits to cut on sight:
 - **Draw exclusive alternatives as a branch.** Use a decision node with one
   labelled edge per alternative, and say in the node or the lead-in that only
   one is taken. A box with two arrows out reads as a pipeline or a fallback.
+- **Every arrow means "then".** A reader follows arrows as routes. A list or
+  setting that several steps consult is not a route: show it as the step that
+  builds it, then name it inside each step that uses it ("Drop ignored
+  values", "skipping ignored values"). An arrow from a list into two stages
+  labelled "skipped by the search" and "skipped by the scorer" read as two
+  alternative paths, and a reader asked how a pair could be reported down one
+  without the other.
+- **Every decision node has an exit for each answer.** A diamond with one way
+  out hides what happens to the rejects. Give the "no" edge its own end, such
+  as "Pair dropped".
+- **Draw one order, and draw it from the code.** A diagram shows the order the
+  system runs in. Numbering its boxes in another order, such as the order to
+  tune them, put a "2" above a "1" and read as a mistake; give the other order
+  its own list in the prose. Check the run order against the code, not the
+  prose: Article 2's first diagram put all three guards after the weighted
+  average, and `matching/scorer.py` runs two of them before it.
+- **Show each stage's input.** A stage whose only incoming arrow is a filter
+  reads as fed by the filter. Article 2's search had no input until the
+  diagram showed where the shut-down carriers came from.
+- **Wrap a wide diagram into stacked rows.** Use `flowchart TB` with each row a
+  `subgraph` carrying `direction LR`, and draw arrows only between subgraphs.
+  Mermaid ignores a subgraph's direction when an edge joins a node inside it
+  to a node outside it, and the rows collapse into one column. A serpentine
+  layout (`direction RL` on alternate rows) renders, but a right-to-left row
+  reads backwards, so prefer every row left to right.
 - **Reuse the repo's diagrams before drawing new ones.** The top-level README
   carries the retrieval, scoring and exclusion mermaid and the phase diagram;
   the explainer carries the pipeline flowchart (outline production note 4). A
