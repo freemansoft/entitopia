@@ -39,11 +39,11 @@ the worked example rather than as the thesis. A reader running a provider direct
 customer MDM, or a supplier deduplication project should be able to follow the whole
 series without caring about trucking.
 
-| #   | Working title                                                          | Primary audience                    | Target words | One-line thesis                                                                                                                 |
-| --- | ---------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Finding the same business when names and addresses don't match exactly | Search engineers, ER / MDM builders | 1,725        | Pick a matcher by the kind of difference you expect, and test it against the look-alikes your search returns, not random pairs. |
-| 2   | Tuning an entity matcher: the knobs that actually moved recall         | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
-| 3   | Configuration-driven matching, and the failures that passed            | Data and platform engineers         | 1,775        | A second dataset is the cheapest test a framework gets, and every failure it and a re-run found reported success.               |
+| #   | Working title                                                                            | Primary audience                    | Target words | One-line thesis                                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Use Elasticsearch to match businesses when the data differs deliberately or accidentally | Search engineers, ER / MDM builders | 1,725        | Pick a matcher by the kind of difference you expect, and test it against the look-alikes your search returns, not random pairs. |
+| 2   | Tuning an entity matcher: the knobs that actually moved recall                           | ER / MDM data engineers             | 2,100        | Retrieval and scoring are separate problems, and most tuning effort goes to the wrong one.                                      |
+| 3   | Configuration-driven matching, and the failures that passed                              | Data and platform engineers         | 1,775        | A second dataset is the cheapest test a framework gets, and every failure it and a re-run found reported success.               |
 
 Each article stands alone and cross-links to the others. Series total: ~5,600 words.
 
@@ -66,7 +66,7 @@ for it is thinner than the outline implied. Check the source before padding it.
 
 ---
 
-## Article 1 — Finding the same business when names and addresses don't match exactly
+## Article 1 — Use Elasticsearch to match businesses when the data differs deliberately or accidentally
 
 - **Audience:** engineers asked to make Elasticsearch match records that no exact query
   will join (names with variant spellings, abbreviated business names, addresses that

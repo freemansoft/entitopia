@@ -225,13 +225,38 @@ Then draft in this order, because each step constrains the next:
 
 ### Prepare for publication
 
-This repo has no Markdown-to-HTML converter for the blog. Ask the user which
-platform the article goes to and how it is converted before running anything.
+The series is published on Blogger. `scripts/blog_to_blogger.py` converts an
+article to HTML for Blogger's HTML view; its docstring says why each rule
+exists, and `tests/test_blog_to_blogger.py` pins them. For another platform,
+ask the user how it is converted before running anything.
+
+```bash
+.venv/bin/python scripts/blog_to_blogger.py docs/blog/<article>.md \
+  --diagrams-dir <scratchpad>/<article> > <scratchpad>/<article>/post.html
+```
+
+- **Convert from the merged article, pinned to the merge commit.** The script
+  pins `blob/main` links to `HEAD` by default; pass `--commit` with the merge
+  commit when converting from a branch, so a reader following a figure's link
+  sees the figure the article quotes.
+- **Check the output before handing it over:** no `style`, `class` or `id`
+  attribute, no newline inside a table, list or `<details>` (Blogger shows
+  each as `<br>`), every tag balanced, and no Markdown left outside `<pre>`.
+  The script prints the post title to stderr; it goes in Blogger's title
+  field, not the body.
+- **Tell the user how to paste it:** into Blogger's HTML view, replacing each
+  `<p>[DIAGRAM n GOES HERE]</p>` with the uploaded PNG of `diagram-<n>.mmd`,
+  and publish from the HTML view. The Compose view re-serializes the post,
+  which is the usual way a pasted table gets flattened.
+- **Keep the output out of the tree.** Write it to the scratchpad; a generated
+  page is transient and is never committed.
+
 Whatever the platform:
 
-- **Run the anonymization check on the final text** (see Verification), and
-  rule on every finding as the `anonymization-check` skill says. A published
-  post is outside the repo and cannot be amended by a commit.
+- **Run the anonymization check on the final text** (see Verification) and on
+  the generated HTML with `--paths`, and rule on every finding as the
+  `anonymization-check` skill says. A published post is outside the repo and
+  cannot be amended by a commit.
 - **Paraphrase commit `972df7e`, never quote it.** Its message names two flagged
   entities and predates the naming rule; rewriting history was ruled out
   (outline production note 1).
@@ -245,8 +270,9 @@ Whatever the platform:
   and look at each PNG before handing it over: a label that fits in the
   Markdown preview can be clipped in the image. Do not commit the rendered
   image unless the user asks.
-- **A terms table's `<details>` block** needs a platform that keeps raw HTML;
-  check the preview before publishing.
+- **A terms table's `<details>` block** needs a platform that keeps raw HTML.
+  Blogger's HTML view keeps it, and the fold works on the published post;
+  check the preview on any other platform.
 - **Pin the figure links.** Re-point links to README sections and docs that
   carry figures to the commit the figures were read at (see Attribution in the
   style rules).

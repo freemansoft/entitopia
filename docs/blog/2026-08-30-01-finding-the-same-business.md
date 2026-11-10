@@ -1,17 +1,13 @@
-# Finding the same business when names and addresses don't match exactly
+# Use Elasticsearch to match businesses when the data differs deliberately or accidentally
 
-Entity resolution decides whether two listings in your systems are the same
-real-world business. Two things make it hard: the quality of the data and human
+Entity resolution determines whether two listings in your systems are the same
+real-world business. Two things make it hard: data quality and human
 ingenuity. A sales team finds the same customer on two accounts:
 `QUILLBY FREIGHT LLC` on one and `QUILBY FREIGHT INC` on the other. Both sit at
 the same street, written two ways. A buyer's vendor list carries one supplier three
 times. A regulator wants to know whether a trucking company it shut down has
 reopened under a new name. That company may be working to avoid detection.
 Either way, the names and addresses rarely match letter for letter.
-
-Elasticsearch finds likely matches among millions of listings with one search,
-so nothing has to compare every listing with every other. It can also store each
-name several ways at once.
 
 [entitopia](https://github.com/freemansoft/entitopia) is an open-source project
 for this kind of entity resolution on Elasticsearch. Two sample projects test
@@ -20,7 +16,8 @@ million companies, and looks for carriers that reopened under a new identity.
 The other reads the Medicare list of 5,419 hospitals and looks for duplicate
 listings. Both projects run in the same two stages:
 
-1. A search fetches the listings that may be the same business as each one.
+1. An Elasticsearch search fetches the listings that may be the same business
+   as each one, so nothing has to compare every listing with every other.
 2. A Python scorer combines a score per field, called a signal, into one score
    for the pair.
 
@@ -45,33 +42,31 @@ impact.
 <details>
 <summary>Show the terms</summary>
 
-| Term                                                      | What it means here                                                                                                                                                                                                                               |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Index                                                     | Elasticsearch's name for a collection of stored listings and their searchable forms. It is closer to a database table than to a database index. `carriers-000001` is the carrier index.                                                          |
-| Mapping                                                   | An index's schema: which fields it has, each field's type, and which analyzer processes each one.                                                                                                                                                |
-| Analyzer                                                  | Elasticsearch's rules for turning text into the pieces it stores and searches, called tokens: split into words, lowercase, drop punctuation, replace synonyms, encode sounds. It runs as each listing is stored.                                 |
-| Tokenizer                                                 | The first step of an analyzer, which splits text into tokens. A standard tokenizer splits on spaces and punctuation; a keyword tokenizer keeps the whole value as one token.                                                                     |
-| Filter                                                    | A later step of an analyzer that changes, removes or adds tokens: lowercasing, a stop filter that drops listed words, a synonym filter, a phonetic encoder.                                                                                      |
-| Multi-field / subfield                                    | One source value stored several ways at once. Each stored version is a subfield, with its own analyzer and its own name, such as `legal_name.clean` for the cleaned words or `legal_name.phonetic` for the sound codes.                          |
-| `keyword`                                                 | A field type stored exactly as written, as one token, for exact matching.                                                                                                                                                                        |
-| Phonetic encoder                                          | An analyzer filter that replaces a word with a code for how it sounds, so `SMITH` and `SMYTH` produce the same code.                                                                                                                             |
-| Double metaphone                                          | A phonetic encoder for English that gives each word a primary and an alternate code. In its codes, `0` stands for the "th" sound, so `SMITH` becomes `SM0`.                                                                                      |
-| Beider-Morse                                              | A phonetic encoder built for surnames across languages. This project limits it to English and Spanish.                                                                                                                                           |
-| Signal                                                    | One per-field comparison in the scorer, such as name sound codes or a shared phone number, returning a score from 0 to 1 or no value when the field is missing.                                                                                  |
-| Embedding model                                           | A machine-learning model, not a chat assistant or language model, that turns a piece of text into a list of numbers so that similar text gets similar numbers.                                                                                   |
-| Vector search                                             | Search that finds text whose embedding-model numbers lie close to the query's, in place of matching words.                                                                                                                                       |
-| Edit distance                                             | The number of single-letter insertions, deletions or substitutions that turn one string into another.                                                                                                                                            |
-| `fuzziness: AUTO`                                         | Elasticsearch's setting for matching words within a few edits: none for words of one or two letters, one edit up to five letters, two beyond that. The project's `AUTO:4,6` allows no edit up to three letters.                                  |
-| Sweep                                                     | One full run of the matcher over every listing, writing the pairs it finds to a new index.                                                                                                                                                       |
-| Character trigrams                                        | Every run of three letters in a string: `SMITH` has `SMI`, `MIT` and `ITH`. Two strings sharing most of their trigrams are spelled alike.                                                                                                        |
-| Candidate search                                          | The Elasticsearch query the project runs to fetch possible matches for a listing, before any scoring.                                                                                                                                            |
-| Look-alike                                                | A different name that a plain Elasticsearch name search returns for the original name, standing in for the candidate search.                                                                                                                     |
-| AUC                                                       | The chance that a name and its altered copy score above a name and an unrelated one, each pair picked at random. The unrelated name is a look-alike or a random name, depending on the column. 0.5 is a coin flip; 1.0 separates them perfectly. |
-| Altered copies caught when at most 1% of look-alikes pass | Set the threshold so at most one look-alike in a hundred scores above it; the share of altered copies that also score above it. Statisticians call this recall.                                                                                  |
-| `_analyze`                                                | The Elasticsearch API that returns the tokens an analyzer produces for a piece of text.                                                                                                                                                          |
-| Normalization                                             | Tidying a value before comparing it: changing case, removing punctuation, cutting a phone number to its digits.                                                                                                                                  |
-| Inverse document frequency                                | A search-engine weighting that counts a word for less the more listings contain it, so a word like `LLC` adds almost nothing to a match.                                                                                                         |
-| More terms                                                | The project's [README glossary](https://github.com/freemansoft/entitopia/blob/main/README.md#glossary) defines these and the rest of its vocabulary.                                                                                             |
+| Term                                                      | What it means here                                                                                                                                                                                                      |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Index                                                     | Elasticsearch's name for a collection of stored listings and their searchable forms. It is closer to a database table than to a database index. `carriers-000001` is the carrier index.                                 |
+| Mapping                                                   | An index's schema: which fields it has, each field's type, and which analyzer processes each one.                                                                                                                       |
+| Analyzer                                                  | Elasticsearch's rules for turning text into the pieces it stores and searches, called tokens: split into words, lowercase, drop punctuation, replace synonyms, encode sounds. It runs as each listing is stored.        |
+| Tokenizer                                                 | The first step of an analyzer, which splits text into tokens. A standard tokenizer splits on spaces and punctuation; a keyword tokenizer keeps the whole value as one token.                                            |
+| Filter                                                    | A later step of an analyzer that changes, removes or adds tokens: lowercasing, a stop filter that drops listed words, a synonym filter, a phonetic encoder.                                                             |
+| Multi-field / subfield                                    | One source value stored several ways at once. Each stored version is a subfield, with its own analyzer and its own name, such as `legal_name.clean` for the cleaned words or `legal_name.phonetic` for the sound codes. |
+| `keyword`                                                 | A field type stored exactly as written, as one token, for exact matching.                                                                                                                                               |
+| Phonetic encoder                                          | An analyzer filter that replaces a word with a code for how it sounds, so `SMITH` and `SMYTH` produce the same code.                                                                                                    |
+| Double metaphone                                          | A phonetic encoder for English that gives each word a primary and an alternate code. In its codes, `0` stands for the "th" sound, so `SMITH` becomes `SM0`.                                                             |
+| Beider-Morse                                              | A phonetic encoder built for surnames across languages. This project limits it to English and Spanish.                                                                                                                  |
+| Signal                                                    | One per-field comparison in the scorer, such as name sound codes or a shared phone number, returning a score from 0 to 1 or no value when the field is missing.                                                         |
+| Embedding model                                           | A machine-learning model, not a chat assistant or language model, that turns a piece of text into a list of numbers so that similar text gets similar numbers.                                                          |
+| Vector search                                             | Search that finds text whose embedding-model numbers lie close to the query's, in place of matching words.                                                                                                              |
+| Edit distance                                             | The number of single-letter insertions, deletions or substitutions that turn one string into another.                                                                                                                   |
+| `fuzziness: AUTO`                                         | Elasticsearch's setting for matching words within a few edits: none for words of one or two letters, one edit up to five letters, two beyond that. The project's `AUTO:4,6` allows no edit up to three letters.         |
+| Sweep                                                     | One full run of the matcher over every listing, writing the pairs it finds to a new index.                                                                                                                              |
+| Character trigrams                                        | Every run of three letters in a string: `SMITH` has `SMI`, `MIT` and `ITH`. Two strings sharing most of their trigrams are spelled alike.                                                                               |
+| Candidate search                                          | The Elasticsearch query the project runs to fetch possible matches for a listing, before any scoring.                                                                                                                   |
+| Look-alike                                                | A different name that a plain Elasticsearch name search returns for the original name, standing in for the candidate search.                                                                                            |
+| Altered copies caught when at most 1% of look-alikes pass | Set the threshold so at most one look-alike in a hundred scores above it; the share of altered copies that also score above it. Statisticians call this recall.                                                         |
+| `_analyze`                                                | The Elasticsearch API that returns the tokens an analyzer produces for a piece of text.                                                                                                                                 |
+| Normalization                                             | Tidying a value before comparing it: changing case, removing punctuation, cutting a phone number to its digits.                                                                                                         |
+| More terms                                                | The project's [README glossary](https://github.com/freemansoft/entitopia/blob/main/README.md#glossary) defines these and the rest of its vocabulary.                                                                    |
 
 </details>
 
@@ -88,6 +83,9 @@ an embedding model learned for vector search.
 | Fixing a wrong one          | Change a line                                                                             | Retrain or replace the embedding model                                      |
 | What gets compared          | Each field, analyzed its own way                                                          | Whatever you choose to embed: one field, or the whole listing as one string |
 | Measured in this article    | Yes                                                                                       | No                                                                          |
+
+The project uses analyzers, because each equivalence stays readable and easy to
+change.
 
 ## Store each field several ways, each tuned for one use
 
@@ -193,9 +191,10 @@ Both phonetic encoders catch none. The phonetic subfields drop common words, so
 `QUILLBY TRUCKING LLC` and `QUILLBY TRANSPORT INC` both encode to `KLP` and
 score a perfect 1.0. Roughly one look-alike in nine ties at 1.0 this way. No
 cut-off can split pairs with equal scores, so any cut-off below 1.0 lets all of
-them through. Stopping them takes a cut-off of 1.0, and no altered copy scores
-above that either. A phonetic name match could not decide a pair alone on this
-data; it needs an address, a phone or another field beside it.
+them through. Stopping them takes a cut-off of 1.0, the highest possible score,
+so no altered copy clears it either. A phonetic name match could not decide a
+pair alone on this data; it needs an address, a phone or another field beside
+it.
 
 Trigrams rank best overall but keep only 12.7% at the strict cut-off, because
 their top-scoring look-alikes score above most altered copies.
@@ -237,16 +236,21 @@ What each name change does:
   drop to about 0.77. The phonetic encoders strip them and hold about 0.95.
 
 The table is the case for combining matchers rather than picking one. The
-project's scorer combines the two phonetic encoders with exact tokens. The next
-section measures why it leaves fuzzy tokens out.
+project's scorer combines the two phonetic encoders with exact tokens. Edit
+distance and trigrams are not in the sweep; the script measured them for this
+comparison only. The next section measures why it leaves fuzzy tokens out.
 
 ## Test data can mislead you, so confirm on real data
 
 The project added fuzzy tokens to its word-based name signal as an option. The
 full sweep ran twice on each dataset, once with the option and once without.
 [`compare_pair_ids.py`](https://github.com/freemansoft/entitopia/blob/main/scripts/compare_pair_ids.py)
-then listed the pairs only one run found. A sweep keeps at most ten pairs per
-listing, so a new pair can push out an old one.
+then listed the pairs only one run found. A pair is two listings the sweep
+proposes as one business, scored from 0 to 1. The score is a weighted average of
+signals, not a probability. The sweep keeps nothing below 0.35 and at most ten
+pairs per listing, so a new pair can push out an old one. The project's review
+filter starts at 0.70. The two carrier runs compare against baselines three
+pairs apart, because a fix to the address signal landed between them.
 
 | Sweep                                 | Pairs, off → on   | Pairs lost / gained | Pairs scoring 0.70 or more |
 | ------------------------------------- | ----------------- | ------------------- | -------------------------- |
@@ -258,9 +262,9 @@ What the gained pairs held:
 
 - **Hospitals.** Most new pairs, 393 of 541, matched on name alone. They were
   mostly hospitals in different states sharing a saint's name.
-- **Carriers, `AUTO`.** Nearly every new pair scored just over 0.35, the lowest
-  score a sweep keeps. Three-letter words one letter apart, usually initials,
-  gave 3,447 of them their only fuzzy credit.
+- **Carriers, `AUTO`.** Nearly every new pair scored just over 0.35.
+  Three-letter words one letter apart, usually initials, gave 3,447 of them
+  their only fuzzy credit.
 - **Carriers, no edit up to three letters.** That rule halved the new pairs. The
   rest drew credit from common words: plurals, spellings of `TRUCKING`, and
   surnames spelled alike. 39 existing pairs rose past 0.70, and in 37 the newer
@@ -271,13 +275,16 @@ The test used real carrier names but made up the variants, and it set each name
 against about five look-alikes. A full carrier sweep scores each listing against
 about 377 candidates, and at most a few are the same business. A matcher that
 passes one look-alike in a hundred passes thousands of unrelated pairs at that
-scale. A government register also holds few honest typos, and some are
+scale. A government register holds few typos, and some of those may be
 deliberate. Both projects leave fuzzy tokens off. Typo tolerance should pay more
 on data people type in themselves, such as CRM records. The
 [README](https://github.com/freemansoft/entitopia/blob/main/README.md#closed-work-items)
 records the full measurement.
 
 ## Double metaphone and Beider-Morse match different pairs
+
+The rest of the article covers the settings behind the matchers the project
+kept.
 
 The `phonetic` subfield uses double metaphone and `phonetic_bm` uses
 Beider-Morse. Two names can share one double metaphone code and not the other.
@@ -405,7 +412,7 @@ The project's documentation once showed no code for `SMYTH`. The index returns
 | Address               | An exact keyword subfield and a fuzzy token subfield                                      | `_analyze` the same street with and without punctuation                         |
 | Address, house number | Parse number, name and unit before scoring                                                | Score two numbers on one street; expect a low score                             |
 | Identifier            | Exact match after normalization                                                           | Count how many records share each value before trusting it                      |
-| Every analyzer        | n/a                                                                                       | `_analyze` by field against the live index                                      |
+| Every analyzer        | Whichever analyzers you chose above                                                       | `_analyze` by field against the live index                                      |
 
 ## Source
 
