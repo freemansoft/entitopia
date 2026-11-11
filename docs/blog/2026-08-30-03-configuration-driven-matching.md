@@ -1,4 +1,4 @@
-# Building a general entity matcher: test it on a second dataset
+# Building a general entity matcher requires more than one dataset
 
 Entity resolution decides whether two listings from different sources describe
 the same real-world business. The listings share no key, and their names and
@@ -9,8 +9,14 @@ master data, supplier deduplication, provider directories and fraud detection.
 for this kind of matching on Elasticsearch. It keeps everything specific to a
 dataset in JSON configuration. One sample project reads the US register of motor
 carriers, about 2.1 million companies. It looks for carriers that a regulator
-shut down and that may have reopened under a new name. Another looks for
-duplicate listings among 5,419 Medicare hospitals.
+shut down and that may have reopened under a new name. A second sample project
+looks for duplicate listings among 5,419 Medicare hospitals.
+[Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
+measures how to compare each field.
+[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
+measures what the candidate search and the ignored values let the scorer see.
+This article covers what it took to run the same matcher on a second dataset,
+and how to trust a run.
 
 The hospital project tested whether entity matching could run on configuration
 alone. Configuration alone partially worked. Testing with the hospital data
@@ -18,13 +24,6 @@ found four defects in shared code that the carrier data had never triggered.
 Each one is now fixed, and the hospital sweep runs from four configuration
 files. Every failure in this article shares one signature: the run reported
 success, and the data was quietly wrong.
-
-[Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
-measures how to compare each field.
-[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
-measures what the candidate search and the ignored values let the scorer see.
-This article covers what it took to run the same matcher on a second dataset,
-and how to trust a run.
 
 The figures come from public US government data downloaded in August 2026.
 Expect different values on your own data.
@@ -83,11 +82,17 @@ are code.
 
 ## Seven phases read each step's configuration from JSON
 
-A project is a directory of configuration and data. Running it executes steps in
-order, and each step runs some of seven phases. The phases hold no knowledge of
-any dataset. Each step's JSON files name the index to build, its field mappings
-and what to match. The table groups the phases by the kind of step that runs
-them, in the order each step runs them.
+A project is a directory of configuration and data. Its step count follows its
+data, not the matching. Each source dataset gets a load step, often with a setup
+step before it. Each project then runs one sweep. The fold after the table lists
+the carrier project's 15 steps and the hospital project's four.
+
+Nearly every step is one of three kinds: setup, load or sweep. The seven phases
+are dataset-agnostic, so the same phase code runs on every dataset. Each step's
+JSON files name the index to build, its field mappings and what to match. The
+Step column shows which kinds of step run each phase. A phase marked "Load,
+sweep" runs in both kinds. The rows follow the order the carrier project's steps
+run them.
 
 | #   | Step        | Phase                 | What it does                                                                                                    |
 | --- | ----------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -98,6 +103,36 @@ them, in the order each step runs them.
 | 5   | Load        | `index-populate`      | Bulk-loads a CSV file, optionally through a pipeline                                                            |
 | 6   | Sweep       | `validate`            | Checks the configuration against its schema and against the live index mapping, and stops the run on a mismatch |
 | 7   | Sweep       | `entity-match`        | Runs a sweep: searches for candidates, scores each pair, and writes the pairs it keeps                          |
+
+<details>
+<summary>Show each project's steps</summary>
+
+| #   | Hospital project step    | Kind  | Phases                                                    |
+| --- | ------------------------ | ----- | --------------------------------------------------------- |
+| 1   | `doctors-clinicians`     | Load  | `validate`, `index-create`, `index-map`, `index-populate` |
+| 2   | `facillity-affiliations` | Load  | `validate`, `index-create`, `index-map`, `index-populate` |
+| 3   | `hospitals`              | Load  | `validate`, `index-create`, `index-map`, `index-populate` |
+| 4   | `hospital-duplicates`    | Sweep | `index-create`, `index-map`, `validate`, `entity-match`   |
+
+| #   | Carrier project step                    | Kind          | Phases                                                  |
+| --- | --------------------------------------- | ------------- | ------------------------------------------------------- |
+| 1   | `crashes-ingestion-setup`               | Setup         | `pipelines`                                             |
+| 2   | `crashes`                               | Load          | `index-create`, `index-map`, `index-populate`           |
+| 3   | `inspections-per-unit`                  | Load          | `index-create`, `index-map`, `index-populate`           |
+| 4   | `inspections-ingestion-setup`           | Setup         | `enrichment-policies`, `pipelines`                      |
+| 5   | `inspections`                           | Load          | `index-create`, `index-map`, `index-populate`           |
+| 6   | `auth-history-ingestion-setup`          | Setup         | `pipelines`                                             |
+| 7   | `auth-history`                          | Load          | `index-create`, `index-map`, `index-populate`           |
+| 8   | `out-of-service-orders-ingestion-setup` | Setup         | `pipelines`                                             |
+| 9   | `out-of-service-orders`                 | Load          | `index-create`, `index-map`, `index-populate`           |
+| 10  | `boc3-agents-ingestion-setup`           | Setup         | `pipelines`                                             |
+| 11  | `boc3-agents`                           | Load          | `index-create`, `index-map`, `index-populate`           |
+| 12  | `carriers-ingestion-setup`              | Setup         | `enrichment-policies`, `pipelines`                      |
+| 13  | `carriers`                              | Load          | `index-create`, `index-map`, `index-populate`           |
+| 14  | `chameleon-detection`                   | Sweep         | `index-create`, `index-map`, `validate`, `entity-match` |
+| 15  | `chameleon-validation`                  | Results index | `index-create`, `index-map`                             |
+
+</details>
 
 Elasticsearch cannot change an analyzer on a live index, so a reload builds a
 new index and moves the alias. The diagram shows the carrier project's three
@@ -169,47 +204,65 @@ This entry is the vehicle signal. It asks whether two carriers reported the same
 vehicle identification number in crash or inspection records.
 
 Each kind of signal is a Python class, such as `SharedTokenSignal` or
-`AddressSignal`. The class declares the type names it answers to. The
+`AddressSignal`. The class lists the `type` values that select it. The
 `build_signal` function reads each entry's `type` and creates the matching class
 with that entry's fields and weight. JSON can choose and tune the existing
-signals, but a new kind of evidence needs a new class with unit tests.
+signals, but a new kind of evidence needs a new class with unit tests. No class
+names a dataset's field. The hospital project uses four of the six classes
+unchanged.
+
+| `type`                        | Class                       | What it compares                                                                                      | Hospital project |
+| ----------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------- |
+| `name-phonetic`, `name-token` | `NameOverlapSignal`         | Name sound codes, or name words                                                                       | Yes              |
+| `address`                     | `AddressSignal`             | Street tokens, exact and fuzzy, plus a configured state field                                         | Yes              |
+| `exact-identifier`            | `ExactIdentifierSignal`     | A phone number, fax number or email address that must match exactly                                   | Yes              |
+| `shared-token`                | `SharedTokenSignal`         | Lists of identifiers unique worldwide, such as vehicle identification numbers                         | No               |
+| `rarity-weighted-value`       | `RarityWeightedValueSignal` | A value many listings share, such as a filing agent, scored by how rare it is                         | No               |
+| `temporal`                    | `TemporalSignal`            | Days from one listing's shutdown to the other's registration. Needs a sweep with a direction in time. | No               |
 
 Each signal also tells the candidate search what it needs. Its `seed_clauses()`
 method returns the query clauses that find listings sharing its evidence, such
-as the same vehicle identifier. A signal that returns none can score a pair but
-never fetch one. Its `token_subfields()` method names the analyzed text it
-compares, such as name sound codes. The candidate search combines the answers
-and holds no code for any one signal. It once kept its own list of signals
-allowed to search, with query code for phones and vehicle identifiers. Adding a
-signal meant editing the search too. [Tuning an entity
-matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
+as the same vehicle identifier. A signal that returns no clauses never adds a
+candidate. It still scores the pairs that other signals found. The filing-agent
+signal offers no clauses on purpose. One agent can serve thousands of carriers,
+so a search on it would fetch unrelated listings.
+
+Each signal's `token_subfields()` method names the analyzed text it compares,
+such as name sound codes. The candidate search combines the answers and holds no
+code for any one signal. It once kept its own list of signals allowed to search,
+with query code for phones and vehicle identifiers. Adding a signal meant
+editing the search too.
+[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures why the seed list matters more than any weight.
 
-## A component that keeps its meaning without its domain word belongs in code
-
-The vehicle signal shows where the line between code and configuration falls. It
-shipped as `vin-overlap`, but nothing in its logic concerns vehicles. It asks
-whether two listings name the same physical thing by an identifier that is
-unique worldwide. A container number, an aircraft tail number or a serial number
-works the same way. The class became `SharedTokenSignal`, registered as
-`shared-token`, and the project deleted the old type name. The word
-`vin-overlap` survives only as the signal's `name`, which every written pair
-carries.
+## Domain words belong in configuration
 
 A component that still makes sense without its domain word belongs in code. One
-that only makes sense within a domain belongs in configuration. The population
-selector's first name failed the same test. It began as a predecessor selector,
-a name that presumed every sweep looks for successors. A duplicate search has a
-population but no predecessors, so the class became `PopulationSelector`.
+that only makes sense within a domain belongs in configuration. Two components
+failed this test at first.
 
-Population rules come from a closed menu: four clause kinds that the code turns
-into a query. Configuration cannot write its own Elasticsearch query. The kinds
-are `nested-exists`, `term`, `all` and `any`. The carrier project once hit the
-defect this menu prevents. One carrier can carry several out-of-service orders.
-The wrong mapping let Elasticsearch flatten them into one list. A filter for an
-active order dated 2020 or later then matched a carrier with an active 2015
-order and an inactive 2022 order. Neither order passed alone. Free combination
-of clauses could rebuild that defect from configuration that looks reasonable.
+The vehicle signal in the JSON above first shipped with the type `vin-overlap`,
+but nothing in its logic concerns vehicles. It asks whether two listings name
+the same physical thing by an identifier that is unique worldwide. A container
+number, an aircraft tail number or a serial number works the same way. The class
+became `SharedTokenSignal`, registered as `shared-token`, and the project
+deleted the old type name. The word `vin-overlap` survives only as the signal's
+`name`, which every written pair carries.
+
+The population selector's first name failed the same test. It began as a
+predecessor selector, a name that presumed every sweep looks for successors. A
+duplicate search has a population but no predecessors, so the class became
+`PopulationSelector`.
+
+Population rules use a fixed set of four clause kinds, which the code turns into
+a query. Configuration cannot write its own Elasticsearch query. The kinds are
+`nested-exists`, `term`, `all` and `any`. The carrier project once hit the
+defect this restriction prevents. One carrier can carry several out-of-service
+orders. The wrong mapping let Elasticsearch flatten them into one list. A filter
+for an active order dated 2020 or later then matched a carrier with an active
+2015 order and an inactive 2022 order. Neither order passed alone. Free
+combination of clauses could rebuild that defect from configuration that looks
+reasonable.
 
 ## A field with few distinct values cannot identify an entity
 
@@ -235,21 +288,7 @@ population.
 ## Five loading failures reported success
 
 The failures in this section and the next two share the article's signature.
-None raised an error at the time.
-
-| Failure                     | What was wrong                                                                                                                                                                                        | Fix                                                                               | Regression test                                                |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Join key stored two ways    | A carrier ID reached one index as a float such as `98765432.0` and another as the string `98765432`. The enrich lookup compares stored strings, so the join matched zero documents.                   | Normalize the key to one string in each ingest pipeline, and map it as exact text | `test_dot_number_join_contract.py`                             |
-| An unrecognized date format | Elasticsearch did not recognize `01-JUN-74`, so the registration date loaded as text and date comparisons had nothing to read. A two-digit year format would have been worse: 1974 would become 2074. | Convert dates during loading, with an explicit century                            | Partly: `test_signals.py` pins the century rule for the scorer |
-| Renamed columns             | The source renamed its columns. The analyzers named the old ones and never ran.                                                                                                                       | `validate` checks every configured field against the live index                   | `test_config_liveness.py`                                      |
-| A stale enrich index        | An enrich index stayed pinned to a 5,000-row test sample through a full load. Coverage fell from about 572,000 matches to about 4,000.                                                                | A stale or empty enrich index now fails the run                                   | `test_phase_enrichment_policies.py`                            |
-| Rejected bulk requests      | A busy cluster rejected 91,439 of 2,085,534 documents (4.4%). The tuning had gone to a different queue, which showed no rejections.                                                                   | Size the queue the loader uses                                                    | None. Read the loader's line                                   |
-
-The last failure hid in plain sight. Every dataset uses a fixed document ID per
-row, so an index holding fewer documents than its CSV has rows is normal. A load
-that lost 91,439 documents looked like a load that removed duplicates.
-
-The first two articles met the same signature.
+None raised an error at the time. The first two articles met it too.
 [Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
 describes an address that never matched its comma-free copy, because of a
 doubled space.
@@ -257,7 +296,15 @@ doubled space.
 describes a vehicle seed that would have looked active while adding no
 candidates.
 
-## The hospital project exposed four defects the carrier project never triggered
+| Failure                     | What was wrong                                                                                                                                                                                                                                                                              | Fix                                                                               | Regression test                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Join key stored two ways    | A carrier ID reached one index as a float such as `98765432.0` and another as the string `98765432`. The enrich lookup compares stored strings, so the join matched zero documents.                                                                                                         | Normalize the key to one string in each ingest pipeline, and map it as exact text | `test_dot_number_join_contract.py`                             |
+| An unrecognized date format | Elasticsearch did not recognize `01-JUN-74`, so the registration date loaded as text and date comparisons had nothing to read. A two-digit year format would have been worse: 1974 would become 2074.                                                                                       | Convert dates during loading, with an explicit century                            | Partly: `test_signals.py` pins the century rule for the scorer |
+| Renamed columns             | The source renamed its columns. The analyzers named the old ones and never ran.                                                                                                                                                                                                             | `validate` checks every configured field against the live index                   | `test_config_liveness.py`                                      |
+| A stale enrich index        | An enrich index stayed pinned to a 5,000-row test sample through a full load. Coverage fell from about 572,000 matches to about 4,000.                                                                                                                                                      | A stale or empty enrich index now fails the run                                   | `test_phase_enrichment_policies.py`                            |
+| Rejected bulk requests      | A busy cluster rejected 91,439 of 2,085,534 documents (4.4%). Each document's ID comes from the row's key columns, and rows sharing a key overwrite each other. The missing documents looked like removed duplicates. The tuning had gone to a different queue, which showed no rejections. | Size the queue the loader uses                                                    | None. Read the loader's line                                   |
+
+## A second dataset exposed four defects the first never triggered
 
 The hospital project was the first test of matching with configuration alone.
 Its duplicate sweep runs from four configuration files. It also exposed four
