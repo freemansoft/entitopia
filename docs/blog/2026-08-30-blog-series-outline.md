@@ -49,15 +49,16 @@ Each article stands alone and cross-links to the others. Series total: ~5,600 wo
 
 ### Published
 
-Each post was checked word for word against the repo on 2026-11-10. "Text matches"
+Each post was checked word for word against the repo on the day it went live. "Text matches"
 is the commit whose article text the post carries, and "Links pinned to" is the commit
 its GitHub links point at, so the figures a reader follows stay the ones quoted. Each
 post ends with a revision-history line that the repo copy does not carry.
 
-| #   | Post date (Blogger) | Post                                                                                                                     | Title on Blogger                                                                                           | Text matches                                                                              | Links pinned to |
-| --- | ------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------- |
-| 1   | 2026-11-03          | [use-elasticsearch-to-match](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)                   | Use Elasticsearch to Match Organizations and people when the Data differs Deliberately or Accidentally - 1 | `512922b` (PR #52)                                                                        | `87aae26`       |
-| 2   | 2026-11-10          | [tuning-entity-matcher-fix-candidate](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html) | Tuning an entity matcher: fix the candidate search before the weights - 2                                  | `6a22331` (PR #57), except the post has no comma in "a corporate parent or a placeholder" | `824a2a7`       |
+| #   | Post date (Blogger) | Post                                                                                                                     | Title on Blogger                                                                                                     | Text matches                                                                              | Links pinned to |
+| --- | ------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------- |
+| 1   | 2026-11-03          | [use-elasticsearch-to-match](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)                   | Use Elasticsearch to Match Organizations and people when the Data differs Deliberately or Accidentally - 1           | `512922b` (PR #52)                                                                        | `87aae26`       |
+| 2   | 2026-11-10          | [tuning-entity-matcher-fix-candidate](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html) | Tuning an entity matcher: fix the candidate search before the weights - 2                                            | `6a22331` (PR #57), except the post has no comma in "a corporate parent or a placeholder" | `824a2a7`       |
+| 3   | 2026-11-11          | [building-general-entity-matcher](https://joe.blog.freemansoft.com/2026/11/building-general-entity-matcher.html)         | Building a general entity matcher requires more than one dataset - 3 (the Blogger title also opens with a stray `"`) | `9334b04` (PR #62)                                                                        | `65c5e25`       |
 
 A change to a published article's text belongs in both places: the post, and the repo
 copy here.
