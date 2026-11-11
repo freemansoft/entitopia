@@ -154,9 +154,8 @@ flowchart TB
   end
   subgraph S["Sweep step"]
     direction LR
-    SV{"Configuration matches<br/>schema and live index?"} -- yes --> SC["Candidate search,<br/>in an order that never ties"]
-    SC --> SS["Score each pair"]
-    SS --> SE{"Scoring errors on a<br/>tenth or more of pairs?"}
+    SV{"Configuration matches<br/>schema and live index?"} -- yes --> SC["Run the sweep:<br/>candidates in an<br/>order that never ties"]
+    SC --> SE{"Errors on a tenth<br/>or more of searches<br/>or pairs?"}
     SE -- no --> SP["Pairs written to the run's<br/>own numbered index"]
     SV -- no --> SF["Run fails"]
     SE -- yes --> SF
