@@ -146,8 +146,9 @@ defect sections below report how well the split held.
 
 ## Configuration picks signals from a fixed set of Python classes
 
-Configuration selects each signal by a type string and sets its fields and
-weight. This block ships today in the carrier project's
+Each entry in the configuration's `signals` list picks a signal class with its
+`type`, and sets the `fields` it compares and its `weight`. This entry ships
+today in the carrier project's
 [`entity-match.json`](https://github.com/freemansoft/entitopia/blob/main/DOT-Commercial/configuration/chameleon-detection/entity-match.json):
 
 ```json
@@ -164,14 +165,23 @@ weight. This block ships today in the carrier project's
 }
 ```
 
-Each signal class declares its type name, and `build_signal` looks it up. A new
-kind of evidence needs a new class with unit tests, not a new block of JSON. The
-candidate search code once kept its own list of the types allowed to fetch
-candidates. It also held query code for phone numbers and vehicle identifiers.
-Each signal now answers for itself. Its `seed_clauses()` method says what to
-search for. Its `token_subfields()` method says which analyzed text to fetch.
-The candidate search combines the answers and holds no code for any one signal.
-[Tuning an entity
+This entry is the vehicle signal. It asks whether two carriers reported the same
+vehicle identification number in crash or inspection records.
+
+Each kind of signal is a Python class, such as `SharedTokenSignal` or
+`AddressSignal`. The class declares the type names it answers to. The
+`build_signal` function reads each entry's `type` and creates the matching class
+with that entry's fields and weight. JSON can choose and tune the existing
+signals, but a new kind of evidence needs a new class with unit tests.
+
+Each signal also tells the candidate search what it needs. Its `seed_clauses()`
+method returns the query clauses that find listings sharing its evidence, such
+as the same vehicle identifier. A signal that returns none can score a pair but
+never fetch one. Its `token_subfields()` method names the analyzed text it
+compares, such as name sound codes. The candidate search combines the answers
+and holds no code for any one signal. It once kept its own list of signals
+allowed to search, with query code for phones and vehicle identifiers. Adding a
+signal meant editing the search too. [Tuning an entity
 matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures why the seed list matters more than any weight.
 
@@ -187,27 +197,28 @@ works the same way. The class became `SharedTokenSignal`, registered as
 carries.
 
 A component that still makes sense without its domain word belongs in code. One
-that does not belongs in configuration. The population selector failed the same
-test. It began as a predecessor selector, a name that presumed every sweep looks
-for successors. A duplicate search has a population but no predecessors, so the
-class became `PopulationSelector`.
+that only makes sense within a domain belongs in configuration. The population
+selector's first name failed the same test. It began as a predecessor selector,
+a name that presumed every sweep looks for successors. A duplicate search has a
+population but no predecessors, so the class became `PopulationSelector`.
 
-Configuration picks from a closed menu and cannot write its own query.
-Population rules come from four clause kinds: `nested-exists`, `term`, `all` and
-`any`. The carrier project once hit the defect this menu prevents. One carrier
-can carry several out-of-service orders. The wrong mapping let Elasticsearch
-flatten them into one list. A filter for an active order dated 2020 or later
-then matched a carrier with an active 2015 order and an inactive 2022 order.
-Neither order passed alone. Free combination of clauses could rebuild that
-defect from configuration that looks reasonable.
+Population rules come from a closed menu: four clause kinds that the code turns
+into a query. Configuration cannot write its own Elasticsearch query. The kinds
+are `nested-exists`, `term`, `all` and `any`. The carrier project once hit the
+defect this menu prevents. One carrier can carry several out-of-service orders.
+The wrong mapping let Elasticsearch flatten them into one list. A filter for an
+active order dated 2020 or later then matched a carrier with an active 2015
+order and an inactive 2022 order. Neither order passed alone. Free combination
+of clauses could rebuild that defect from configuration that looks reasonable.
 
-## A field with few distinct values cannot identify a business
+## A field with few distinct values cannot identify an entity
 
 A profiler script measures each column before anyone configures matching on it.
 It reports distinct counts, blank rates, date formats, mixed types, leading
 zeros, and whether a key is unique. It also sorts columns into fingerprint
-fields and filter fields. The profiler prints how often two unrelated rows share
-a value by chance, for a column with few distinct values and one common value.
+fields and filter fields. A column with 200 or fewer distinct values gets a
+warning when its most common value sits on more than 1% of rows. The warning
+gives the chance that two unrelated rows share a value.
 
 The filing-agent column shows why that estimate matters. The project's
 documentation once called the agent harder to fake than an address. A
@@ -218,8 +229,8 @@ now ships as a rarity-weighted signal at weight 0.04, not as strong evidence.
 matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures why the first rarity formula still rated every agent as rare.
 
-The profiler warns on any such column whose most common value sits on more than
-1% of rows. Weight that field by rarity, or use it only to narrow a population.
+Weight a field the profiler warns about by rarity, or use it only to narrow a
+population.
 
 ## Five loading failures reported success
 
