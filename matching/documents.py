@@ -125,7 +125,7 @@ class FieldRarityTable:
     Exists because a signal scoring a shared value highly is asserting that the
     value discriminates, and only the corpus can say whether it does. One
     project's shared-filing-agent field carried 89 distinct values across 1.43M
-    rows, so two unrelated records share one about 7% of the time by chance;
+    rows, so two unrelated records share one about 6% of the time by chance;
     unweighted, that signal fires on noise.
 
     Uses log(N/count)/log(N), NOT 1 - count/N. With 89 values the largest share

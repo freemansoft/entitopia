@@ -127,15 +127,15 @@ flowchart TD
 
 Counts are point-in-time against the July 2026 FMCSA extract used throughout this document, and will differ on a fresh download.
 
-| Step                    | Socrata ID  | Rows      | Purpose                                                                                                                                                                                                                                                   |
-| ----------------------- | ----------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `carriers`              | `kjg3-diqy` | 2,085,534 | Carrier census — the core entity each other dataset enriches.                                                                                                                                                                                             |
-| `crashes`               | `aayw-vxb3` | 333,300   | Crash history per carrier.                                                                                                                                                                                                                                |
-| `inspections`           | `fx4q-ay7w` | 5,647,567 | Vehicle inspection history per carrier.                                                                                                                                                                                                                   |
-| `inspections-per-unit`  | `wt8s-2hbx` | 9,620,293 | Per-unit VIN/vehicle detail, enriched onto `inspections`.                                                                                                                                                                                                 |
-| `auth-history`          | `9mw4-x3tu` | 4,941,925 | Every authority grant/revocation event per carrier — the reincarnation-timing signal for shadow/chameleon carriers (revoked → new DOT# granted soon after).                                                                                               |
-| `out-of-service-orders` | `p2mt-9ige` | 394,963   | Carriers ordered out of service for safety, with reason/date/rescind date — flags who was shut down, a prime candidate for "who reappeared nearby afterward."                                                                                             |
-| `boc3-agents`           | `2emp-mxtb` | 1,860,604 | Each carrier's legal process agent (name + address). **Weak signal:** only 89 distinct agents cover all 1.43M filings, so two unrelated carriers share an agent roughly 7% of the time by chance. Used only as IDF-weighted corroboration at weight 0.04. |
+| Step                    | Socrata ID  | Rows      | Purpose                                                                                                                                                                                                                                                                               |
+| ----------------------- | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `carriers`              | `kjg3-diqy` | 2,085,534 | Carrier census — the core entity each other dataset enriches.                                                                                                                                                                                                                         |
+| `crashes`               | `aayw-vxb3` | 333,300   | Crash history per carrier.                                                                                                                                                                                                                                                            |
+| `inspections`           | `fx4q-ay7w` | 5,647,567 | Vehicle inspection history per carrier.                                                                                                                                                                                                                                               |
+| `inspections-per-unit`  | `wt8s-2hbx` | 9,620,293 | Per-unit VIN/vehicle detail, enriched onto `inspections`.                                                                                                                                                                                                                             |
+| `auth-history`          | `9mw4-x3tu` | 4,941,925 | Every authority grant/revocation event per carrier — the reincarnation-timing signal for shadow/chameleon carriers (revoked → new DOT# granted soon after).                                                                                                                           |
+| `out-of-service-orders` | `p2mt-9ige` | 394,963   | Carriers ordered out of service for safety, with reason/date/rescind date — flags who was shut down, a prime candidate for "who reappeared nearby afterward."                                                                                                                         |
+| `boc3-agents`           | `2emp-mxtb` | 1,860,604 | Each carrier's legal process agent (name + address). **Weak signal:** only 89 distinct agents cover all 1.43M filings, so two unrelated carriers share an agent roughly 6% of the time by chance (5.9%, measured 2026-11-10). Used only as IDF-weighted corroboration at weight 0.04. |
 
 ## 2. Problemsidentified in the raw data
 
@@ -145,7 +145,7 @@ Counts are point-in-time against the July 2026 FMCSA extract used throughout thi
 - **Legitimately shared contact info**: BOC-3 filing agents, permit
   services, and insurance agencies sit on the paperwork for hundreds of
   unrelated carriers. Only 89 distinct filing agents cover 1.43M filings —
-  two random carriers share an agent ~7% of the time by chance, so that
+  two random carriers share an agent ~6% of the time by chance, so that
   alone proves nothing.
 - A few data-modeling bugs noted in the README (dropped inspection
   records, over-eager predecessor matching from a mapping issue, mixed
