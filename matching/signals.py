@@ -561,7 +561,7 @@ class RarityWeightedValueSignal(Signal):
 
     The weighting is not optional decoration. In the measured case only 89
     distinct values covered 1.43M rows, so an unweighted version of this signal
-    fires on roughly 7% of random pairs. Weight is deliberately low on top of
+    fires on roughly 6% of random pairs. Weight is deliberately low on top of
     that.
 
     Declines to seed — it inherits the base seed_clauses returning [] — because

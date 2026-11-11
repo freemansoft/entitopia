@@ -43,7 +43,7 @@ Act on every WARNING it prints — each corresponds to a real incident and names
 - **Fingerprint** (high cardinality) — can carry a match on its own.
 - **Filter** (low cardinality) — can select a population or corroborate, never establish.
 
-**This is the judgement most often got wrong, and the profiler exists because of it.** A field can look like a strong fingerprint and be worthless. One dataset's "legal process agent" was documented as harder to fake than a business address; measurement found **89 distinct values across 1.43M rows**, so two unrelated entities share one about 7% of the time by chance. It shipped as a rarity-weighted corroborator at weight 0.04 instead of the strong signal it appeared to be.
+**This is the judgement most often got wrong, and the profiler exists because of it.** A field can look like a strong fingerprint and be worthless. One dataset's "legal process agent" was documented as harder to fake than a business address; measurement found **89 distinct values across 1.43M rows**, so two unrelated entities share one about 6% of the time by chance. It shipped as a rarity-weighted corroborator at weight 0.04 instead of the strong signal it appeared to be.
 
 If two random records share a value more than roughly a percent of the time, that field cannot carry a match. Weight it by rarity or use it only as a filter.
 

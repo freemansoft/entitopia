@@ -10,10 +10,10 @@ The initial focus is **entity resolution** — finding records that describe the
 
 The framework ships with two example projects. They exist to prove the framework works against real, messy, public data, and each one is where that dataset's specifics live:
 
-| Project                             | Dataset                                     | What it proves                                                                                                                                               |
-| ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`CMS-Providers`](CMS-Providers/)   | Medicare provider data (~5.6M rows)         | Scale, composite document IDs, and phonetic/fuzzy analyzers on names and addresses. No enrichment.                                                           |
-| [`DOT-Commercial`](DOT-Commercial/) | FMCSA commercial trucking data (~9.6M rows) | Multi-dataset enrichment, two-level enrichment chains, ingestion pipelines, and entity matching — detecting "chameleon carriers" that reopen under a new ID. |
+| Project                             | Dataset                                                          | What it proves                                                                                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`CMS-Providers`](CMS-Providers/)   | Medicare provider data (~5.6M rows across three datasets)        | Scale, composite document IDs, and phonetic/fuzzy analyzers on names and addresses. No enrichment.                                                           |
+| [`DOT-Commercial`](DOT-Commercial/) | FMCSA commercial trucking data (~25M rows across seven datasets) | Multi-dataset enrichment, two-level enrichment chains, ingestion pipelines, and entity matching — detecting "chameleon carriers" that reopen under a new ID. |
 
 Each project has its own README covering its datasets, the steps it runs, its index relationships, and the dataset-specific problems solved there. **This README covers the framework and the hazards common to any dataset.**
 
@@ -476,7 +476,7 @@ curl -X DELETE "http://localhost:9200/hospitals-*"
 curl -X DELETE "http://localhost:9200/hospitals-2026.08.19-000001"      # works
 ```
 
-The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That used to combine badly with `{now/d}`: a same-day re-run wrote into the index that was supposed to be gone, and its old documents were still there. It happened here: a sweep emitting 3,627 pairs left a count of 7,347, because 4,751 pairs from the previous run had never been deleted. A same-day re-run now creates the next generation instead (`…-000002`, see [hazard 8](#8-index-names-and-same-day-re-runs)), so a surviving index no longer contaminates the next run, but it does still take up disk and keep its name.
+The refusal returns HTTP 400 with a body, not a non-zero exit code, so `curl -s ... > /dev/null` swallows it and the index quietly survives. That used to combine badly with `{now/d}`: a same-day re-run wrote into the index that was supposed to be gone, and its old documents were still there. It happened here: a sweep emitting 3,627 pairs left a count of 7,347: its own pairs plus 3,720 that the previous run had written and this one did not overwrite. The previous run's documents had never been deleted. A same-day re-run now creates the next generation instead (`…-000002`, see [hazard 8](#8-index-names-and-same-day-re-runs)), so a surviving index no longer contaminates the next run, but it does still take up disk and keep its name.
 
 To find what is actually there before deleting anything:
 
