@@ -12,12 +12,12 @@ carriers, about 2.1 million companies. It looks for carriers that a regulator
 shut down and that may have reopened under a new name. Another looks for
 duplicate listings among 5,419 Medicare hospitals.
 
-We used the hospital project as a test dataset to see if we could do entity
-matching only with configuration. It partially worked. Testing with the hospital
-data found four defects in shared code that the carrier data had never
-triggered. Each one is now fixed, and the hospital sweep runs from four
-configuration files. Every failure in this article shares one signature: the run
-reported success, and the data was quietly wrong.
+The hospital project tested whether entity matching could run on configuration
+alone. Configuration alone partially worked. Testing with the hospital data
+found four defects in shared code that the carrier data had never triggered.
+Each one is now fixed, and the hospital sweep runs from four configuration
+files. Every failure in this article shares one signature: the run reported
+success, and the data was quietly wrong.
 
 [Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
 measures how to compare each field.
@@ -71,31 +71,33 @@ Both projects ask whether two listings describe the same business. The carrier
 project asks it about a carrier a regulator shut down and a carrier that
 registered soon after. A match there may mean the business reopened under a new
 name. The hospital project asks it about any two hospitals. A match there may
-mean one hospital is listed twice.
+mean one hospital appears twice.
 
 The same code answers that question for both projects. Each sweep picks the
 listings to start from. It searches for possible matches for each one, then
 scores each pair. The carrier sweep starts from shut-down carriers and searches
-only listings registered near the shutdown. The hospital sweep starts from every
-hospital. Configuration holds those choices, along with the fields to compare
-and their weights. The search and the scoring are code.
+only listings registered near the shutdown, or with no registration date. The
+hospital sweep starts from every hospital. Configuration holds those choices,
+along with the fields to compare and their weights. The search and the scoring
+are code.
 
 ## Seven phases read each step's configuration from JSON
 
 A project is a directory of configuration and data. Running it executes steps in
 order, and each step runs some of seven phases. The phases hold no knowledge of
 any dataset. Each step's JSON files name the index to build, its field mappings
-and what to match.
+and what to match. The table groups the phases by the kind of step that runs
+them, in the order each step runs them.
 
-| Phase                 | What it does                                                                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `index-create`        | Creates the day's next numbered index and points the step's alias at it                                         |
-| `index-map`           | Applies field types and analyzers                                                                               |
-| `validate`            | Checks the configuration against its schema and against the live index mapping, and stops the run on a mismatch |
-| `enrichment-policies` | Builds the enrich indexes that copy fields between indexes during loading                                       |
-| `pipelines`           | Registers the ingest pipelines documents pass through as they load                                              |
-| `index-populate`      | Bulk-loads a CSV file, optionally through a pipeline                                                            |
-| `entity-match`        | Runs a sweep: searches for candidates, scores each pair, and writes the pairs it keeps                          |
+| #   | Step        | Phase                 | What it does                                                                                                    |
+| --- | ----------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | Setup       | `enrichment-policies` | Builds the enrich indexes that copy fields between indexes during loading                                       |
+| 2   | Setup       | `pipelines`           | Registers the ingest pipelines documents pass through as they load                                              |
+| 3   | Load, sweep | `index-create`        | Creates the day's next numbered index and points the step's alias at it                                         |
+| 4   | Load, sweep | `index-map`           | Applies field types and analyzers                                                                               |
+| 5   | Load        | `index-populate`      | Bulk-loads a CSV file, optionally through a pipeline                                                            |
+| 6   | Sweep       | `validate`            | Checks the configuration against its schema and against the live index mapping, and stops the run on a mismatch |
+| 7   | Sweep       | `entity-match`        | Runs a sweep: searches for candidates, scores each pair, and writes the pairs it keeps                          |
 
 Elasticsearch cannot change an analyzer on a live index, so a reload builds a
 new index and moves the alias. The diagram shows the carrier project's three
@@ -119,7 +121,7 @@ flowchart TB
     direction LR
     SV{"Configuration matches<br/>schema and live index?"} -- yes --> SC["Candidate search,<br/>in an order that never ties"]
     SC --> SS["Score each pair"]
-    SS --> SE{"A tenth or more of<br/>comparisons failed?"}
+    SS --> SE{"Scoring errors on a<br/>tenth or more of pairs?"}
     SE -- no --> SP["Pairs written to the run's<br/>own numbered index"]
     SV -- no --> SF["Run fails"]
     SE -- yes --> SF
@@ -130,10 +132,10 @@ flowchart TB
 
 ## Two datasets test different halves of the framework
 
-| Project  | Loads                                        | Matches                                                      | Exercises                                                                    |
-| -------- | -------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Carrier  | About 25 million rows across seven datasets  | About 2.1 million carriers, from shut-down to newer carriers | Two-level enrichment, ingest pipelines, a succession sweep                   |
-| Hospital | About 5.6 million rows across three datasets | 5,419 hospitals, each against its candidates                 | Column names with spaces, no enrichment, a duplicate sweep with no direction |
+| Project  | Loads                                                                                       | Matches                                                      | Exercises                                                                    |
+| -------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Carrier  | About 25 million rows across seven datasets                                                 | About 2.1 million carriers, from shut-down to newer carriers | Two-level enrichment, ingest pipelines, a sweep with a direction in time     |
+| Hospital | About 5.6 million rows across three datasets: hospitals, clinicians, and their affiliations | 5,419 hospitals, each against its candidates                 | Column names with spaces, no enrichment, a duplicate sweep with no direction |
 
 One dataset lets an assumption about that dataset hide inside shared code. A
 second dataset forces a question about every line: does this belong to the
@@ -162,15 +164,18 @@ weight. This block ships today in the carrier project's
 }
 ```
 
-Each signal class registers its own type name, and `build_signal` looks it up. A
-new kind of evidence needs a new class with unit tests, not a new block of JSON.
-The candidate search code once kept its own list of the types allowed to fetch
+Each signal class declares its type name, and `build_signal` looks it up. A new
+kind of evidence needs a new class with unit tests, not a new block of JSON. The
+candidate search code once kept its own list of the types allowed to fetch
 candidates. It also held query code for phone numbers and vehicle identifiers.
 Each signal now answers for itself. Its `seed_clauses()` method says what to
 search for. Its `token_subfields()` method says which analyzed text to fetch.
 The candidate search combines the answers and holds no code for any one signal.
-[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
+[Tuning an entity
+matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures why the seed list matters more than any weight.
+
+## A component that keeps its meaning without its domain word belongs in code
 
 The vehicle signal shows where the line between code and configuration falls. It
 shipped as `vin-overlap`, but nothing in its logic concerns vehicles. It asks
@@ -189,9 +194,12 @@ class became `PopulationSelector`.
 
 Configuration picks from a closed menu and cannot write its own query.
 Population rules come from four clause kinds: `nested-exists`, `term`, `all` and
-`any`. Free combination would let a project rebuild a defect the carrier project
-already hit. The wrong mapping once let an active 2015 order and an inactive
-2022 order jointly pass a filter that neither order passed alone.
+`any`. The carrier project once hit the defect this menu prevents. One carrier
+can carry several out-of-service orders. The wrong mapping let Elasticsearch
+flatten them into one list. A filter for an active order dated 2020 or later
+then matched a carrier with an active 2015 order and an inactive 2022 order.
+Neither order passed alone. Free combination of clauses could rebuild that
+defect from configuration that looks reasonable.
 
 ## A field with few distinct values cannot identify a business
 
@@ -202,28 +210,29 @@ fields and filter fields. The profiler prints how often two unrelated rows share
 a value by chance, for a column with few distinct values and one common value.
 
 The filing-agent column shows why that estimate matters. The project's
-documentation once called the agent harder to fake than an address. The profiler
-found 89 distinct agents across 1.43 million rows, so two unrelated rows share
-one about 6% of the time. The agent now ships as a rarity-weighted signal at
-weight 0.04, not as strong evidence.
-[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
+documentation once called the agent harder to fake than an address. A
+measurement made before the profiler existed found 89 distinct agents across
+1.43 million rows. Two unrelated rows share one about 6% of the time. The agent
+now ships as a rarity-weighted signal at weight 0.04, not as strong evidence.
+[Tuning an entity
+matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures why the first rarity formula still rated every agent as rare.
 
-A field that two random rows share more than about 1% of the time cannot carry a
-match. Weight it by rarity, or use it only to narrow a population.
+The profiler warns on any such column whose most common value sits on more than
+1% of rows. Weight that field by rarity, or use it only to narrow a population.
 
 ## Five loading failures reported success
 
 The failures in this section and the next two share the article's signature.
 None raised an error at the time.
 
-| Failure                | What was wrong                                                                                                                         | Fix                                                             | Regression test                                                |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------- |
-| Inferred field types   | Elasticsearch typed a carrier ID as a number in one index and as exact text in another. A lookup joining them matched zero documents.  | Map every field the code relies on                              | `test_dot_number_join_contract.py`                             |
-| Two-digit years        | Mapping `01-JUN-74` with a two-digit year format turned 1974 into 2074.                                                                | Convert dates during loading, with an explicit century          | Partly: `test_signals.py` pins the century rule for the scorer |
-| Renamed columns        | The source renamed its columns. The analyzers named the old ones and never ran.                                                        | `validate` checks every configured field against the live index | `test_config_liveness.py`                                      |
-| A stale enrich index   | An enrich index stayed pinned to a 5,000-row test sample through a full load. Coverage fell from about 572,000 matches to about 4,000. | A stale or empty enrich index now fails the run                 | `test_phase_enrichment_policies.py`                            |
-| Rejected bulk requests | A busy cluster rejected 91,439 of 2,085,534 documents (4.4%). The tuning had gone to a different queue, which showed no rejections.    | Size the queue the loader uses                                  | None. Read the loader's line                                   |
+| Failure                     | What was wrong                                                                                                                                                                                        | Fix                                                                               | Regression test                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Join key stored two ways    | A carrier ID reached one index as a float such as `98765432.0` and another as the string `98765432`. The enrich lookup compares stored strings, so the join matched zero documents.                   | Normalize the key to one string in each ingest pipeline, and map it as exact text | `test_dot_number_join_contract.py`                             |
+| An unrecognized date format | Elasticsearch did not recognize `01-JUN-74`, so the registration date loaded as text and date comparisons had nothing to read. A two-digit year format would have been worse: 1974 would become 2074. | Convert dates during loading, with an explicit century                            | Partly: `test_signals.py` pins the century rule for the scorer |
+| Renamed columns             | The source renamed its columns. The analyzers named the old ones and never ran.                                                                                                                       | `validate` checks every configured field against the live index                   | `test_config_liveness.py`                                      |
+| A stale enrich index        | An enrich index stayed pinned to a 5,000-row test sample through a full load. Coverage fell from about 572,000 matches to about 4,000.                                                                | A stale or empty enrich index now fails the run                                   | `test_phase_enrichment_policies.py`                            |
+| Rejected bulk requests      | A busy cluster rejected 91,439 of 2,085,534 documents (4.4%). The tuning had gone to a different queue, which showed no rejections.                                                                   | Size the queue the loader uses                                                    | None. Read the loader's line                                   |
 
 The last failure hid in plain sight. Every dataset uses a fixed document ID per
 row, so an index holding fewer documents than its CSV has rows is normal. A load
@@ -239,23 +248,22 @@ candidates.
 
 ## The hospital project exposed four defects the carrier project never triggered
 
-The hospital project was the first test of matching with configuration alone. Its duplicate sweep runs from four configuration files. It
-also exposed four defects in shared code. Every one ended in a run that reported
-success.
+The hospital project was the first test of matching with configuration alone.
+Its duplicate sweep runs from four configuration files. It also exposed four
+defects in shared code. Every one ended in a run that reported success.
 
-| Defect                               | What the run reported                    | What was wrong                                                                                                                                                      | Fix                                                                                    |
-| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Field names containing a space       | 116 plausible pairs, 0 errors            | The token fetch dropped every field whose name contains a space. The name signals never ran, so every pair had matched on address alone.                            | Send the field list per document. The same configuration then found 4,751 pairs.       |
-| A setting the schema called optional | 532,529 errors, 0 pairs, then "complete" | The address signal required `fuzzy_scale`, which the schema let a project leave out.                                                                                | The schema now requires it, with no silent default.                                    |
-| A sweep in which every pair failed   | `entity-match complete`, exit code 0     | The sweep counted and logged each error and did nothing else.                                                                                                       | The sweep now fails when a tenth or more of its comparisons fail.                      |
-| A hard-coded state column            | 3,698 plausible pairs                    | The address signal read `phy_state`, the carrier project's column. Hospitals store `State`, so every pair looked cross-state and lost half its fuzzy address score. | A required `state_field` setting. A missing state no longer counts as a different one. |
+| Defect                               | What the run reported                    | What was wrong                                                                                                                                                      | Fix                                                                                                                                                  |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Field names containing a space       | 116 plausible pairs, 0 errors            | The token fetch dropped every field whose name contains a space. The name signals never ran, so every pair had matched on address alone.                            | Send the field list per document. The same configuration then found 4,751 pairs.                                                                     |
+| A setting the schema called optional | 532,529 errors, 0 pairs, then "complete" | The address signal required `fuzzy_scale`, which the schema let a project leave out.                                                                                | The schema now requires it, with no silent default.                                                                                                  |
+| A sweep in which every pair failed   | `entity-match complete`, exit code 0     | Scoring raised an error on every pair. The sweep logged each error, skipped the pair and carried on.                                                                | The sweep now stops when scoring raises an error on a tenth or more of its pairs, or the candidate search fails for a tenth or more of its listings. |
+| A hard-coded state column            | 3,698 plausible pairs                    | The address signal read `phy_state`, the carrier project's column. Hospitals store `State`, so every pair looked cross-state and lost half its fuzzy address score. | A required `state_field` setting. A missing state no longer counts as a different one.                                                               |
 
 Every carrier column name is in snake_case, which is the only reason the first
 defect survived the carrier sweeps. The fourth outlasted the other three by
-nearly three months, because the signal still returned a believable score. Its
-fix raised 185 hospital pair scores and lowered none. The hospital comparison in
-[Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html)
-ran before this fix, from 3,698 pairs.
+eleven weeks, because the signal still returned a believable score. Its fix
+raised 185 hospital pair scores and lowered none. The hospital comparison in
+[Use Elasticsearch to match businesses](https://joe.blog.freemansoft.com/2026/11/use-elasticsearch-to-match.html) ran before this fix, from 3,698 pairs.
 
 The first hospital sweep, in August, exposed three of the defects. A review for
 this blog series found the fourth in November. Each fix has a regression test.
@@ -272,11 +280,12 @@ destroyed or changed the earlier run before that comparison.
 | Reloading unchanged data       | The carrier sweep lost 2,234 pairs and gained 1,793. Candidates tied on BM25 at the 500th place fell either side by storage order, which changes on every load. | Sort by BM25, then by registration nearest the shutdown, then by entity key | `test_candidate_retrieval_order.py` |
 
 The reload took a pair-by-pair comparison to explain. More than 500 listings
-matched in 89% of carrier searches before the fix, so the candidate limit cut
-most searches short. Each of the 16 lost pairs scoring 0.60 or more sat in a tie
-that spanned the 500th place. Those ties ran from 104 to 619 listings. The new
-order never ties, so the same data returns the same candidates.
-[Tuning an entity matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
+matched in 89% of carrier searches before the sort-order fix, so the candidate
+limit cut most searches short. Each of the 16 lost pairs scoring 0.60 or more
+sat in a tie that spanned the 500th place. Those ties ran from 104 to 619
+listings. The new order never ties, so the same data returns the same
+candidates. [Tuning an entity
+matcher](https://joe.blog.freemansoft.com/2026/11/tuning-entity-matcher-fix-candidate.html)
 measures what choosing which 500 to keep did to the top-scoring pairs. All three
 regression tests run on every pull request.
 
