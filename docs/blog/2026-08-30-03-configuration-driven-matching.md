@@ -59,7 +59,7 @@ Expect different values on your own data.
 | Entity key                        | The field that identifies one listing, such as a carrier's DOT number.                                                                                   |
 | Sweep                             | One run of the matcher over a population, writing the pairs it keeps to a new index.                                                                     |
 | Filing agent                      | A company that files legal paperwork for carriers. One agent can serve thousands.                                                                        |
-| Fingerprint field / filter field  | A fingerprint field can identify one business. A filter field has so few distinct values that it can only narrow a population.                           |
+| Fingerprint field / filter field  | A fingerprint field can identify one entity. A filter field has so few distinct values that it can only narrow a population.                             |
 | Regression test                   | An automated test that fails if a fixed defect returns.                                                                                                  |
 | More terms                        | The project's [README glossary](https://github.com/freemansoft/entitopia/blob/main/README.md#glossary) defines these and the rest of its vocabulary.     |
 
