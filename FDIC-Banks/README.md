@@ -211,9 +211,16 @@ by exactly one of them (`tests/test_succession_window_pairs.py`):
 | `bank-absorption`   | up to -181 days, no lower bound                              | kept               | none                             |
 
 A successor created more than 365 days after the shutdown is in neither window,
-by design. The truth rule is `NEWCERT`; `ULTCERT` (end of the merger chain) and
-a shared holding-company id `RSSDHCR` are `explains` rules, which keep a pair out
-of the findings without counting toward recall. Placeholders in `ignore_values`:
+by design. The truth rule is `NEWCERT`; `ULTCERT` (end of the merger chain), a
+shared holding-company id `RSSDHCR` and a shared `ULTCERT` (`fdic-merger-tree`)
+are `explains` rules, which keep a pair out of the findings without counting
+toward recall. The shared `ULTCERT` rule follows merger chains transitively, as
+the spec requires: in a chain A to B to C every bank carries C's `ULTCERT`, so
+A-B, A-C and B-C are all explained, and so are two banks absorbed into one tree
+by different routes. That works because 4,200 of the 4,204 active banks carry
+their own `CERT` as `ULTCERT` (the other 4 have none) and no bank has `0`. The
+`ULTCERT` key rule is kept: a pair whose candidate is an active tree root with
+no `ULTCERT` of its own is explained only by it. Placeholders in `ignore_values`:
 `0` on `NEWCERT`, `ULTCERT` and `RSSDHCR` (no `RSSDHCR` is `0` in the data; the
 shortest value has seven digits, so the entry is only a guard). `max_shared_records`
 is not set for `RSSDHCR`: it applies to signal fields only, and `RSSDHCR` is read
@@ -228,9 +235,10 @@ the next section):
 | `bank-reappearance` | 14,911  | 22,692        | 927               | 922             | 22                           | 0                        |
 | `bank-absorption`   | 151,938 | 22,692        | 4,353             | 2,597           | 22                           | 1,056                    |
 
-`truth_links` is every `NEWCERT` target in the index and counts the same in both
-sweeps; each sweep can only retrieve the ones inside its own window, so these
-are not recall figures. Absorption hit the `max_candidates` ceiling on 1,056 of
+`truth_links` is every non-`0` `NEWCERT` that a searched predecessor names,
+including targets missing from the index, and counts the same in both sweeps;
+each sweep can only retrieve the ones inside its own window, so these are not
+recall figures. Absorption hit the `max_candidates` ceiling on 1,056 of
 its 23,634 predecessors. Neither run reported a lookup, scoring or index error.
 
 ## Measured against FDIC's recorded successions
@@ -238,7 +246,8 @@ its 23,634 predecessors. Neither run reported a lookup, scoring or index error.
 Measured 2026-11-26 on `institutions-2026.11.26-000007` (27,838 banks). Truth
 links are split by a hash of the predecessor's `CERT`: weights and thresholds
 were tuned on the `tune` half only, and the `report` half was measured once per
-sweep, after its configuration was final. Precision counts `truth` against
+sweep after tuning was final, then once more after an `explains` rule the spec
+calls for was added (see "Report half"). Precision counts `truth` against
 `none` pairs above each score; `explains` pairs count toward neither, and the
 FDIC record is taken as complete (`complete_truth`), which the hand check below
 shows is not quite so.
@@ -354,14 +363,33 @@ What the rejected runs showed, so they need not be rerun blind:
 
 ### Report half
 
+Re-measured 2026-11-26 after the `fdic-merger-tree` rule was added to both
+sweeps. Re-measuring the report half is legitimate here: the rule comes from the
+spec (multi-step chains are followed transitively), not from report-half
+results, and no weight, threshold or window changed. Tags are written at sweep
+time, so both sweeps were re-run; their pair ids are identical to the runs first
+measured (10,460 and 143,206 pairs, `scripts/compare_pair_ids.py`), and recall,
+the misses and the exclusions are unchanged, because a tag never affects which
+pairs are emitted. Only `explains_by_band` and precision moved. The rule tags
+480 reappearance and 6,525 absorption pairs across both halves.
+
+| Precision, report half | before the rule | after |
+| ---------------------- | --------------- | ----- |
+| reappearance at 0.70   | 0.908           | 0.915 |
+| reappearance at 0.80   | 0.974           | 0.977 |
+| absorption at 0.70     | 0.184           | 0.203 |
+| absorption at 0.80     | 0.598           | 0.652 |
+| absorption at 0.90     | 0.870           | 0.917 |
+
 `bank-reappearance`, `.venv/bin/python scripts/measure_declared_links.py
 --project FDIC-Banks --step bank-reappearance --index
-bank-reappearance-pairs-000001 --half report --gaps` against
-`bank-reappearance-pairs-2026.11.26-000011`:
+bank-reappearance-pairs-000001 --half report --gaps`, which resolves the alias
+and prints the concrete index it measured:
 
 ```json
 {
   "half": "report",
+  "pair_index": "bank-reappearance-pairs-2026.11.26-000012",
   "denominator": 697,
   "exclusions": {
     "target_missing_from_index": 4,
@@ -384,19 +412,19 @@ bank-reappearance-pairs-000001 --half report --gaps` against
     "retrieved_not_emitted": 2
   },
   "explains_by_band": {
-    "0.35": 61,
-    "0.5": 15,
-    "0.6": 6,
-    "0.7": 3,
-    "0.8": 1,
+    "0.35": 292,
+    "0.5": 100,
+    "0.6": 33,
+    "0.7": 6,
+    "0.8": 2,
     "0.9": 0
   },
   "precision_by_band": {
-    "0.35": 0.08302402813049424,
-    "0.5": 0.28396739130434784,
-    "0.6": 0.5913978494623656,
-    "0.7": 0.9078947368421053,
-    "0.8": 0.9739413680781759,
+    "0.35": 0.08694762684124387,
+    "0.5": 0.3013698630136986,
+    "0.6": 0.6169871794871795,
+    "0.7": 0.9151193633952255,
+    "0.8": 0.9771241830065359,
     "0.9": 0.9801980198019802
   },
   "gap_histogram": {
@@ -411,11 +439,12 @@ bank-reappearance-pairs-000001 --half report --gaps` against
 ```
 
 `bank-absorption`, the same command with `--step bank-absorption --index
-bank-absorption-pairs-000001`, against `bank-absorption-pairs-2026.11.26-000009`:
+bank-absorption-pairs-000001`:
 
 ```json
 {
   "half": "report",
+  "pair_index": "bank-absorption-pairs-2026.11.26-000010",
   "denominator": 10457,
   "exclusions": {
     "target_missing_from_index": 4,
@@ -438,20 +467,20 @@ bank-absorption-pairs-000001`, against `bank-absorption-pairs-2026.11.26-000009`
     "retrieved_not_emitted": 833
   },
   "explains_by_band": {
-    "0.35": 3399,
-    "0.5": 1511,
-    "0.6": 561,
-    "0.7": 108,
-    "0.8": 40,
-    "0.9": 8
+    "0.35": 6656,
+    "0.5": 3222,
+    "0.6": 1180,
+    "0.7": 216,
+    "0.8": 62,
+    "0.9": 14
   },
   "precision_by_band": {
-    "0.35": 0.01930334899679272,
-    "0.5": 0.02381676014698975,
-    "0.6": 0.04146879240162822,
-    "0.7": 0.18438538205980065,
-    "0.8": 0.5977443609022557,
-    "0.9": 0.8695652173913043
+    "0.35": 0.0202891279124463,
+    "0.5": 0.024998549968099297,
+    "0.6": 0.04376622214266535,
+    "0.7": 0.20255474452554745,
+    "0.8": 0.6516393442622951,
+    "0.9": 0.9174311926605505
   },
   "gap_histogram": {
     "<-3650": 9589,
@@ -473,17 +502,17 @@ neither sweep searches.
 
 - **Reappearance works and its misses are retrieval.** It finds 61% of the
   report half's reappearance-shaped successions, 49.5% at 0.70 and above, with
-  90.8% precision there (97.4% at 0.80). The tune half read 0.509 and 0.960 at
-  0.70, so the report half is a little lower on both, as a held-out half should
-  be. 270 of the 272 misses were never retrieved: the successor shares neither
-  a phonetic name word nor a street in the same town. Only 2 were retrieved but
-  not emitted, so no weight change can recover the rest; seeding as in R6
-  retrieves most of them.
+  91.5% precision there (97.7% at 0.80). The tune half reads 0.509 recall and
+  0.964 precision at 0.70 under the same rules, so the report half is a little
+  lower on both, as a held-out half should be. 270 of the 272 misses were never
+  retrieved: the successor shares neither a phonetic name word nor a street in
+  the same town. Only 2 were retrieved but not emitted, so no weight change can
+  recover the rest; seeding as in R6 retrieves most of them.
 - **Absorption does not work on institution records.** It finds 12.4% of the
-  report half's absorptions, 2.1% at 0.70, with 18.4% precision at 0.70 (87.0%
-  at 0.90, about 115 pairs). 8,330 of the 9,163 misses (91%)
-  were never retrieved, and retrieval is not the fixable kind: on the tune half
-  at the first run, of 8,508 links never retrieved only about 440 shared a name
+  report half's absorptions, 2.1% at 0.70, with 20.3% precision at 0.70 (91.7%
+  at 0.90: 100 `truth` and 9 `none` pairs; the tune half reads 0.188 at
+  0.70). 8,330 of the 9,163 misses (91%) were never retrieved, and retrieval is
+  not the fixable kind: on the tune half at the first run, of 8,508 links never retrieved only about 440 shared a name
   word outside the stop list, 819 shared the town, 7 shared the street, and
   1,737 shared the holding company. An established acquirer usually has its own
   name and its own headquarters in another town of the same state (84% of
@@ -509,35 +538,49 @@ neither sweep searches.
   Absorption at 0.35 to 0.70 is mostly unrelated banks that share a name word,
   in another town and usually another state (69% of undeclared pairs at 0.5
   and above on the tune half). Among the highest-scoring pairs the street and
-  town agree, and the false matches there are largely corporate families the
-  `explains` rules do not cover (next section).
+  town agree; with merger trees explained, the false matches left there are
+  mostly two charters at one address or one common bank name in two towns
+  (next section).
 
 ### Hand check of the 30 highest-scoring undeclared pairs
 
-Read locally on 2026-11-26 from both halves of each final pair index. Counts
-only:
+Read locally on 2026-11-26 from both halves of each pair index, after the
+`fdic-merger-tree` rule. Counts only:
 
 | Sweep               | Real succession FDIC did not record | Holding company, affiliate or chain the `explains` rules missed | Unrelated look-alike |
 | ------------------- | ----------------------------------- | --------------------------------------------------------------- | -------------------- |
-| `bank-reappearance` | 11                                  | 5                                                               | 14                   |
-| `bank-absorption`   | 3                                   | 15                                                              | 12                   |
+| `bank-reappearance` | 12                                  | 3                                                               | 15                   |
+| `bank-absorption`   | 3                                   | 4                                                               | 23                   |
 
-- **Reappearance precision is a lower bound.** 11 of 30 is over the 5 the plan
+The first reading, before the rule, was 11, 5 and 14 for reappearance and 3, 15
+and 12 for absorption. The rule tagged 3 of that reading's 30 reappearance pairs
+and 14 of its 30 absorption pairs `explains`: in each, both banks carry one
+`ULTCERT` (a failed bank and its bridge bank, a charter re-formed under its own
+name, banks absorbed into one tree by different routes). The second reading
+re-read all 30 in each sweep, so its columns are not the first reading's minus
+the tagged pairs. Absorption's 30th place falls inside a tie: 14 pairs score
+exactly 0.88, and the 8 of them read are those the sort returned first.
+
+- **Reappearance precision is a lower bound.** 12 of 30 is over the 5 the plan
   allowed before treating FDIC's record as complete. The shape is consistent:
   identical or near-identical name, same street in the same town, successor
-  registered within days, and in 10 of the 11 a predecessor whose `CHANGEC1` is
+  registered within days, and in 11 of the 12 a predecessor whose `CHANGEC1` is
   a closing code (240 or 230) with `NEWCERT` 0, so FDIC recorded no successor
-  at all. Charter conversions and conservatorship successors look like this.
-- **Absorption's false matches are mostly gaps in the `explains` rules.** Of the
-  15, most are banks whose merger chains converge: the candidate is two or
-  three `NEWCERT` steps downstream but not the chain's end (`ULTCERT`), or both
-  banks share a `NEWCERT` or an `ULTCERT`, or the pair is a recorded succession
-  read in reverse. Six of the 12 look-alikes share a numbered street address
-  in the same town and may be a building or branch passing between charters;
-  they were counted as look-alikes because nothing in the record says so.
+  at all. Charter conversions, conservatorship successors and a deposit-insurance
+  bank standing in for a closed one look like this. The 3 affiliate pairs are a
+  same-name charter in the same town, opened within a month of FDIC recording
+  the predecessor's merger into a different bank.
+- **Absorption's false matches are now mostly look-alikes.** The merger-tree
+  rule moved most of the chain pairs out of the denominator; 4 affiliate pairs
+  remain, two of them a one-day merger-vehicle charter paired with the savings
+  association at its address. Of the 23 look-alikes, 9 share a numbered street
+  address in the same town and may be a building or branch passing between
+  charters; they were counted as look-alikes because nothing in the record says
+  so. The other 14 are a common bank name in two towns, or a street name with
+  no number shared by two banks in one town.
 - Under the plan's rule absorption precision is not flagged as a lower bound (3
-  of 30), but it is understated by the 15 affiliate and chain pairs, which a
-  fuller `explains` rule set would move out of the denominator.
+  of 30). It is still understated by the 4 affiliate pairs, and by however many
+  of the 9 shared-address pairs are real.
 
 ### Follow-ups
 
@@ -546,9 +589,10 @@ only:
    with a branch at the predecessor's street is the evidence an institution
    record lacks. Without it, absorption recall cannot pass the roughly 30% of
    links that share a name word, a street or a town at all.
-2. **More `explains` rules**, config only: a shared `ULTCERT`, a shared
-   `NEWCERT`, and `NEWCERT` read in reverse. Measure them on the tune half
-   first, since they change both sweeps' precision denominators.
+2. **More `explains` rules**, config only: a shared `NEWCERT` and `NEWCERT`
+   read in reverse. The shared `ULTCERT` rule this item first named is now in
+   both sweeps (`fdic-merger-tree`). Measure the rest on the tune half first,
+   since they change both sweeps' precision denominators.
 3. **R6 for reappearance**, if recall matters more than run time and 0.03 of
    precision at 0.70. The candidate cost is the thing to address first.
 

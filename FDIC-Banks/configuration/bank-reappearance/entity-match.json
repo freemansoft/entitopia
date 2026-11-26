@@ -85,6 +85,12 @@
         "role": "explains",
         "kind": "shared",
         "field": "RSSDHCR"
+      },
+      {
+        "name": "fdic-merger-tree",
+        "role": "explains",
+        "kind": "shared",
+        "field": "ULTCERT"
       }
     ]
   },
