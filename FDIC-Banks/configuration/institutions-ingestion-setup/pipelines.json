@@ -1,0 +1,41 @@
+{
+  "name": "institutions-pipeline-000001",
+  "processors": [
+    {
+      "date": {
+        "description": "ESTYMD arrives as MM/dd/yyyy and is mapped as a strict ISO date, so an unconverted value fails the whole bank document",
+        "field": "ESTYMD",
+        "target_field": "ESTYMD",
+        "formats": ["MM/dd/yyyy"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the bank: ESTYMD is a strict date, so a raw value would fail the entire document on index",
+              "field": "ESTYMD",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "date": {
+        "description": "ENDEFYMD is the closure date the declared-link time window reads; active banks carry a 9999 sentinel here",
+        "field": "ENDEFYMD",
+        "target_field": "ENDEFYMD",
+        "formats": ["MM/dd/yyyy"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the bank: ENDEFYMD is a strict date, so a raw value would fail the entire document on index",
+              "field": "ENDEFYMD",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

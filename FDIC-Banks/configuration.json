@@ -1,0 +1,16 @@
+{
+  "steps": [
+    {
+      "name": "institutions-ingestion-setup",
+      "phases": ["pipelines"]
+    },
+    {
+      "name": "institutions",
+      "phases": ["index-create", "index-map", "index-populate"]
+    }
+  ],
+  "all_phases": ["index-create", "index-map", "pipelines", "index-populate"],
+  "configurationDir": "configuration",
+  "dataDir": "data",
+  "logLevel": "INFO"
+}
