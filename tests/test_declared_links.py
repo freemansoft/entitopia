@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from matching.declared import DeclaredLinks, split_half
+from matching.declared import DeclaredLinks, DeclaredRule, split_half
 from matching.documents import EntityDoc, ScoringContext
 from matching.scorer import ScoredPair
 from phase_providers.phase_entity_match import PhaseEntityMatch, RunProvenance
@@ -88,6 +88,27 @@ def test_truth_rule_recall_cannot_see_is_refused(override):
     """
     with pytest.raises(ValueError, match="forward key"):
         links({**SUCCESSOR, **override})
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        DeclaredRule("succ-rev", "truth", "key", "NEWCERT", reverse=True),
+        DeclaredRule("succ-shared", "truth", "shared", "NEWCERT"),
+    ],
+    ids=["reverse", "shared"],
+)
+def test_truth_targets_skips_a_rule_built_past_the_loader(rule):
+    """truth_targets must not read a truth rule recall cannot count, however it was built.
+
+    from_config refuses these, but DeclaredLinks takes rules directly too. A
+    reverse or shared rule's value on the predecessor is not its successor's
+    key, so counting it would put a wrong target in the recall denominator.
+    """
+    pred = EntityDoc("990000", {"NEWCERT": "990002"})
+    assert DeclaredLinks([rule]).truth_targets(pred, CTX) == set()
+    forward = DeclaredRule("succ", "truth", "key", "NEWCERT")
+    assert DeclaredLinks([forward, rule]).truth_targets(pred, CTX) == {"990002"}
 
 
 def test_reverse_on_shared_rule_is_rejected():

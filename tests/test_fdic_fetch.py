@@ -11,6 +11,8 @@ fake opener so no network is involved:
     short-page paging   a miscounted last page silently drops or repeats rows
     capped pages        a server serving fewer rows than asked ended the fetch
                         after page one, writing a fraction of the data
+    quoted newlines     advancing the offset by lines, not records, would skip
+                        one bank per line break inside a quoted field
     HTML body           an error page served with status 200 must raise
     dropped columns     the API omitted CERT columns from an unfiltered history
                         CSV, which a join would read as zero successions
@@ -154,6 +156,33 @@ def test_page_without_trailing_newline_does_not_fuse_rows(tmp_path):
     )
     assert count == 4
     assert len(dest.read_text().splitlines()) == 5
+
+
+def test_quoted_newline_counts_as_one_record(tmp_path):
+    """The offset is in records, so a quoted line break must not advance it twice.
+
+    Counting physical lines moved the next offset one row past where the server
+    expected for each embedded newline, silently skipping a bank per newline.
+    """
+    page_one = HEADER + '1,"BANK\nONE"\n2,BANK 2\n3,BANK 3\n'
+    opener = FakeOpener([page_one, HEADER + _rows(4, 1), ""])
+    dest = tmp_path / "out.csv"
+    count = fetch_fdic.fetch(
+        "institutions", ["CERT", "NAME"], dest, page_size=3, opener=opener, min_lines=1
+    )
+    assert count == 4
+    assert "offset=3" in opener.urls[1][0]
+    assert "offset=4" in opener.urls[2][0]
+
+
+def test_blank_line_is_not_a_record(tmp_path):
+    opener = FakeOpener([HEADER + _rows(1, 2) + "\n", HEADER + _rows(3, 1), ""])
+    dest = tmp_path / "out.csv"
+    count = fetch_fdic.fetch(
+        "institutions", ["CERT", "NAME"], dest, page_size=3, opener=opener, min_lines=1
+    )
+    assert count == 3
+    assert "offset=2" in opener.urls[1][0]
 
 
 def test_missing_requested_column_raises(tmp_path):

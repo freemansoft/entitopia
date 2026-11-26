@@ -16,6 +16,8 @@ Run from the FDIC-Banks directory:
 """
 
 import argparse
+import csv
+import io
 import os
 import sys
 import urllib.error
@@ -150,7 +152,13 @@ def fetch(
                     raise RuntimeError("{} returned HTML, not CSV".format(url))
                 lines = body.splitlines(keepends=True)
                 data = lines[1:]
-                if not data:
+                # The API's offset counts records, and a quoted field may hold a
+                # line break, so lines are not records: advancing by lines would
+                # skip one bank per embedded newline. No file had one on
+                # 2026-11-26 (27,839 lines and records alike), which is why
+                # counting lines once passed unnoticed.
+                records = sum(1 for row in csv.reader(io.StringIO("".join(data))) if row)
+                if not records:
                     break
                 # The API ends a page without a newline, so appending the next
                 # page fused two records into one row. Measured 2026-11-26: it
@@ -171,8 +179,8 @@ def fetch(
                     out.write(lines[0])
                     header_written = True
                 out.writelines(data)
-                total += len(data)
-                offset += len(data)
+                total += records
+                offset += records
         with open(tmp, encoding="utf-8") as check:
             line_count = sum(1 for _ in check)
         if line_count < min_lines:
