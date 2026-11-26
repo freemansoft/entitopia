@@ -318,6 +318,45 @@
       }
     },
 
+    "declared_links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules"],
+      "description": "Successions the data itself records, so a sweep can be measured against them. Each emitted pair is tagged declared: truth, explains or none. Truth links are the known-correct matches recall is counted against; explains links keep a pair out of the findings without counting toward recall.",
+      "properties": {
+        "complete_truth": {
+          "type": "boolean",
+          "default": false,
+          "description": "True only when the truth rules cover every real succession in the data. Recall is only meaningful then; otherwise an unlinked pair may be a real succession the data does not record."
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "role", "kind", "field"],
+            "properties": {
+              "name": { "type": "string", "description": "Written onto the pair as declared_by." },
+              "role": { "enum": ["truth", "explains"] },
+              "kind": {
+                "enum": ["key", "shared"],
+                "description": "key: a value at field on one side equals the other side's entity key. shared: both sides carry the same non-ignored value at field."
+              },
+              "field": {
+                "type": "string",
+                "description": "Source path; checked against the index mapping by config_liveness."
+              },
+              "reverse": {
+                "type": "boolean",
+                "description": "Key rules only. Reads field on the candidate and compares it with the predecessor's key. Rejected on a shared rule, where it would be silently ignored."
+              }
+            }
+          }
+        }
+      }
+    },
+
     "ignore_values": {
       "type": "object",
       "description": "Field path -> values that carry no evidence on that field. Keyed by field rather than globally because a value meaningless in one attribute is valid in another: '0' is a junk vehicle identifier and a real street number. The key '*' applies everywhere.",

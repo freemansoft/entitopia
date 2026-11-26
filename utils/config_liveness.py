@@ -88,6 +88,9 @@ def _declared_paths(raw):
     for key in ("shutdown_date", "registration_date", "shutdown_reason", "end_date"):
         yield lifecycle.get(key), "lifecycle.{}".format(key)
 
+    for rule in (raw.get("declared_links") or {}).get("rules") or []:
+        yield rule.get("field"), "declared_links rule {!r}".format(rule.get("name"))
+
     for signal_type, key, path in _signal_field_paths(raw):
         yield path, "signal {!r} {}".format(signal_type, key)
 

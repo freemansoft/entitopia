@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from elasticsearch.helpers import parallel_bulk
 
 from matching.candidates import CandidateFinder
+from matching.declared import DeclaredLinks
 from matching.documents import FieldRarityTable, ScoringContext
 from matching.population import PopulationSelector
 from matching.scorer import PairScorer
@@ -155,6 +156,11 @@ class PhaseEntityMatch:
         # honest default -- a project with no dated events emits gap_days
         # null rather than a fabricated zero.
         self.lifecycle = None
+        # Same reason again: _to_action tags each pair from these. None means
+        # the project declares no successions, and pairs then carry no
+        # `declared` key at all rather than a misleading "none".
+        self.declared_links = None
+        self.scoring_context = None
         # Decides what the two sides of an emitted pair are CALLED. A
         # lifecycle sweep asserts that one record followed another, so
         # predecessor/successor is a claim it can make; an all-entities
@@ -219,6 +225,8 @@ class PhaseEntityMatch:
             return
 
         ctx = self._build_context(source_index, config.signals, config)
+        self.declared_links = DeclaredLinks.from_config(config)
+        self.scoring_context = ctx
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
         provenance = RunProvenance.for_sweep(
             source_index, resolved_index, source_fingerprint
@@ -990,6 +998,13 @@ class PhaseEntityMatch:
             "generated_at": provenance.generated_at,
             "source_index": provenance.source_index,
         }
+        if self.declared_links is not None:
+            declared, declared_by = self.declared_links.classify(
+                pred, succ, self.scoring_context or ScoringContext()
+            )
+            document["declared"] = declared
+            if declared_by:
+                document["declared_by"] = declared_by
         if provenance.source_alias:
             document["source_alias"] = provenance.source_alias
         if provenance.analysis_fingerprint:
