@@ -125,6 +125,18 @@ def test_filter_and_gate_agree(undated):
         assert window.admits(_pred(), _cand(**source)) == in_filter, (undated, gap)
 
 
+def test_filter_and_gate_agree_on_end_date():
+    lifecycle = SimpleNamespace(shutdown_date="shut", registration_date="reg", end_date="ended")
+    window = _window(lifecycle, min_gap_days=-180, max_gap_days=365)
+    clauses = window.query_filter(_SHUTDOWN)
+    for offset in (-1, 0, 1, None):
+        source = {"reg": _SHUTDOWN.isoformat()}
+        if offset is not None:
+            source["ended"] = (_SHUTDOWN + datetime.timedelta(days=offset)).isoformat()
+        in_filter = all(_clause_passes(c, source) for c in clauses)
+        assert window.admits(_pred(), _cand(**source)) == in_filter, offset
+
+
 def test_skips_undated_predecessor():
     assert _window(undated_predecessors="skip").skips_predecessor(None) is True
     assert _window(undated_predecessors="skip").skips_predecessor(_SHUTDOWN) is False

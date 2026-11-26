@@ -289,7 +289,13 @@
                 "weight": true,
                 "name": true,
                 "conclusive": true,
-                "max_gap_days": true
+                "max_gap_days": true,
+                "before_shutdown_scale": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Credit for a successor registered before the shutdown, as a fraction of what the same nearness afterwards earns. Default 0.5. The look-back it applies over is scoring.min_gap_days (its absolute value, 180 days when unset)."
+                }
               }
             }
           },

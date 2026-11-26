@@ -8,8 +8,14 @@ between another, and no test or log would have said so.
 These pin that both now read the same config, and that a project configuring a
 temporal signal without a lifecycle block fails loudly rather than getting a
 signal that silently never fires.
+
+The backward look-back and the before-shutdown discount are read from the
+configured window and the signal's own setting. They were constants, so an
+operator widening the overlap changed which candidates were retrieved while
+the temporal score stayed on a 180-day curve, with nothing saying so.
 """
 
+import datetime
 import json
 import re
 from pathlib import Path
@@ -20,6 +26,8 @@ import pytest
 from matching.documents import EntityDoc, ScoringContext
 from matching.scorer import PairScorer
 from matching.signals import build_signal
+from matching.window import LifecycleWindow
+from utils import file_utils
 
 _DOT_ENTITY_MATCH = (
     Path(__file__).parent.parent
@@ -167,3 +175,43 @@ def test_temporal_still_contributes_exactly_one_distinct_evidence_key():
     assert len(temporal.evidence_key) == 1
     assert temporal.evidence_key != name.evidence_key
     assert len({temporal.evidence_key, name.evidence_key}) == 2
+
+
+def _backward_score(gap_days, min_gap_days, **signal_extra):
+    """Score a successor registered `gap_days` before a 2021-01-01 shutdown."""
+    window = LifecycleWindow.from_config(
+        _lifecycle(), SimpleNamespace(min_gap_days=min_gap_days)
+    )
+    config = SimpleNamespace(
+        type="temporal", weight=0.05, max_gap_days=365, **signal_extra
+    )
+    signal = build_signal(config, lifecycle=_lifecycle(), window=window)
+    opened = datetime.date(2021, 1, 1) - datetime.timedelta(days=gap_days)
+    return signal.score(_pred(), _cand(opened.isoformat()), ctx=ScoringContext())
+
+
+def test_backward_window_follows_configured_min_gap():
+    # The overlap an operator configures must change the score, not only which
+    # candidates survive; a hard-coded 180 here let the two disagree silently.
+    assert _backward_score(60, -90) == pytest.approx((1 - 60 / 90) * 0.5)
+    assert _backward_score(60, -180) == pytest.approx((1 - 60 / 180) * 0.5)
+
+
+def test_before_shutdown_scale_full_credit():
+    score = _backward_score(1, -180, before_shutdown_scale=1.0)
+    assert score == pytest.approx(1 - 1 / 180)
+
+
+def test_dot_scores_unchanged():
+    """The shipped DOT window with the old constants must give the old score."""
+    config = file_utils.load_from_file(str(_DOT_ENTITY_MATCH))
+    window = LifecycleWindow.from_config(config.lifecycle, config.scoring)
+    temporal = next(s for s in config.signals if s.type == "temporal")
+    signal = build_signal(temporal, lifecycle=config.lifecycle, window=window)
+    pred = EntityDoc(
+        entity_key="1",
+        source={"out_of_service_orders": {"oos_date": "2021-01-01"}},
+        tokens={},
+    )
+    cand = EntityDoc(entity_key="2", source={"add_date": "2020-10-03"}, tokens={})
+    assert signal.score(pred, cand, ctx=ScoringContext()) == pytest.approx(0.25)

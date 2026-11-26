@@ -103,7 +103,19 @@ class PairScorer:
         events, and kept for the gap-window gate below, so both read one set
         of paths.
         """
-        self.signals = [build_signal(c, lifecycle) for c in signal_configs]
+        # A gap window the pair must fall inside to be emitted at all, rather
+        # than a 0.05-weighted signal it can simply outvote. The temporal
+        # signal carries at most ~0.053 of a 0.94 total while the three name
+        # signals carry 0.45, so a pair registered years before the shutdown
+        # still cleared 0.70 on name and address alone -- 42.1% of the >= 0.70
+        # tier had exactly that shape and is not a reincarnation by the
+        # project's own definition. No bounds leaves the gate off, so a
+        # deployment that has not opted in keeps its population. Built before
+        # the signals because the temporal signal scores its look-back from
+        # the same window, and retrieval reads it too, so a pair retrieval
+        # keeps is a pair this gate can pass.
+        self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
+        self.signals = [build_signal(c, lifecycle, self.window) for c in signal_configs]
         if sum(s.weight for s in self.signals) <= 0:
             raise ValueError("signal weights sum to zero; nothing can be scored")
 
@@ -116,24 +128,7 @@ class PairScorer:
         self.require_identity_signal = bool(
             getattr(scoring_config, "require_identity_signal", True)
         )
-        # A gap window the pair must fall inside to be emitted at all, rather
-        # than a 0.05-weighted signal it can simply outvote. The temporal
-        # signal carries at most ~0.053 of a 0.94 total while the three name
-        # signals carry 0.45, so a pair registered years before the shutdown
-        # still cleared 0.70 on name and address alone — 42.1% of the >= 0.70
-        # tier had exactly that shape and is not a reincarnation by the
-        # project's own definition. None on either bound leaves the gate off,
-        # so a deployment that has not opted in keeps its population.
-        # The same lifecycle block TemporalSignal scores from, so the gate and
-        # the score cannot disagree about which dates a pair's gap is measured
-        # between. This used to reach into the temporal signal's own config for
-        # the paths, which achieved the same thing only as long as nobody added
-        # a second source for them -- and the phase had already done exactly
-        # that, with literals of its own.
         self.lifecycle = lifecycle
-        # The gate and candidate retrieval read the window through one class,
-        # so a pair retrieval keeps is a pair this gate can pass.
-        self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
 
     def score_pair(  # noqa: PLR0911 -- one guard clause per rejection reason is
         # this module's whole design (see module and class docstrings); folding

@@ -19,6 +19,7 @@ from matching.documents import FieldRarityTable, ScoringContext
 from matching.population import PopulationSelector
 from matching.scorer import PairScorer
 from matching.signals import build_signal, parse_flexible_date
+from matching.window import LifecycleWindow
 from utils import analysis_fingerprint, elasticsearch_utils, file_utils, id_utils
 
 # Distinct values to pull when measuring how common a field's values are.
@@ -771,7 +772,10 @@ class PhaseEntityMatch:
 
     def _build_context(self, source_index, signal_configs, config=None):
         """Gather corpus statistics once per sweep: value rarity and ignored values."""
-        signals = [build_signal(c, self.lifecycle) for c in signal_configs]
+        window = LifecycleWindow.from_config(
+            self.lifecycle, getattr(config, "scoring", None)
+        )
+        signals = [build_signal(c, self.lifecycle, window) for c in signal_configs]
         declared_ignored = self._declared_ignored_values(config) if config else {}
         limits = self._shared_limits(config) if config else {}
         suppressed = self._suppressed_values(source_index, signals, limits)

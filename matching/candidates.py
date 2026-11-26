@@ -69,11 +69,13 @@ class CandidateFinder:
         # lifecycle is threaded through even though no dated signal seeds a
         # candidate query: the signals are built from the whole config list, so
         # a temporal entry is constructed here too and would refuse without it.
-        self.signals = [build_signal(c, lifecycle) for c in self.signal_configs]
         # Kept to order and bound retrieval by the same dates and window the
         # scorer judges a pair by; see LifecycleWindow.query_filter and _sort.
         self.lifecycle = lifecycle
         self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
+        self.signals = [
+            build_signal(c, lifecycle, self.window) for c in self.signal_configs
+        ]
 
     def sort_fields(self) -> dict[str, str]:
         """Fields the retrieval query sorts or filters on, with the type each needs.
