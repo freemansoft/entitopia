@@ -75,8 +75,19 @@ def test_precision_only_when_complete():
 def test_empty_half_still_prints_every_field():
     result = summarize([], [], complete_truth=True)
     assert result["denominator"] == 0
-    assert result["recall"] == 0.0
-    assert result["precision_by_band"]["0.9"] == 0.0
+    assert result["recall"] is None
+    assert all(v is None for v in result["recall_by_band"].values())
+    assert result["precision_by_band"]["0.9"] is None
+
+
+def test_unevaluable_is_not_zero():
+    """Evaluated-and-missed stays 0.0; only an empty denominator is None."""
+    missed = summarize([_link("not_retrieved")], [], complete_truth=False)
+    assert missed["recall"] == 0.0
+    pairs = [PairRow("P", "truth", 0.4)]
+    precision = summarize([], pairs, complete_truth=True)["precision_by_band"]
+    assert precision["0.35"] == 1.0
+    assert precision["0.5"] is None
 
 
 def test_unknown_status_is_refused():

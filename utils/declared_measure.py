@@ -75,10 +75,12 @@ def summarize(
     complete_truth: bool,
     bands: tuple[float, ...] = DEFAULT_BANDS,
 ) -> dict:
-    """Counts and ratios for one half; plain ints and floats only.
+    """Counts and ratios for one half; counts are ints, ratios floats or None.
 
-    A zero denominator yields 0.0 rather than raising, so an empty half still
-    prints a full record. precision is omitted, not zeroed, unless the truth
+    A ratio over an empty denominator is None ("not evaluable"), never 0.0
+    ("evaluated, nothing found"). A 0.0 recall over links the sweep could not
+    reach reads as matcher failure, which is the misreading this module exists
+    to prevent. The record still prints in full. precision is omitted, not zeroed, unless the truth
     rules are complete: otherwise an unlinked pair may be a real succession the
     data does not record, and counting it as a miss would understate precision.
     """
@@ -90,8 +92,8 @@ def summarize(
     denominator = len(measured)
     emitted = [link for link in measured if link.status == "emitted"]
 
-    def ratio(count: int) -> float:
-        return count / denominator if denominator else 0.0
+    def ratio(count: int) -> float | None:
+        return count / denominator if denominator else None
 
     result = {
         "denominator": denominator,
@@ -121,7 +123,7 @@ def summarize(
         for band in bands:
             truth = sum(1 for p in pairs if p.declared == "truth" and p.score >= band)
             none = sum(1 for p in pairs if p.declared == "none" and p.score >= band)
-            precision[_band_key(band)] = truth / (truth + none) if truth + none else 0.0
+            precision[_band_key(band)] = truth / (truth + none) if truth + none else None
         result["precision_by_band"] = precision
     return result
 
