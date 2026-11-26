@@ -25,43 +25,38 @@
   },
   "candidates": {
     "max_candidates": 500,
-    "seed_signals": ["name-phonetic", "address", "exact-identifier"]
+    "seed_signals": ["name-phonetic", "address"]
   },
   "signals": [
     {
       "type": "name-phonetic",
-      "weight": 0.2174,
+      "weight": 0.3,
       "fields": ["NAME", "PRIORNAME1"],
       "subfield": "phonetic",
       "cross_field": true
     },
     {
       "type": "name-phonetic",
-      "weight": 0.1304,
+      "weight": 0.18,
       "fields": ["NAME", "PRIORNAME1"],
       "subfield": "phonetic_bm",
       "cross_field": true
     },
     {
       "type": "name-token",
-      "weight": 0.087,
+      "weight": 0.12,
       "fields": ["NAME", "PRIORNAME1"],
       "subfield": "clean",
       "cross_field": true
     },
     {
       "type": "address",
-      "weight": 0.2899,
-      "fields": ["ADDRESS"],
+      "weight": 0.4,
+      "fields": ["STREET_LOCAL"],
       "exact_subfield": "clean",
       "fuzzy_subfield": "tokens",
       "fuzzy_scale": 0.7,
       "state_field": "STALP"
-    },
-    {
-      "type": "exact-identifier",
-      "weight": 0.2754,
-      "text_fields": ["WEB_DOMAIN"]
     }
   ],
   "declared_links": {

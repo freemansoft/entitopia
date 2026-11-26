@@ -149,6 +149,30 @@
             "type": "keyword"
           }
         }
+      },
+      "STREET_LOCAL": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_local_tokens"
+          }
+        }
+      },
+      "LOCALITY": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
       }
     }
   }

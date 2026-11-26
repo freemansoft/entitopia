@@ -93,6 +93,22 @@
         "if": "ctx.WEB_DOMAIN != null && ctx.WEB_DOMAIN.isEmpty()",
         "ignore_missing": true
       }
+    },
+    {
+      "set": {
+        "description": "STREET_LOCAL is the street qualified by its town, so the address signal's exact comparison and its seed need the same street in the same city and state. FDIC lists a bare 'Main Street' for 1,481 banks; compared on ADDRESS alone, each of them matched every other at 1.0 across state lines",
+        "field": "STREET_LOCAL",
+        "value": "{{{ADDRESS}}} | {{{CITY}}} {{{STALP}}}",
+        "if": "ctx.ADDRESS != null && ctx.ADDRESS.toString().trim() != ''"
+      }
+    },
+    {
+      "set": {
+        "description": "LOCALITY is the town and state as one value, so banks in two states' towns of the same name do not share it. No sweep reads it: a same-town rarity signal on it was tried and rejected in tuning (see the README), and the field stays so that trial can be repeated by editing a sweep config rather than reloading. A missing city or state leaves it absent, because blank must never match blank",
+        "field": "LOCALITY",
+        "value": "{{{CITY}}}, {{{STALP}}}",
+        "if": "ctx.CITY != null && ctx.CITY.toString().trim() != '' && ctx.STALP != null && ctx.STALP.toString().trim() != ''"
+      }
     }
   ]
 }

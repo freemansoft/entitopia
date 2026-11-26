@@ -77,6 +77,21 @@ identifier (`CERT` is) and is loaded only as a keyword.
    phase would have failed both sweeps on the old mapping. Guarded by
    `tests/test_config_liveness.py`
    (`test_an_identifier_field_without_a_keyword_subfield_is_reported`).
+5. **A street without its town is not an address.** FDIC gives a bare "Main
+   Street", with no number, as the address of 1,481 banks. The address signal
+   scores an exact street match 1.0 and keeps that score across state lines, so
+   on `ADDRESS` alone each of those banks matched every other at 1.0. On the
+   tuning half, 7,301 undeclared absorption pairs at 0.5 or above were a shared
+   number-less street in a different town, and 1,056 absorption predecessors
+   hit `max_candidates` because the street seed retrieved hundreds of
+   look-alikes. Both sweeps logged success. The ingest pipeline now derives
+   `STREET_LOCAL` (`<street> | <city> <state>`): its `clean` subfield keeps the
+   whole value, so an exact match and the seed need the same street in the same
+   town, and its `tokens` subfield drops the town again, so the fuzzy
+   comparison still reads the street alone. Both sweeps' address signal reads
+   it. Guarded by `tests/test_fdic_street_local.py`, which reads the committed
+   files; the pipeline and analyzer were checked once with `_simulate` and
+   `_analyze`.
 
 ## Does `NEWCERT` cover the history?
 
@@ -158,20 +173,23 @@ scheme, a leading `www.` and any path, query or fragment removed, so
 `http://www.example.com/`, `https://example.com/path` and `EXAMPLE.COM` all
 become `example.com` (checked with `_ingest/pipeline/.../_simulate`). A blank or
 missing `WEBADDR` leaves `WEB_DOMAIN` absent rather than empty, because blank
-must never match blank. The `exact-identifier` signal and its seed read
-`WEB_DOMAIN`, which is mapped as `text` with a `keyword` subfield because the
-signal's seed and shared-value scan read `WEB_DOMAIN.keyword`. After the load,
+must never match blank. `WEB_DOMAIN` is mapped as `text` with a `keyword`
+subfield because an `exact-identifier` signal's seed and shared-value scan read
+`WEB_DOMAIN.keyword`. After the load,
 4,137 banks carry one (4,079 distinct), the most shared domain is on 5 banks
 (checked with a terms aggregation on `WEB_DOMAIN.keyword`) and none is empty, so
 no `ignore_values` or `max_shared_records` entry is needed.
 
-Only 4 of the 23,634 inactive banks have a website, so as
-predecessor evidence the signal can fire for almost none of the swept population: FDIC keeps
-websites for active banks. Neither sweep's pairs carry an `exact-identifier`
-signal, and the counts below did not change when the signal went live. That is
-the expected result of a sparse field, not evidence that the signal is
-validated; it is kept for the successor side and for any later population that
-includes active predecessors.
+**Neither sweep uses the website.** Only 4 of the 23,634 inactive banks have
+one (FDIC keeps websites for active banks), and the signal is evaluable only
+when both sides have a value, so it could never score a pair whose predecessor
+is a closed bank. No pair in either first run carried it. Tuning removed it
+from both sweeps' signals and seeds, and the pair ids were identical before and
+after (`bank-reappearance` 12,851 and `bank-absorption` 143,172, compared with
+`scripts/compare_pair_ids.py`). Left in, its weight (about a quarter of the
+total) read as the second-heaviest evidence in a config where it contributed
+nothing. `WEB_DOMAIN` stays loaded for a sweep whose predecessors include active
+banks.
 
 ## Sweeps
 
@@ -194,7 +212,8 @@ is not set for `RSSDHCR`: it applies to signal fields only, and `RSSDHCR` is rea
 by a declared rule, not a signal.
 
 First run, 2026-11-26, starting weights copied from `chameleon-detection` and
-renormalized over the signals present (not yet tuned; Task 8 tunes them):
+renormalized over the signals present, before tuning (the tuned figures are in
+the next section):
 
 | Step                | Pairs   | `truth_links` | `truth_retrieved` | `truth_emitted` | Undated predecessors skipped | Truncated candidate sets |
 | ------------------- | ------- | ------------- | ----------------- | --------------- | ---------------------------- | ------------------------ |
@@ -205,3 +224,301 @@ renormalized over the signals present (not yet tuned; Task 8 tunes them):
 sweeps; each sweep can only retrieve the ones inside its own window, so these
 are not recall figures. Absorption hit the `max_candidates` ceiling on 1,056 of
 its 23,634 predecessors. Neither run reported a lookup, scoring or index error.
+
+## Measured against FDIC's recorded successions
+
+Measured 2026-11-26 on `institutions-2026.11.26-000007` (27,838 banks). Truth
+links are split by a hash of the predecessor's `CERT`: weights and thresholds
+were tuned on the `tune` half only, and the `report` half was measured once per
+sweep, after its configuration was final. Precision counts `truth` against
+`none` pairs above each score; `explains` pairs count toward neither, and the
+FDIC record is taken as complete (`complete_truth`), which the hand check below
+shows is not quite so.
+
+### Choosing `overlap_days`: kept at 180
+
+The valley rule wants the gap between a reappearance mode near the shutdown and
+an absorption mode years before it. Tune-half `NEWCERT` links with both dates
+(11,519), binned by successor `ESTYMD` minus predecessor `ENDEFYMD`:
+
+| Gap (days)     | Links | Per 30 days |
+| -------------- | ----- | ----------- |
+| before -3650   | 9,828 |             |
+| -3650 to -1096 | 709   | 8.3         |
+| -1095 to -366  | 148   | 6.1         |
+| -365 to -181   | 38    | 6.2         |
+| -180 to -91    | 20    | 6.7         |
+| -90 to -61     | 15    | 15.0        |
+| -60 to -31     | 12    | 12.0        |
+| -30 to -8      | 55    | 71.7        |
+| -7 to -1       | 31    | 132.9       |
+| 0              | 651   |             |
+| 1 to 6         | 10    | 50.0        |
+| 7 to 365       | 0     | 0           |
+| after 365      | 2     |             |
+
+The reappearance mode is a spike: 651 of the 796 links in the reappearance
+window have a successor registered on the shutdown day itself, and none at all
+from 7 to 365 days after. Before the shutdown the density falls to about 6 to 8
+links per 30 days by -90 and stays there back to -3650; the absorption mode
+sits further back still, with 9,828 links more than ten years old. The valley is
+that flat floor from about -90 to -3650. It has no minimum to aim at, and 180
+lies inside it, so `overlap_days` stays at the carrier project's 180 and
+`tests/test_succession_window_pairs.py` is unchanged. Moving it to 90 would
+shift only the 20 links at -180 to -91, all at floor density, between the
+sweeps.
+
+### Tuned configuration
+
+| Setting                                                          | `bank-reappearance`                    | `bank-absorption`                |
+| ---------------------------------------------------------------- | -------------------------------------- | -------------------------------- |
+| Address field                                                    | `STREET_LOCAL` (hazard 5)              | `STREET_LOCAL`                   |
+| Website (`exact-identifier`)                                     | removed                                | removed                          |
+| Seeds                                                            | name-phonetic, address                 | name-phonetic, address           |
+| Weights: phonetic dm / bm / name-token / address / temporal      | 0.219 / 0.1314 / 0.0876 / 0.292 / 0.27 | 0.30 / 0.18 / 0.12 / 0.40 / none |
+| `temporal.max_gap_days`                                          | 60 (was 365)                           | no temporal signal               |
+| `min_total_score`, `max_candidates`, `max_pairs_per_predecessor` | 0.35, 500, 10 (unchanged)              | 0.35, 500, 10 (unchanged)        |
+
+Weights are renormalized to sum to 1. That is not quite cosmetic: a pair whose
+names agree fully and whose street does not now scores exactly 0.60 in
+absorption, where the old weights gave it 0.59997. The same pairs moved from
+below the 0.6 band to inside it (tune recall at 0.6 rose from 0.041 to 0.052 with
+no score changing by more than 0.001), and 67 pairs were lost and 101 gained at
+the `min_total_score` and per-predecessor edges. Bands that sit on a sum of
+weights are fragile; read the 0.6 band with that in mind.
+
+### Tuning log (tune half)
+
+Each run was compared by pair id with `scripts/compare_pair_ids.py` against the
+run it changed. The stopping rule was: keep a change only if it raises recall at
+0.70 without lowering precision at 0.70, and stop after about six runs per
+sweep.
+
+| Run | Change                                             | Pairs   | Pair ids lost / gained | Recall at 0.70 | Precision at 0.70 | Kept                                     |
+| --- | -------------------------------------------------- | ------- | ---------------------- | -------------- | ----------------- | ---------------------------------------- |
+| R0  | first run (Task 7)                                 | 14,911  |                        | 0.482          | 0.640             |                                          |
+| R1  | address on `STREET_LOCAL`                          | 12,851  | 2,071 / 11 vs R0       | 0.481          | 0.957             | yes: one link lost, precision +0.32      |
+| R2  | website signal and seed removed                    | 12,851  | identical to R1        | 0.481          | 0.957             | yes: no effect                           |
+| R3  | temporal weight 0.0676 to 0.25                     | 16,523  | 1,154 / 4,826 vs R2    | 0.509          | 0.912             | no: precision fell                       |
+| R4  | R3 plus temporal `max_gap_days` 365 to 60          | 10,456  | 4,719 / 2,324 vs R2    | 0.509          | 0.960             | yes                                      |
+| R5  | same-town rarity signal on `LOCALITY`, weight 0.15 | 7,037   | 3,480 / 61 vs R4       | 0.495          | 0.978             | no: recall fell                          |
+| R6  | `name-token` added to the seeds                    | 83,072  | 450 / 73,066 vs R4     | 0.540          | 0.927             | no: precision fell                       |
+| RF  | R4 with weights renormalized                       | 10,460  | 0 / 4 vs R4            | 0.509          | 0.960             | final                                    |
+| A0  | first run (Task 7)                                 | 151,938 |                        | 0.0200         | 0.025             |                                          |
+| A1  | address on `STREET_LOCAL`                          | 143,172 | 16,752 / 7,986 vs A0   | 0.0208         | 0.170             | yes                                      |
+| A2  | website signal and seed removed                    | 143,172 | identical to A1        | 0.0208         | 0.170             | yes: no effect                           |
+| A3  | same-town rarity signal on `LOCALITY`, weight 0.15 | 118,642 | 28,293 / 3,763 vs A2   | 0.0181         | 0.246             | no: recall fell                          |
+| A4  | address `fuzzy_scale` 0.7 to 0.35                  | 138,922 | 13,343 / 9,093 vs A2   | 0.0143         | 0.598             | no: recall fell                          |
+| A5  | `max_pairs_per_predecessor` 10 to 50               | 357,579 | 0 / 214,407 vs A2      | 0.0208         | 0.166             | no: precision fell, recall at 0.70 level |
+| AF  | A2 with weights renormalized                       | 143,206 | 67 / 101 vs A2         | 0.0208         | 0.169             | final                                    |
+
+What the rejected runs showed, so they need not be rerun blind:
+
+- **R5 and A3, a same-town signal.** It is the strongest precision lever in
+  both sweeps (reappearance precision at 0.6 rose from 0.63 to 0.91), but it
+  dilutes every truth pair whose successor sits in another town or in a city
+  common enough to have low rarity, and that cost recall at 0.70. The field
+  stays loaded so the trial is a config edit.
+- **R6, seeding on unstopped name words.** It is the reappearance recall lever:
+  not-retrieved links fell from 300 to 50 and overall recall rose from 0.62 to
+  0.79. The cost is eight times the pairs, 5.3 million candidates examined
+  instead of 35,000, 1,762 truncated candidate sets, 119 links retrieved but
+  cut, and precision at 0.70 down by 0.033. The recovered links are mostly
+  successors registered on the shutdown day with no phonetic name match, found
+  because the seed matched shared generic words inside the window.
+- **A4, a lower fuzzy street weight.** Absorption precision at 0.70 rose from
+  0.17 to 0.60, but recall at 0.70 fell by a third, because the absorption truth
+  pairs that score high are the ones whose street partly agrees.
+- **A5, more pairs per predecessor.** Overall absorption recall rose from 0.126
+  to 0.165, all of it below 0.70, for 2.5 times the pairs.
+
+### Report half
+
+`bank-reappearance`, `.venv/bin/python scripts/measure_declared_links.py
+--project FDIC-Banks --step bank-reappearance --index
+bank-reappearance-pairs-000001 --half report --gaps` against
+`bank-reappearance-pairs-2026.11.26-000011`:
+
+```json
+{
+  "half": "report",
+  "denominator": 697,
+  "exclusions": {
+    "target_missing_from_index": 4,
+    "target_outside_window": 10460,
+    "target_undated": 0,
+    "predecessor_undated": 0,
+    "predecessor_not_searched": 0
+  },
+  "recall": 0.6097560975609756,
+  "recall_by_band": {
+    "0.35": 0.6097560975609756,
+    "0.5": 0.599713055954089,
+    "0.6": 0.5523672883787661,
+    "0.7": 0.4949784791965567,
+    "0.8": 0.42898134863701576,
+    "0.9": 0.28407460545193686
+  },
+  "misses": {
+    "not_retrieved": 270,
+    "retrieved_not_emitted": 2
+  },
+  "explains_by_band": {
+    "0.35": 61,
+    "0.5": 15,
+    "0.6": 6,
+    "0.7": 3,
+    "0.8": 1,
+    "0.9": 0
+  },
+  "precision_by_band": {
+    "0.35": 0.08302402813049424,
+    "0.5": 0.28396739130434784,
+    "0.6": 0.5913978494623656,
+    "0.7": 0.9078947368421053,
+    "0.8": 0.9739413680781759,
+    "0.9": 0.9801980198019802
+  },
+  "gap_histogram": {
+    "<-3650": 9589,
+    "-3650..-366": 827,
+    "-365..-181": 41,
+    "-180..-1": 109,
+    "0..365": 588,
+    ">365": 3
+  }
+}
+```
+
+`bank-absorption`, the same command with `--step bank-absorption --index
+bank-absorption-pairs-000001`, against `bank-absorption-pairs-2026.11.26-000009`:
+
+```json
+{
+  "half": "report",
+  "denominator": 10457,
+  "exclusions": {
+    "target_missing_from_index": 4,
+    "target_outside_window": 700,
+    "target_undated": 0,
+    "predecessor_undated": 0,
+    "predecessor_not_searched": 0
+  },
+  "recall": 0.12374485990245769,
+  "recall_by_band": {
+    "0.35": 0.12374485990245769,
+    "0.5": 0.08243282012049345,
+    "0.6": 0.04676293391986229,
+    "0.7": 0.021229798221287177,
+    "0.8": 0.015205125753084059,
+    "0.9": 0.009562972171750981
+  },
+  "misses": {
+    "not_retrieved": 8330,
+    "retrieved_not_emitted": 833
+  },
+  "explains_by_band": {
+    "0.35": 3399,
+    "0.5": 1511,
+    "0.6": 561,
+    "0.7": 108,
+    "0.8": 40,
+    "0.9": 8
+  },
+  "precision_by_band": {
+    "0.35": 0.01930334899679272,
+    "0.5": 0.02381676014698975,
+    "0.6": 0.04146879240162822,
+    "0.7": 0.18438538205980065,
+    "0.8": 0.5977443609022557,
+    "0.9": 0.8695652173913043
+  },
+  "gap_histogram": {
+    "<-3650": 9589,
+    "-3650..-366": 827,
+    "-365..-181": 41,
+    "-180..-1": 109,
+    "0..365": 588,
+    ">365": 3
+  }
+}
+```
+
+The two denominators partition the report half's dated links: 697 plus 10,457
+is 11,154, and each sweep's `target_outside_window` is the other's denominator
+plus the 3 links registered more than 365 days after the shutdown, which
+neither sweep searches.
+
+### What it shows
+
+- **Reappearance works and its misses are retrieval.** It finds 61% of the
+  report half's reappearance-shaped successions, 49.5% at 0.70 and above, with
+  90.8% precision there (97.4% at 0.80). The tune half read 0.509 and 0.960 at
+  0.70, so the report half is a little lower on both, as a held-out half should
+  be. 270 of the 272 misses were never retrieved: the successor shares neither
+  a phonetic name word nor a street in the same town. Only 2 were retrieved and
+  scored too low, so no weight change can recover the rest; seeding as in R6
+  retrieves most of them.
+- **Absorption does not work on institution records.** It finds 12.4% of the
+  report half's absorptions, 2.1% at 0.70, with 18.4% precision at 0.70 (87.0%
+  at 0.90, about 115 pairs). 8,330 of the 9,163 misses (91%)
+  were never retrieved, and retrieval is not the fixable kind: on the tune half
+  at the first run, of 8,508 links never retrieved only about 440 shared a name
+  word outside the stop list, 819 shared the town, 7 shared the street, and
+  1,737 shared the holding company. An established acquirer usually has its own
+  name and its own headquarters in another town of the same state (84% of
+  absorption links are same-state, 13% same-town), so the fields FDIC carries on
+  an institution record cannot connect most absorptions to their acquirer. No
+  weight, threshold or `max_candidates` value changes that.
+- **Precision depends on the score band far more than in reappearance.**
+  Absorption at 0.35 to 0.70 is mostly unrelated banks that share a name word,
+  in another town and usually another state (69% of undeclared pairs at 0.5
+  and above on the tune half). Among the highest-scoring pairs the street and
+  town agree, and the false matches there are largely corporate families the
+  `explains` rules do not cover (next section).
+
+### Hand check of the 30 highest-scoring undeclared pairs
+
+Read locally on 2026-11-26 from both halves of each final pair index. Counts
+only:
+
+| Sweep               | Real succession FDIC did not record | Holding company, affiliate or chain the `explains` rules missed | Unrelated look-alike |
+| ------------------- | ----------------------------------- | --------------------------------------------------------------- | -------------------- |
+| `bank-reappearance` | 11                                  | 5                                                               | 14                   |
+| `bank-absorption`   | 3                                   | 15                                                              | 12                   |
+
+- **Reappearance precision is a lower bound.** 11 of 30 is over the 5 the plan
+  allowed before treating FDIC's record as complete. The shape is consistent:
+  identical or near-identical name, same street in the same town, successor
+  registered within days, and in 10 of the 11 a predecessor whose `CHANGEC1` is
+  a closing code (240 or 230) with `NEWCERT` 0, so FDIC recorded no successor
+  at all. Charter conversions and conservatorship successors look like this.
+- **Absorption's false matches are mostly gaps in the `explains` rules.** Of the
+  15, most are banks whose merger chains converge: the candidate is two or
+  three `NEWCERT` steps downstream but not the chain's end (`ULTCERT`), or both
+  banks share a `NEWCERT` or an `ULTCERT`, or the pair is a recorded succession
+  read in reverse. Six of the 12 look-alikes share a numbered street address
+  in the same town and may be a building or branch passing between charters;
+  they were counted as look-alikes because nothing in the record says so.
+- Under the plan's rule absorption precision is not flagged as a lower bound (3
+  of 30), but it is understated by the 15 affiliate and chain pairs, which a
+  fuller `explains` rule set would move out of the denominator.
+
+### Follow-ups
+
+1. **FDIC branch locations for absorption**, as the spec names. After a merger
+   the acquired bank's offices become the acquirer's branches, so a successor
+   with a branch at the predecessor's street is the evidence an institution
+   record lacks. Without it, absorption recall cannot pass the roughly 30% of
+   links that share a name word, a street or a town at all.
+2. **More `explains` rules**, config only: a shared `ULTCERT`, a shared
+   `NEWCERT`, and `NEWCERT` read in reverse. Measure them on the tune half
+   first, since they change both sweeps' precision denominators.
+3. **R6 for reappearance**, if recall matters more than run time and 0.03 of
+   precision at 0.70. The candidate cost is the thing to address first.
+
+Metric baselines for both steps were written from the final runs with
+`scripts/run_metrics.py --write-baseline` to
+`data/precision/baseline-bank-reappearance.json` and
+`data/precision/baseline-bank-absorption.json` (local and gitignored, like
+CMS-Providers' baseline), so `validate` no longer warns that none exist.

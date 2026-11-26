@@ -45,9 +45,12 @@ def test_pipeline_drops_end_date_sentinel_before_converting():
 def test_pipeline_derives_web_domain_and_drops_blanks():
     """WEB_DOMAIN must be derived from WEBADDR, and an empty result removed.
 
-    The exact-identifier signal reads WEB_DOMAIN. If the empty-value removal
-    went missing, every bank with a blank website would share the value "" and
-    score as an identifier match with every other, with no error anywhere.
+    No sweep reads WEB_DOMAIN since tuning dropped the website signal (only 4
+    of 23,634 inactive banks carry a website), but the field stays loaded for a
+    sweep with active predecessors. Whatever reads it next, if the empty-value
+    removal went missing, every bank with a blank website would share the value
+    "" and score as an identifier match with every other, with no error
+    anywhere.
     """
     processors = json.loads(_PIPELINES.read_text())["processors"]
     derive = [
