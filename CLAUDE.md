@@ -82,7 +82,7 @@ shutdown — and it survives anonymization intact. If an example stops being
 useful once the name is removed, the name was doing argumentative work it
 should not have been doing.
 
-Four things this does **not** forbid, because none of them accuses anyone:
+Five things this does **not** forbid, because none of them accuses anyone:
 
 - Data-quality values that are junk by nature: the literal VIN `GGGG`, the
   phone `(000) 000-0000`, `UNKNOWN`. Record these freely — they are exactly
@@ -100,6 +100,19 @@ Four things this does **not** forbid, because none of them accuses anyone:
   anyone did wrong, so real CMS hospital IDs, names and addresses may appear in
   fixtures, tests and docs. That stops holding the moment the surrounding text
   implies wrongdoing; then the rule applies as to any flagged entity.
+
+- **Entities in a declared succession (`declared: truth`).** An FDIC-recorded
+  merger or a GLEIF-registered successor is the registrar's own public record of
+  a lawful event, not a matcher's suspicion, so the two entities in a `truth`
+  pair may be named. Every pair tagged `explains` or `none` is anonymized, in
+  every project. An `explains` pair (same holding company, a multi-step chain, a
+  parent or sibling) is a relationship the data records but not a succession,
+  and a `none` pair is the matcher's own finding: an undeclared GLEIF match is
+  at most a reporting gap that still reads as an allegation that one company
+  quietly replaced another, and an undeclared FDIC pair is presumed a matcher
+  error, so naming it serves nothing. The tag, not the score, decides: a pair
+  that scores 0.95 and is `none` stays anonymized. The `anonymization-check`
+  skill applies the same distinction.
 
 The test is which side of the filter the name sits on. An entity the matcher
 **flagged** must be anonymized; an entity whose identifier the matcher

@@ -231,3 +231,56 @@ def test_an_address_state_field_the_mapping_declares_passes():
 def test_a_null_state_field_is_not_checked():
     raw = _config(signals=[_address_signal(None)])
     assert config_liveness.check(_FakeES(), raw, "t") == []
+
+
+def _identifier_signal(key, field):
+    return {"type": "exact-identifier", "weight": 0.2, key: [field]}
+
+
+def test_an_identifier_field_without_a_keyword_subfield_is_reported():
+    # The shared-value scan reads `<field>.keyword` for both kinds, and a text
+    # field's seed reads it too (a phone seeds on `.clean`). A field mapped as a
+    # bare keyword has none, so the signal silently loses those reads.
+    mapping = {
+        "idx": {
+            "mappings": {
+                "properties": {
+                    "dot_number": {"type": "keyword"},
+                    "legal_name": {"type": "text"},
+                    "web_domain": {"type": "keyword"},
+                }
+            }
+        }
+    }
+    for key in ("text_fields", "phone_fields"):
+        raw = _config(signals=[_identifier_signal(key, "web_domain")])
+        errors = config_liveness.check(_FakeES(mapping), raw, "t")
+        assert any("web_domain.keyword" in e for e in errors), key
+
+
+def test_a_phone_field_without_keyword_does_not_blame_the_seed():
+    # A phone seeds on `.clean`; a message saying the seed is dead would send
+    # the operator after a read that works.
+    mapping = {
+        "idx": {
+            "mappings": {
+                "properties": {
+                    "dot_number": {"type": "keyword"},
+                    "legal_name": {"type": "text"},
+                    "telephone": {"type": "keyword"},
+                }
+            }
+        }
+    }
+    raw = _config(signals=[_identifier_signal("phone_fields", "telephone")])
+    [error] = [
+        e for e in config_liveness.check(_FakeES(mapping), raw, "t") if "telephone" in e
+    ]
+    assert "seed reads .clean" in error
+    assert "retrieves" not in error
+
+
+def test_an_identifier_field_with_a_keyword_subfield_passes():
+    for key in ("text_fields", "phone_fields"):
+        raw = _config(signals=[_identifier_signal(key, "telephone")])
+        assert config_liveness.check(_FakeES(), raw, "t") == []

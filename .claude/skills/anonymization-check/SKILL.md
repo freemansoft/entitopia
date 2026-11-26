@@ -57,25 +57,56 @@ couldn't answer. Treat `2` as "not checked", never as "clean".
 
 The scanner prints only what needs a decision. Each finding shows the value's
 kind, how many source records carry it, how many sweep pairs name those
-records, and the lines that use it. The pair count covers every retained sweep
-index (`chameleon-candidates-*`, `hospital-duplicates-*`), not just the one the
+records, and the lines that use it. Projects come from every
+`*/configuration/*/entity-match.json`, so the pair count covers every retained
+pair index of every sweep (`chameleon-candidates-*`, `hospital-duplicates-*`,
+`bank-reappearance-pairs-*`, `bank-absorption-pairs-*`), not just the one the
 alias points at. An entity matched by an older experiment was still matched, so
-there's no need to re-check the other sweeps by hand.
+there's no need to re-check the other sweeps by hand. In a sweep with declared
+links, the count is split: "N pairs" are the flagged ones (`explains` and
+`none`), and "+ M recorded successions" are `truth` pairs.
 
 | Verdict                  | What it means                                                                                                                     | What to do                                                                                                                                                                                                                                                                                                                          |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **COMMITTED DATA FILES** | A path under a project's gitignored `*/data/` is in the change. Review samples there carry flagged carriers' names and addresses. | Unstage it (`git restore --staged <path>`). Never commit it, whatever it contains.                                                                                                                                                                                                                                                  |
 | **FLAGGED**              | The value belongs to a handful of real records, and at least one appears in a sweep's pairs.                                      | Replace it with a synthetic placeholder that keeps the pattern the example illustrates. For a `[number]` with no label, first rule out a coincidence: a count or an unrelated ID that happens to equal a key needs no change (writing counts with thousands separators, as this repo does, keeps the scanner from extracting them). |
+| **DECLARED**             | Every pair naming the value is a registrar-recorded succession (`declared: truth`); no `explains` or `none` pair names it.        | May be named under CLAUDE.md. Say in the sentence that it is the registrar's recorded succession, so it cannot read as the matcher's finding. If the text puts it next to suspicion, or the name is not load-bearing, use a placeholder anyway.                                                                                     |
 | **REAL**                 | A real record carries the value, but no sweep matched it.                                                                         | Usually a data-quality example, such as a DOT number quoted to show zero-padding, and acceptable. If the surrounding text implies wrongdoing, or the value isn't load-bearing, use a synthetic one anyway.                                                                                                                          |
 | **SHARED**               | 25 or more records carry the value: a filing agent, a corporate parent, a placeholder.                                            | Allowed when the text presents it as a shared value being filtered out. CLAUDE.md expects those to be named, so the ignore list can be maintained. Anonymize it if the text presents it as one suspect.                                                                                                                             |
 
 **Which sweep flagged it matters.** Each finding names the project and step
 whose pairs matched it. A FLAGGED value from an accusatory sweep, today
-`DOT-Commercial/chameleon-detection`, is anonymized as the table says. A
+`DOT-Commercial/chameleon-detection`, `FDIC-Banks/bank-reappearance` and
+`FDIC-Banks/bank-absorption` (an undeclared look-alike succession is the
+matcher's suspicion), is anonymized as the table says. A
 FLAGGED value from a duplicate-detection sweep, today
 `CMS-Providers/hospital-duplicates`, needs no change unless the surrounding
 text implies wrongdoing; CLAUDE.md exempts it. When a new project adds a
 sweep, decide which kind it is before relying on this paragraph.
+
+**The declared tag matters too.** A pair in a lifecycle sweep carries
+`declared: truth | explains | none` (see `matching/declared.py`).
+CLAUDE.md lets the two entities of a `truth` pair be named, because a
+registrar's own recorded succession, such as an FDIC `NEWCERT` merger, is a
+public record of a lawful event and not a matcher's suspicion. It never lets
+you name an entity from an `explains` pair or a `none` pair. The scanner reads
+the tag: a value whose only pairs are `truth` reads DECLARED, and a single
+`explains` or `none` pair makes it FLAGGED, because that pair is the
+unverified claim. An undeclared pair scoring 0.95 is still anonymized: the tag
+decides, not the score. When writing a `truth` pair into a doc, say that it is
+the registrar's recorded succession, so the sentence cannot read as the
+matcher's finding.
+
+**What the scanner extracts for banks.** A CERT is looked up only when a label
+introduces it (`CERT`, `NEWCERT`, `ULTCERT`, including `` `NEWCERT` `` in code
+spans and JSON keys), and only in projects keyed by CERT. Most CERTs are one
+to five digits, so an unlabelled one, such as a hash input in a test
+(`split_half("1234")`), is below the bare-number floor and is never looked up.
+Read for those yourself (step 4). Bank names are extracted when they end in
+Bank, Bancorp, Bancshares, Association or Trust, with the town after "Bank of"
+kept, since the town is often all that tells one bank from its namesakes.
+`tests/test_scan_identifiers_banks.py` guards all of this; before it, a branch
+naming real CERTs scanned clean because none of them reached the lookup.
 
 ALLOWED (placeholders and ignore-list junk such as `(000) 000-0000`) and
 NOT_FOUND are only counted, because neither identifies anyone.
@@ -99,6 +130,10 @@ change clean, skim the added lines for:
 - Names of people: officers, process agents, contacts.
 - A city and street combination quoted without a house number.
 - Values inside JSON, CSV or test fixtures, and text in images.
+- A short number with no label that could be a CERT: a test's entity key or
+  hash input. Look it up (`term` on `CERT` in `institutions-000001`), or use an
+  invented value from a range FDIC does not use, as `tests/test_declared_links.py`
+  does.
 - Anything next to "chameleon", "duplicate", "fraud", a score or a pair.
 
 Treat any proper noun near pair or score language as a finding, and rule on it

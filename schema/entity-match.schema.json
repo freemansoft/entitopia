@@ -51,7 +51,11 @@
           "type": "string",
           "description": "Path on the candidate. Besides scoring, the candidate search filters to the scorer's gap window on it and breaks score ties by nearness to the shutdown, so it must be mapped as a date (the sweep refuses to start otherwise) and should not sit in a nested object, where the search cannot see it and both effects switch off (the sweep warns at startup). See docs/adding-a-dataset.md, section 2b."
         },
-        "shutdown_reason": { "type": "string" }
+        "shutdown_reason": { "type": "string" },
+        "end_date": {
+          "type": "string",
+          "description": "Path on the candidate to its own end date. A candidate that ended before the predecessor's shutdown cannot be its successor, so retrieval and the scorer gate both drop it; a candidate with no end date is kept as still operating. Must be mapped as a date (the sweep refuses to start otherwise)."
+        }
       }
     },
 
@@ -285,7 +289,13 @@
                 "weight": true,
                 "name": true,
                 "conclusive": true,
-                "max_gap_days": true
+                "max_gap_days": true,
+                "before_shutdown_scale": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Credit for a successor registered before the shutdown, as a fraction of what the same nearness afterwards earns. Default 0.5. The look-back it applies over is scoring.min_gap_days (its absolute value, 180 days when unset)."
+                }
               }
             }
           },
@@ -305,6 +315,48 @@
             }
           }
         ]
+      }
+    },
+
+    "declared_links": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rules"],
+      "description": "Successions the data itself records, so a sweep can be measured against them. Each emitted pair is tagged declared: truth, explains or none. Truth links are the known-correct matches recall is counted against; explains links keep a pair out of the findings without counting toward recall.",
+      "properties": {
+        "complete_truth": {
+          "type": "boolean",
+          "default": false,
+          "description": "True only when the truth rules cover every real succession in the data. Precision needs it, because precision counts an undeclared pair as a false match, and otherwise an unlinked pair may be a real succession the data does not record. Recall needs only the truth rules."
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "role", "kind", "field"],
+            "properties": {
+              "name": { "type": "string", "description": "Written onto the pair as declared_by." },
+              "role": {
+                "enum": ["truth", "explains"],
+                "description": "truth: a recorded succession, counted toward recall. Must be a forward key rule (kind key, no reverse), because recall counts only the targets a predecessor names itself; a shared or reverse truth rule is refused at load. explains: a recorded relationship that is not a succession; keeps the pair out of the findings."
+              },
+              "kind": {
+                "enum": ["key", "shared"],
+                "description": "key: a value at field on one side equals the other side's entity key. shared: both sides carry the same non-ignored value at field."
+              },
+              "field": {
+                "type": "string",
+                "description": "Source path; checked against the index mapping by config_liveness."
+              },
+              "reverse": {
+                "type": "boolean",
+                "description": "Key rules with role explains only. Reads field on the candidate and compares it with the predecessor's key. Rejected on a shared rule, where it would be silently ignored, and on a truth rule, whose targets recall could not count."
+              }
+            }
+          }
+        }
       }
     },
 
@@ -339,6 +391,14 @@
         "max_gap_days": {
           "type": "number",
           "description": "Upper bound of the same gap gate as min_gap_days, and applied to the candidate search the same way."
+        },
+        "undated_candidates": {
+          "enum": ["keep", "exclude"],
+          "description": "What to do with a candidate that has no registration date. keep (default) treats a missing date as not evaluable and lets it through, which is the behaviour before this setting existed. exclude drops it, for datasets where a missing date means the record is not a real successor and would otherwise fill the capped candidate slots."
+        },
+        "undated_predecessors": {
+          "enum": ["unbounded", "skip"],
+          "description": "What to do with a predecessor that has no shutdown date. unbounded (default) searches it with no window. skip gives it no candidate search and counts it in the run totals, for datasets where an unbounded search over an undated predecessor only produces noise."
         }
       }
     }

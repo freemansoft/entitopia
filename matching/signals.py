@@ -498,8 +498,19 @@ _MONTHS = {
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
 }
 
-BACKWARD_WINDOW_DAYS = 180
-BACKWARD_SCALE = 0.5
+# Fallback look-back when no negative min_gap_days is configured. A successor
+# that registered before the shutdown is still plausible (the new entity is
+# often set up first), but an unbounded look-back would pull in every old
+# record. Lives here, not in matching.window, because window imports this
+# module and the signal needs the default when it is given no window.
+DEFAULT_BACKWARD_WINDOW_DAYS = 180
+
+# Credit for a successor registered before the shutdown, as a fraction of what
+# the same nearness afterwards earns. A pre-positioned shell is a real tactic
+# but weaker evidence than reopening days afterward. Per-signal so a dataset
+# where early registration is routine can lower it; 0.5 is what DOT-Commercial
+# scored with before this was configurable, so the default must stay 0.5.
+DEFAULT_BEFORE_SHUTDOWN_SCALE = 0.5
 
 # A dd-MMM-yy Oracle export splits on "-" into exactly 3 parts; anything else
 # isn't this format.
@@ -604,7 +615,7 @@ class TemporalSignal(Signal):
 
     type_names = ("temporal",)
 
-    def __init__(self, config, lifecycle=None):
+    def __init__(self, config, lifecycle=None, window=None):
         super().__init__(config)
         if lifecycle is None:
             raise ValueError(
@@ -614,6 +625,17 @@ class TemporalSignal(Signal):
                 "report nothing at all"
             )
         self.lifecycle = lifecycle
+        # The look-back comes from the window so the overlap an operator
+        # configures changes the score as well as which candidates survive; a
+        # separate constant here let the two disagree. Without a window (unit
+        # tests with no scoring config) the default look-back applies.
+        if window is None:
+            self.backward_window_days = float(DEFAULT_BACKWARD_WINDOW_DAYS)
+        else:
+            self.backward_window_days = float(window.backward_window_days())
+        self.before_shutdown_scale = float(
+            getattr(config, "before_shutdown_scale", DEFAULT_BEFORE_SHUTDOWN_SCALE)
+        )
 
     def score(self, pred, cand, ctx):
         shutdown = _latest_date(pred.value(self.lifecycle.shutdown_date))
@@ -627,10 +649,8 @@ class TemporalSignal(Signal):
         if gap_days >= 0:
             return max(0.0, 1.0 - (gap_days / max_gap))
 
-        # Registered before the shutdown: a pre-positioned shell is a real
-        # tactic, but weaker evidence than reopening days afterward.
-        backward = min(1.0, abs(gap_days) / float(BACKWARD_WINDOW_DAYS))
-        return max(0.0, (1.0 - backward) * BACKWARD_SCALE)
+        backward = min(1.0, abs(gap_days) / self.backward_window_days)
+        return max(0.0, (1.0 - backward) * self.before_shutdown_scale)
 
 
 # A carrier's enriched history can carry thousands of vehicle identifiers, and
@@ -790,7 +810,7 @@ _register(TemporalSignal)
 _register(SharedTokenSignal)
 
 
-def build_signal(config, lifecycle=None) -> Signal:
+def build_signal(config, lifecycle=None, window=None) -> Signal:
     """Construct the Signal a config entry names, by its `type` string.
 
     Keeps config decoupled from Python import paths: adding a signal means
@@ -799,7 +819,9 @@ def build_signal(config, lifecycle=None) -> Signal:
 
     `lifecycle` is threaded to the signals that need dated events, so the
     paths a signal scores on and the paths the phase reports a gap from are
-    the same object rather than two copies nothing compares.
+    the same object rather than two copies nothing compares. `window` is
+    threaded the same way and only to the signals that score a gap, so every
+    other signal keeps its constructor.
     """
     signal_class = SIGNAL_TYPES.get(config.type)
     if signal_class is None:
@@ -809,5 +831,5 @@ def build_signal(config, lifecycle=None) -> Signal:
             )
         )
     if issubclass(signal_class, TemporalSignal):
-        return signal_class(config, lifecycle)
+        return signal_class(config, lifecycle, window)
     return signal_class(config)

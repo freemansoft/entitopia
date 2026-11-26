@@ -1,0 +1,105 @@
+{
+  "source_index": "institutions-000001",
+  "source_settings_step": "institutions",
+  "entity": {
+    "key": "CERT",
+    "summary_fields": ["NAME", "ADDRESS", "CITY", "STALP", "RSSDHCR"]
+  },
+  "lifecycle": {
+    "shutdown_date": "ENDEFYMD",
+    "registration_date": "ESTYMD",
+    "end_date": "ENDEFYMD"
+  },
+  "population": {
+    "mode": "lifecycle",
+    "sort_field": "CERT",
+    "max_records": null,
+    "selector": "inactive",
+    "selectors": {
+      "inactive": {
+        "term": {
+          "INACTIVE": "1"
+        }
+      }
+    }
+  },
+  "candidates": {
+    "max_candidates": 500,
+    "seed_signals": ["name-phonetic", "address"]
+  },
+  "signals": [
+    {
+      "type": "name-phonetic",
+      "weight": 0.3,
+      "fields": ["NAME", "PRIORNAME1"],
+      "subfield": "phonetic",
+      "cross_field": true
+    },
+    {
+      "type": "name-phonetic",
+      "weight": 0.18,
+      "fields": ["NAME", "PRIORNAME1"],
+      "subfield": "phonetic_bm",
+      "cross_field": true
+    },
+    {
+      "type": "name-token",
+      "weight": 0.12,
+      "fields": ["NAME", "PRIORNAME1"],
+      "subfield": "clean",
+      "cross_field": true
+    },
+    {
+      "type": "address",
+      "weight": 0.4,
+      "fields": ["STREET_LOCAL"],
+      "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.7,
+      "state_field": "STALP"
+    }
+  ],
+  "declared_links": {
+    "complete_truth": true,
+    "rules": [
+      {
+        "name": "fdic-newcert",
+        "role": "truth",
+        "kind": "key",
+        "field": "NEWCERT"
+      },
+      {
+        "name": "fdic-ultcert",
+        "role": "explains",
+        "kind": "key",
+        "field": "ULTCERT"
+      },
+      {
+        "name": "fdic-holding-company",
+        "role": "explains",
+        "kind": "shared",
+        "field": "RSSDHCR"
+      },
+      {
+        "name": "fdic-merger-tree",
+        "role": "explains",
+        "kind": "shared",
+        "field": "ULTCERT"
+      }
+    ]
+  },
+  "ignore_values": {
+    "NEWCERT": ["0"],
+    "ULTCERT": ["0"],
+    "RSSDHCR": ["0"]
+  },
+  "scoring": {
+    "min_total_score": 0.35,
+    "min_signals": 2,
+    "require_identity_signal": true,
+    "max_pairs_per_predecessor": 10,
+    "undated_predecessors": "skip",
+    "max_gap_days": -181,
+    "undated_candidates": "keep"
+  }
+}

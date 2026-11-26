@@ -53,7 +53,8 @@ def test_pairs_counts_every_row():
 
 
 def test_coherent_window_is_inclusive_at_both_edges():
-    # -180 is BACKWARD_WINDOW_DAYS, 365 is the temporal signal's max_gap_days.
+    # -180 is chameleon-detection's scoring.min_gap_days (the temporal
+    # signal's look-back), 365 is the temporal signal's max_gap_days.
     # A pair exactly on either edge is inside the model's own claim.
     rows = [pair(gap=-180), pair(gap=365, succ="3"), pair(gap=-181, succ="4"),
             pair(gap=366, succ="5")]

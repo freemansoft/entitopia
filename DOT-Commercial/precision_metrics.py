@@ -26,8 +26,9 @@ from matching.scorer import IDENTITY_SIGNAL_TYPES
 # the standard way this analysis fools its author.
 TRIAGE_SCORE = 0.70
 
-# Anchored to matching/signals.py's own BACKWARD_WINDOW_DAYS and the configured
-# temporal max_gap_days. A pair outside this window is implausible by the
+# Anchored to the chameleon-detection config's scoring.min_gap_days (the
+# temporal signal's look-back derives from it) and the configured temporal
+# max_gap_days. A pair outside this window is implausible by the
 # scorer's own design, so "coherent" judges the model against its own claim
 # rather than a boundary invented here.
 COHERENT_MIN_GAP = -180

@@ -1,0 +1,114 @@
+{
+  "name": "institutions-pipeline-000001",
+  "processors": [
+    {
+      "date": {
+        "description": "ESTYMD arrives as MM/dd/yyyy and is mapped as a strict ISO date, so an unconverted value fails the whole bank document",
+        "field": "ESTYMD",
+        "target_field": "ESTYMD",
+        "formats": ["MM/dd/yyyy"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the bank: ESTYMD is a strict date, so a raw value would fail the entire document on index",
+              "field": "ESTYMD",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "remove": {
+        "description": "12/31/9999 means 'not ended' on all 4,204 active banks and is junk on 22 inactive ones; loaded as a date it would put banks in nonsense windows, so the value is dropped and the field is genuinely missing",
+        "field": "ENDEFYMD",
+        "if": "ctx.ENDEFYMD != null && ctx.ENDEFYMD.toString().trim() == '12/31/9999'",
+        "ignore_missing": true
+      }
+    },
+    {
+      "date": {
+        "description": "ENDEFYMD is the closure date the declared-link time window reads; active banks carry a 9999 sentinel here",
+        "field": "ENDEFYMD",
+        "target_field": "ENDEFYMD",
+        "formats": ["MM/dd/yyyy"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the bank: ENDEFYMD is a strict date, so a raw value would fail the entire document on index",
+              "field": "ENDEFYMD",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "lowercase": {
+        "description": "WEB_DOMAIN is the exact-identifier key: the bare host, so http://www.x.com/ and X.COM agree. Copied from WEBADDR; a missing WEBADDR leaves WEB_DOMAIN absent, never empty, because blank must never match blank",
+        "field": "WEBADDR",
+        "target_field": "WEB_DOMAIN",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip the scheme",
+        "field": "WEB_DOMAIN",
+        "pattern": "^\\s*[a-z][a-z0-9+.-]*://",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip a leading www.",
+        "field": "WEB_DOMAIN",
+        "pattern": "^www\\.",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip any path, query, fragment or trailing slash",
+        "field": "WEB_DOMAIN",
+        "pattern": "[/?#].*$",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "WEB_DOMAIN",
+        "ignore_missing": true
+      }
+    },
+    {
+      "remove": {
+        "description": "a blank or scheme-only WEBADDR must leave WEB_DOMAIN absent, not an empty string that every blank bank would share",
+        "field": "WEB_DOMAIN",
+        "if": "ctx.WEB_DOMAIN != null && ctx.WEB_DOMAIN.isEmpty()",
+        "ignore_missing": true
+      }
+    },
+    {
+      "set": {
+        "description": "STREET_LOCAL is the street qualified by its town, so the address signal's exact comparison and its seed need the same street in the same city and state. FDIC lists a bare 'Main Street' for 1,481 banks; compared on ADDRESS alone, each of them matched every other at 1.0 across state lines. A missing city or state leaves it absent rather than town-less, because 'Main Street | ' would again match every bare Main Street with no town",
+        "field": "STREET_LOCAL",
+        "value": "{{{ADDRESS}}} | {{{CITY}}} {{{STALP}}}",
+        "if": "ctx.ADDRESS != null && ctx.ADDRESS.toString().trim() != '' && ctx.CITY != null && ctx.CITY.toString().trim() != '' && ctx.STALP != null && ctx.STALP.toString().trim() != ''"
+      }
+    },
+    {
+      "set": {
+        "description": "LOCALITY is the town and state as one value, so banks in two states' towns of the same name do not share it. No sweep reads it: a same-town rarity signal on it was tried and rejected in tuning (see the README), and the field stays so that trial can be repeated by editing a sweep config rather than reloading. A missing city or state leaves it absent, because blank must never match blank",
+        "field": "LOCALITY",
+        "value": "{{{CITY}}}, {{{STALP}}}",
+        "if": "ctx.CITY != null && ctx.CITY.toString().trim() != '' && ctx.STALP != null && ctx.STALP.toString().trim() != ''"
+      }
+    }
+  ]
+}

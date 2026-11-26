@@ -85,8 +85,11 @@ def _declared_paths(raw):
     yield (raw.get("population") or {}).get("sort_field"), "population.sort_field"
 
     lifecycle = raw.get("lifecycle") or {}
-    for key in ("shutdown_date", "registration_date", "shutdown_reason"):
+    for key in ("shutdown_date", "registration_date", "shutdown_reason", "end_date"):
         yield lifecycle.get(key), "lifecycle.{}".format(key)
+
+    for rule in (raw.get("declared_links") or {}).get("rules") or []:
+        yield rule.get("field"), "declared_links rule {!r}".format(rule.get("name"))
 
     for signal_type, key, path in _signal_field_paths(raw):
         yield path, "signal {!r} {}".format(signal_type, key)
@@ -128,6 +131,45 @@ def _check_subfields(raw, paths, subfields, index, source) -> list[str]:
                         "mapping for {} does not declare; the signal will read an "
                         "empty token set and drop out as unevaluable".format(
                             source, signal.get("type"), subfield, field, index
+                        )
+                    )
+    return messages
+
+
+def _check_identifier_keywords(raw, paths, subfields, index, source) -> list[str]:
+    """Report exact-identifier fields whose `.keyword` subfield is undeclared.
+
+    The signal aggregates on `<field>.keyword` to find shared values to
+    suppress, and for a text field it also seeds candidates with a term query
+    on it. A phone field seeds on its normalized `.clean` subfield instead, so
+    there only the frequency scan goes blind. On a field mapped as a bare
+    keyword the reads find nothing, yet scoring still runs and the sweep logs
+    success. A bare-keyword website field did exactly that, and the only symptom
+    was counts identical to a run without the signal. Same silent-failure
+    class as the undeclared analyzed subfields above.
+    """
+    # What a missing `.keyword` costs differs by kind, and the message must say
+    # which: telling an operator the phone seed is dead sends them after the
+    # wrong read.
+    consequence = {
+        "phone_fields": "the shared-value scan reads it, so the signal suppresses "
+        "no shared value (the seed reads .clean and is unaffected)",
+        "text_fields": "the candidate seed and the shared-value scan read it, so "
+        "the signal retrieves and suppresses nothing",
+    }
+    messages = []
+    for signal in raw.get("signals", []) or []:
+        if signal.get("type") != "exact-identifier":
+            continue
+        for key in ("phone_fields", "text_fields"):
+            for field in signal.get(key) or []:
+                # A field the mapping lacks entirely is already reported once.
+                if field in paths and "{}.keyword".format(field) not in subfields:
+                    messages.append(
+                        "{}: exact-identifier {} names {!r}, but the mapping for "
+                        "{} declares no {!r} subfield; {}".format(
+                            source, key, field, index, field + ".keyword",
+                            consequence[key],
                         )
                     )
     return messages
@@ -191,5 +233,6 @@ def check(es, entity_match: dict, source: str) -> list[str]:
     return [
         *_check_paths(entity_match, paths, index, source),
         *_check_subfields(entity_match, paths, subfields, index, source),
+        *_check_identifier_keywords(entity_match, paths, subfields, index, source),
         *_check_term_clauses(entity_match, types, index, source),
     ]
