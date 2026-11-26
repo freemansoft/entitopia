@@ -20,6 +20,14 @@
       }
     },
     {
+      "remove": {
+        "description": "12/31/9999 means 'not ended' on all 4,204 active banks and is junk on 22 inactive ones; loaded as a date it would put banks in nonsense windows, so the value is dropped and the field is genuinely missing",
+        "field": "ENDEFYMD",
+        "if": "ctx.ENDEFYMD != null && ctx.ENDEFYMD.toString().trim() == '12/31/9999'",
+        "ignore_missing": true
+      }
+    },
+    {
       "date": {
         "description": "ENDEFYMD is the closure date the declared-link time window reads; active banks carry a 9999 sentinel here",
         "field": "ENDEFYMD",

@@ -37,9 +37,12 @@ cd FDIC-Banks
 942 inactive banks with no successor. The next most common value covers 109
 banks, so no real successor dominates.
 
-Active banks carry `ENDEFYMD` `12/31/9999` as a "not ended" sentinel, and so do
-22 inactive banks. After the load these 22 are indistinguishable by date from
-live banks. No inactive bank lacks `ENDEFYMD` outright.
+`12/31/9999` is a junk value in `ENDEFYMD`: it means "not ended" on all 4,204
+active banks and appears on 22 inactive banks, where it means nothing. The
+ingest pipeline removes it before the date conversion, so the field is genuinely
+missing. Active banks then have no end date, and the 22 inactive banks are
+undated predecessors (inactive banks with no `ENDEFYMD` after the load: 22; none
+loads as a 9999 date). `ESTYMD` has no sentinel.
 
 `CHANGEC1` among the 23,634 inactive rows: 223 (17,707), 211 (2,538), 221 (816),
 217 (666), 240 (575), 213 (567), 230 (236), 224 (191), 222 (173), 235 (110),
@@ -69,10 +72,25 @@ assistance), 211 (failure, whole institution), 221 (absorption), 217
 (partial purchase and assumption). Codes 260, 240, 230 and 235 (closings) carry
 no acquirer and are excluded.
 
-- 23,347 succession events, one per outgoing bank.
-- 21,384 have an `OUT_CERT` present in the institutions table, and 21,361 of
-  those (99.89%) have a `NEWCERT` equal to the surviving or acquiring CERT.
+| Code | Events | Outgoing bank in table | `NEWCERT` hit |
+| ---- | ------ | ---------------------- | ------------- |
+| 223  | 18,395 | 16,704                 | 16,684        |
+| 211  | 2,550  | 2,525                  | 2,524         |
+| 221  | 1,026  | 807                    | 807           |
+| 217  | 642    | 642                    | 641           |
+| 213  | 332    | 319                    | 318           |
+| 224  | 199    | 191                    | 191           |
+| 222  | 173    | 167                    | 167           |
+| 216  | 26     | 25                     | 25            |
+| 215  | 3      | 3                      | 3             |
+| 225  | 1      | 1                      | 1             |
+
+- 23,347 succession events, one per outgoing bank; 21,384 have an `OUT_CERT`
+  present in the institutions table, and 21,361 of those have a `NEWCERT` equal
+  to the surviving or acquiring CERT: **99.89% of the reachable events**.
 - 1,963 events (8.4%) name an outgoing bank that the institutions endpoint does
-  not return at all, so they can never be tested against `NEWCERT`. Counted
-  against all events, coverage is 91.5%.
-- The 23 misses all have a non-zero `NEWCERT` that differs from the event.
+  not return, so counted against all events coverage is **91.5%**. That gap does
+  not count against `NEWCERT`: these events have no predecessor document, so no
+  sweep can start from them and enriching from history would not reach them
+  either. The 99.89% is the binding figure.
+- 23 in-table events disagree with `NEWCERT` (a non-zero value that differs).

@@ -18,6 +18,7 @@ Loaded by path because FDIC-Banks is a project directory, not a package.
 """
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -138,3 +139,29 @@ def test_filters_are_url_encoded_into_the_request(tmp_path):
         filters="CHANGECODE:[200 TO 299]",
     )
     assert "filters=CHANGECODE%3A%5B200%20TO%20299%5D" in opener.urls[0][0]
+
+
+def test_pipeline_drops_end_date_sentinel_before_converting():
+    """The 12/31/9999 sentinel must be removed before the date processor.
+
+    Loaded as a date it makes active banks "end in 9999" and places 22 inactive
+    banks in nonsense windows, with no error anywhere.
+    """
+    path = (
+        _SCRIPT.parent
+        / "configuration"
+        / "institutions-ingestion-setup"
+        / "pipelines.json"
+    )
+    processors = json.loads(path.read_text())["processors"]
+    kinds = [next(iter(p)) for p in processors]
+    removal = next(
+        p["remove"]
+        for p in processors
+        if "remove" in p and "12/31/9999" in p["remove"].get("if", "")
+    )
+    assert removal["field"] == "ENDEFYMD"
+    end_date = next(
+        i for i, p in enumerate(processors) if p.get("date", {}).get("field") == "ENDEFYMD"
+    )
+    assert kinds.index("remove") < end_date
