@@ -61,7 +61,7 @@
     {
       "type": "exact-identifier",
       "weight": 0.2754,
-      "text_fields": ["WEBADDR"]
+      "text_fields": ["WEB_DOMAIN"]
     }
   ],
   "declared_links": {

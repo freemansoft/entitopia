@@ -40,3 +40,26 @@ def test_pipeline_drops_end_date_sentinel_before_converting():
         i for i, p in enumerate(processors) if p.get("date", {}).get("field") == "ENDEFYMD"
     )
     assert kinds.index("remove") < end_date
+
+
+def test_pipeline_derives_web_domain_and_drops_blanks():
+    """WEB_DOMAIN must be derived from WEBADDR, and an empty result removed.
+
+    The exact-identifier signal reads WEB_DOMAIN. If the empty-value removal
+    went missing, every bank with a blank website would share the value "" and
+    score as an identifier match with every other, with no error anywhere.
+    """
+    processors = json.loads(_PIPELINES.read_text())["processors"]
+    derive = [
+        i
+        for i, p in enumerate(processors)
+        if p.get("lowercase", {}).get("target_field") == "WEB_DOMAIN"
+    ]
+    assert derive and processors[derive[0]]["lowercase"]["field"] == "WEBADDR"
+    blank_drop = [
+        i
+        for i, p in enumerate(processors)
+        if p.get("remove", {}).get("field") == "WEB_DOMAIN"
+        and "isEmpty()" in p["remove"].get("if", "")
+    ]
+    assert blank_drop and blank_drop[0] > derive[0]

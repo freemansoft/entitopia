@@ -44,6 +44,55 @@
           }
         ]
       }
+    },
+    {
+      "lowercase": {
+        "description": "WEB_DOMAIN is the exact-identifier key: the bare host, so http://www.x.com/ and X.COM agree. Copied from WEBADDR; a missing WEBADDR leaves WEB_DOMAIN absent, never empty, because blank must never match blank",
+        "field": "WEBADDR",
+        "target_field": "WEB_DOMAIN",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip the scheme",
+        "field": "WEB_DOMAIN",
+        "pattern": "^\\s*[a-z][a-z0-9+.-]*://",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip a leading www.",
+        "field": "WEB_DOMAIN",
+        "pattern": "^www\\.",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "gsub": {
+        "description": "strip any path, query, fragment or trailing slash",
+        "field": "WEB_DOMAIN",
+        "pattern": "[/?#].*$",
+        "replacement": "",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "WEB_DOMAIN",
+        "ignore_missing": true
+      }
+    },
+    {
+      "remove": {
+        "description": "a blank or scheme-only WEBADDR must leave WEB_DOMAIN absent, not an empty string that every blank bank would share",
+        "field": "WEB_DOMAIN",
+        "if": "ctx.WEB_DOMAIN != null && ctx.WEB_DOMAIN.isEmpty()",
+        "ignore_missing": true
+      }
     }
   ]
 }

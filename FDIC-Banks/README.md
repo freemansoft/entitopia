@@ -144,12 +144,16 @@ made only of stopped words (for example a bare "First National Bank") has no
 phonetic tokens and the phonetic signals read it as not evaluable; the
 `name-token` signal uses the unstopped `clean` subfield and still scores it.
 
-`WEBADDR.normalized` uses the `url_normalized` analyzer: lowercased, scheme,
-leading `www.` and trailing slashes removed, so `http://www.example.com/` and
-`example.com` both analyze to `example.com` (checked with `_analyze`). The
-`exact-identifier` signal and its candidate seed read `WEBADDR.keyword` (exact
-and case-folded in Python), not this subfield, so a scheme or `www.` difference
-between two records still keeps them apart in the sweeps.
+The ingest pipeline derives `WEB_DOMAIN` from `WEBADDR`: lowercased, with the
+scheme, a leading `www.` and any path, query or fragment removed, so
+`http://www.example.com/`, `https://example.com/path` and `EXAMPLE.COM` all
+become `example.com` (checked with `_ingest/pipeline/.../_simulate`). A blank or
+missing `WEBADDR` leaves `WEB_DOMAIN` absent rather than empty, because blank
+must never match blank. The `exact-identifier` signal and its seed read
+`WEB_DOMAIN`. After the load, 4,137 banks carry one (4,079 distinct), the most
+shared domain is on 5 banks and none is empty, so no `ignore_values` or
+`max_shared_records` entry is needed for it. Re-running both sweeps on it gave
+the same pair and truth counts as the table below.
 
 ## Sweeps
 

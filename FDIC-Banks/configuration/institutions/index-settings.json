@@ -10,21 +10,6 @@
             "type": "pattern_replace",
             "pattern": "(?i)\\bp[.\\s]*o[.\\s]*(box|b\\b)",
             "replacement": "pobox"
-          },
-          "url_scheme_strip": {
-            "type": "pattern_replace",
-            "pattern": "(?i)^\\s*[a-z][a-z0-9+.-]*://",
-            "replacement": ""
-          },
-          "url_www_strip": {
-            "type": "pattern_replace",
-            "pattern": "(?i)^www\\.",
-            "replacement": ""
-          },
-          "url_trailing_slash_strip": {
-            "type": "pattern_replace",
-            "pattern": "/+\\s*$",
-            "replacement": ""
           }
         },
         "filter": {
@@ -222,11 +207,6 @@
           "phone_clean": {
             "filter": ["remove_non_digits"],
             "tokenizer": "keyword"
-          },
-          "url_normalized": {
-            "char_filter": ["url_scheme_strip", "url_www_strip", "url_trailing_slash_strip"],
-            "tokenizer": "keyword",
-            "filter": ["lowercase", "trim"]
           }
         }
       }

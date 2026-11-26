@@ -2,17 +2,39 @@
   "index": "institutions-{now/d}-000001",
   "mappings": {
     "properties": {
-      "CERT": { "type": "keyword" },
-      "ID": { "type": "keyword" },
-      "NEWCERT": { "type": "keyword" },
-      "ULTCERT": { "type": "keyword" },
-      "FED_RSSD": { "type": "keyword" },
-      "RSSDHCR": { "type": "keyword" },
-      "STALP": { "type": "keyword" },
-      "ZIP": { "type": "keyword" },
-      "ACTIVE": { "type": "keyword" },
-      "INACTIVE": { "type": "keyword" },
-      "CHANGEC1": { "type": "keyword" },
+      "CERT": {
+        "type": "keyword"
+      },
+      "ID": {
+        "type": "keyword"
+      },
+      "NEWCERT": {
+        "type": "keyword"
+      },
+      "ULTCERT": {
+        "type": "keyword"
+      },
+      "FED_RSSD": {
+        "type": "keyword"
+      },
+      "RSSDHCR": {
+        "type": "keyword"
+      },
+      "STALP": {
+        "type": "keyword"
+      },
+      "ZIP": {
+        "type": "keyword"
+      },
+      "ACTIVE": {
+        "type": "keyword"
+      },
+      "INACTIVE": {
+        "type": "keyword"
+      },
+      "CHANGEC1": {
+        "type": "keyword"
+      },
       "ESTYMD": {
         "type": "date",
         "format": "strict_date_optional_time||yyyy-MM-dd"
@@ -24,56 +46,104 @@
       "NAME": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" },
-          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
         }
       },
       "PRIORNAME1": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" },
-          "phonetic": { "type": "text", "analyzer": "name_phonetic" },
-          "phonetic_bm": { "type": "text", "analyzer": "name_phonetic_bm" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
         }
       },
       "NAMEHCR": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
         }
       },
       "ADDRESS": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "street_clean" },
-          "tokens": { "type": "text", "analyzer": "street_tokens" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
         }
       },
       "ADDRESS2": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "street_clean" },
-          "tokens": { "type": "text", "analyzer": "street_tokens" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
         }
       },
       "CITY": {
         "type": "text",
         "fields": {
-          "keyword": { "type": "keyword" },
-          "clean": { "type": "text", "analyzer": "name_clean" }
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
         }
       },
       "WEBADDR": {
-        "type": "keyword",
-        "fields": {
-          "normalized": { "type": "text", "analyzer": "url_normalized" }
-        }
+        "type": "keyword"
+      },
+      "WEB_DOMAIN": {
+        "type": "keyword"
       }
     }
   }
