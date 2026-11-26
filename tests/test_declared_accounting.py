@@ -4,7 +4,9 @@ When the declared truth links exist but the candidate search cannot reach their
 targets, every pair reads as undeclared and recall reads as zero. That used to
 look like a clean run. These tests pin the three counts (declared, retrieved,
 emitted), that they survive in the index _meta without erasing provenance, and
-that retrieving nothing fails the run.
+that retrieving nothing fails the run. A truth field that names no successor at
+all (dropped on reload, or emptied by a too-broad ignore_values) declares zero
+links, which the retrieval check cannot see, so that fails the run too.
 """
 
 import logging
@@ -61,6 +63,7 @@ def _stats():
         "predecessors", "candidates", "pairs", "truncated",
         "undated_predecessors", "truth_links", "truth_retrieved",
         "truth_emitted", "lookup_errors", "scoring_errors", "index_errors",
+        "predecessors_searched",
     ]
     return dict.fromkeys(keys, 0)
 
@@ -72,6 +75,9 @@ def _phase(declared=True):
         phase.declared_links = DeclaredLinks.from_config(
             SimpleNamespace(declared_links=SimpleNamespace(rules=[rule]))
         )
+        # handle() sets this beside declared_links; the pair writer refuses to
+        # tag without it, so a phase built here must carry one too.
+        phase.scoring_context = ScoringContext()
     return phase
 
 
@@ -103,6 +109,57 @@ def test_no_truth_retrieved_raises():
     stats["truth_links"] = 3
     with pytest.raises(RuntimeError, match="declared_links"):
         _phase()._raise_if_no_truth_retrieved(stats)
+
+
+def test_truth_rule_that_names_no_target_raises():
+    """A truth field that holds nothing usable must not log success.
+
+    Dropped on reload, or emptied by an ignore_values entry that is too broad,
+    the field gives truth_links 0, so the retrieved-none guard above never
+    fires, every pair is tagged none, and recall reads as if nothing was
+    declared at all.
+    """
+    stats = _stats()
+    stats["predecessors"] = stats["predecessors_searched"] = 4
+    with pytest.raises(RuntimeError, match="named no successor"):
+        _phase()._raise_if_no_truth_retrieved(stats)
+
+
+def test_ignored_truth_values_trip_the_guard_end_to_end():
+    # The broad-ignore_values case from a real sweep loop: the only value the
+    # truth field holds is ignored, so the predecessor names no target.
+    phase = _phase()
+    phase.scoring_context = ScoringContext(ignored_values={"NEWCERT": {"B"}})
+    stats = _stats()
+    list(
+        phase._generate_actions(
+            _Selector(), _Finder([EntityDoc("B", {})]), _Scorer({"B": 0.9}),
+            phase.scoring_context, "t", 10, _PROVENANCE, stats,
+        )
+    )
+    assert stats["predecessors_searched"] == 1
+    assert stats["truth_links"] == 0
+    with pytest.raises(RuntimeError, match="named no successor"):
+        phase._raise_if_no_truth_retrieved(stats)
+
+
+def test_nothing_searched_does_not_trip_the_truth_guard():
+    # An empty population or one skipped entirely has no evidence either way;
+    # the run's own counts already show it.
+    stats = _stats()
+    stats["predecessors"] = stats["undated_predecessors"] = 3
+    _phase()._raise_if_no_truth_retrieved(stats)
+
+
+def test_explains_only_links_need_no_truth_targets():
+    phase = PhaseEntityMatch(es=None, project="p", one_step="s", project_config=None)
+    rule = SimpleNamespace(name="hc", role="explains", kind="shared", field="hc")
+    phase.declared_links = DeclaredLinks.from_config(
+        SimpleNamespace(declared_links=SimpleNamespace(rules=[rule]))
+    )
+    stats = _stats()
+    stats["predecessors"] = stats["predecessors_searched"] = 4
+    phase._raise_if_no_truth_retrieved(stats)
 
 
 def test_no_declared_links_no_accounting():

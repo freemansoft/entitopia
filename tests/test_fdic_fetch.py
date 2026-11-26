@@ -9,6 +9,8 @@ fake opener so no network is involved:
     page boundaries     a page body with no trailing newline fused two records
                         into one row, silently losing a bank at each boundary
     short-page paging   a miscounted last page silently drops or repeats rows
+    capped pages        a server serving fewer rows than asked ended the fetch
+                        after page one, writing a fraction of the data
     HTML body           an error page served with status 200 must raise
     dropped columns     the API omitted CERT columns from an unfiltered history
                         CSV, which a join would read as zero successions
@@ -54,9 +56,9 @@ def _rows(start, count):
     return "".join("{},BANK {}\n".format(i, i) for i in range(start, start + count))
 
 
-def test_pages_until_short_page(tmp_path):
+def test_pages_until_empty_page(tmp_path):
     opener = FakeOpener(
-        [HEADER + _rows(1, 3), HEADER + _rows(4, 3), HEADER + _rows(7, 1)]
+        [HEADER + _rows(1, 3), HEADER + _rows(4, 3), HEADER + _rows(7, 1), ""]
     )
     dest = tmp_path / "out.csv"
     count = fetch_fdic.fetch(
@@ -67,7 +69,42 @@ def test_pages_until_short_page(tmp_path):
     assert lines.count("CERT,NAME") == 1
     assert len(lines) == 8
     assert "offset=3" in opener.urls[1][0]
+    assert "offset=7" in opener.urls[3][0]
     assert opener.urls[0][1] == "entitopia-fetch"
+
+
+def test_server_page_cap_does_not_truncate(tmp_path):
+    """A server that caps pages below the requested size must not end the fetch.
+
+    Stopping on the first short page wrote only page one, which can still
+    clear the plausibility floor. The next offset must also follow the rows
+    actually served, or the rows between the cap and the requested size are
+    skipped.
+    """
+    opener = FakeOpener(
+        [HEADER + _rows(1, 2), HEADER + _rows(3, 2), HEADER + _rows(5, 1), ""]
+    )
+    dest = tmp_path / "out.csv"
+    count = fetch_fdic.fetch(
+        "institutions", ["CERT", "NAME"], dest, page_size=3, opener=opener, min_lines=1
+    )
+    assert count == 5
+    assert [line.split(",")[0] for line in dest.read_text().splitlines()[1:]] == [
+        "1", "2", "3", "4", "5"
+    ]
+    offsets = [url.split("&")[2] for url, _ in opener.urls]
+    assert offsets == ["offset=0", "offset=2", "offset=4", "offset=5"]
+
+
+def test_header_only_page_ends_the_fetch(tmp_path):
+    # Whether the API ends with an empty body (measured 2026-11-26) or a bare
+    # header, the fetch must stop rather than loop.
+    opener = FakeOpener([HEADER + _rows(1, 2), HEADER])
+    count = fetch_fdic.fetch(
+        "institutions", ["CERT", "NAME"], tmp_path / "out.csv", page_size=3,
+        opener=opener, min_lines=1,
+    )
+    assert count == 2
 
 
 def test_html_body_raises(tmp_path):
@@ -88,7 +125,7 @@ def test_non_200_raises(tmp_path):
 
 def test_stub_not_kept(tmp_path):
     dest = tmp_path / "out.csv"
-    opener = FakeOpener([HEADER + _rows(1, 9)])
+    opener = FakeOpener([HEADER + _rows(1, 9), ""])
     with pytest.raises(RuntimeError):
         fetch_fdic.fetch("institutions", ["CERT", "NAME"], dest, opener=opener)
     assert not dest.exists()
@@ -97,7 +134,7 @@ def test_stub_not_kept(tmp_path):
 def test_stub_does_not_replace_good_file(tmp_path):
     dest = tmp_path / "out.csv"
     dest.write_text("previous good content\n")
-    opener = FakeOpener([HEADER + _rows(1, 2)])
+    opener = FakeOpener([HEADER + _rows(1, 2), ""])
     with pytest.raises(RuntimeError):
         fetch_fdic.fetch("institutions", ["CERT", "NAME"], dest, opener=opener)
     assert dest.read_text() == "previous good content\n"
@@ -105,7 +142,11 @@ def test_stub_does_not_replace_good_file(tmp_path):
 
 def test_page_without_trailing_newline_does_not_fuse_rows(tmp_path):
     opener = FakeOpener(
-        [(HEADER + _rows(1, 3)).rstrip("\n"), (HEADER + _rows(4, 1)).rstrip("\n")]
+        [
+            (HEADER + _rows(1, 3)).rstrip("\n"),
+            (HEADER + _rows(4, 1)).rstrip("\n"),
+            "",
+        ]
     )
     dest = tmp_path / "out.csv"
     count = fetch_fdic.fetch(
@@ -128,7 +169,7 @@ def test_missing_requested_column_raises(tmp_path):
 
 
 def test_filters_are_url_encoded_into_the_request(tmp_path):
-    opener = FakeOpener([HEADER + _rows(1, 2)])
+    opener = FakeOpener([HEADER + _rows(1, 2), ""])
     fetch_fdic.fetch(
         "history",
         ["CERT"],

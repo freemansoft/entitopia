@@ -3,7 +3,11 @@
 A declared path that never fires makes every pair read as undeclared and recall
 read as zero, which looks like a bad matcher rather than bad configuration.
 These tests pin that each rule kind fires, that ignored placeholders never do,
-and that the tuning/reporting split is stable across runs.
+and that the tuning/reporting split is stable across runs. They also pin three
+refusals that keep a tag from being quietly wrong: a truth rule recall cannot
+count (shared or reverse) does not load, a missing key is not hashed into a
+half, and the pair writer will not tag without the scoring context that
+carries ignore_values.
 """
 
 from types import SimpleNamespace
@@ -59,15 +63,27 @@ def test_ignored_value_never_fires():
 
 
 def test_reverse_key_rule():
-    rule = {"name": "child", "role": "truth", "kind": "key", "field": "parent", "reverse": True}
+    rule = {"name": "child", "role": "explains", "kind": "key", "field": "parent", "reverse": True}
     pred = EntityDoc("P1", {})
-    assert links(rule).classify(pred, EntityDoc("C1", {"parent": "P1"}), CTX)[0] == "truth"
+    assert links(rule).classify(pred, EntityDoc("C1", {"parent": "P1"}), CTX)[0] == "explains"
     assert links(rule).classify(pred, EntityDoc("C1", {"parent": "other"}), CTX)[0] == "none"
 
 
-def test_reverse_is_not_a_truth_target():
-    rule = {"name": "child", "role": "truth", "kind": "key", "field": "parent", "reverse": True}
-    assert links(rule).truth_targets(EntityDoc("P1", {"parent": "x"}), CTX) == set()
+@pytest.mark.parametrize(
+    "override",
+    [{"kind": "shared"}, {"reverse": True}],
+    ids=["shared", "reverse"],
+)
+def test_truth_rule_recall_cannot_see_is_refused(override):
+    """A truth rule that names no target from the predecessor must not load.
+
+    classify would tag its pairs truth, but truth_targets cannot list them, so
+    the accounting, the recall denominator and the no-truth guards would never
+    see the links: recall would be counted over a different set of links than
+    the one tagged.
+    """
+    with pytest.raises(ValueError, match="forward key"):
+        links({**SUCCESSOR, **override})
 
 
 def test_reverse_on_shared_rule_is_rejected():
@@ -99,6 +115,18 @@ def test_split_half_stable():
     assert split_half("ZZZZ00INVENTEDLEI000") == "tune"
     tune = sum(split_half(str(i)) == "tune" for i in range(10000))
     assert 4800 < tune < 5200
+
+
+@pytest.mark.parametrize("key", [None, "", "  "], ids=["none", "empty", "blank"])
+def test_split_half_refuses_a_missing_key(key):
+    """A missing key must not be hashed into a half.
+
+    str(None) is "None", which hashes to one fixed half, so every pair whose
+    predecessor key went missing would pile into it and be measured as if it
+    were one real predecessor.
+    """
+    with pytest.raises(ValueError, match="entity key"):
+        split_half(key)
 
 
 def _pair():
@@ -138,6 +166,24 @@ def test_untagged_pair_has_declared_none_and_no_rule():
     doc = _action(links(CHAIN))
     assert doc["declared"] == "none"
     assert "declared_by" not in doc
+
+
+def test_tagging_without_a_scoring_context_fails_loudly():
+    """Tagging with no context would let ignored placeholders fire.
+
+    An empty fallback context carries no ignore_values, so a NEWCERT of "0"
+    would link every closed bank to whatever is keyed "0" and the pair would be
+    written as truth. Only a change in call order could get here, and it must
+    surface as an error rather than as quietly wrong tags.
+    """
+    with pytest.raises(RuntimeError, match="scoring context"):
+        _action(links(SUCCESSOR), ctx=None)
+
+
+def test_no_declared_links_needs_no_scoring_context():
+    # DOT-Commercial and CMS-Providers declare no links; their pair writer must
+    # not start demanding a context it never used.
+    assert "declared" not in _action(None, ctx=None)
 
 
 class _Indices:

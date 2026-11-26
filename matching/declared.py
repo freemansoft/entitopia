@@ -71,9 +71,10 @@ class DeclaredLinks:
 
     def __init__(self, rules, complete_truth=False):
         self.rules = list(rules)
-        # Whether the truth rules cover every real succession. Recall is only
-        # a meaningful number when they do; otherwise unlinked pairs may be
-        # real successions the data simply does not record.
+        # Whether the truth rules cover every real succession. Precision needs
+        # this, because it counts an undeclared pair as a false match, and an
+        # unlinked pair may be a real succession the data does not record.
+        # Recall needs only the truth rules themselves.
         self.complete_truth = complete_truth
 
     @classmethod
@@ -97,6 +98,19 @@ class DeclaredLinks:
                     "declared_links rule {!r}: reverse only applies to a key "
                     "rule, not a {} rule".format(raw.name, raw.kind)
                 )
+            if raw.role == "truth" and (raw.kind != "key" or reverse):
+                # classify would tag such pairs truth, but truth_targets cannot
+                # name them from the predecessor, so the accounting, the recall
+                # denominator and the no-truth guards would never see them:
+                # recall would be counted over other links than those tagged.
+                raise ValueError(
+                    "declared_links rule {!r}: a truth rule must be a forward "
+                    "key rule (kind key, no reverse), because recall counts only "
+                    "the targets a predecessor names itself; use role explains "
+                    "for a {} rule".format(
+                        raw.name, "reverse" if reverse else raw.kind
+                    )
+                )
             rules.append(DeclaredRule(raw.name, raw.role, raw.kind, raw.field, reverse))
         return cls(rules, bool(getattr(block, "complete_truth", False)))
 
@@ -113,11 +127,21 @@ class DeclaredLinks:
                     return role, rule.name
         return "none", None
 
+    def has_truth_rules(self) -> bool:
+        """Whether recall can be counted at all, for the sweep's no-truth guard.
+
+        from_config admits only forward key truth rules, so any truth rule is
+        one whose targets the predecessor names.
+        """
+        return any(rule.role == "truth" for rule in self.rules)
+
     def truth_targets(self, pred: EntityDoc, ctx) -> set[str]:
         """Keys the predecessor itself names as its successor.
 
         Forward key rules only: a reverse or shared rule cannot name a target
         from the predecessor alone, so it cannot say what recall missed.
+        from_config refuses such a rule as truth for that reason; the filter
+        stays so a rule built directly cannot leak in.
         """
         targets = set()
         for rule in self.rules:
@@ -133,6 +157,15 @@ def split_half(entity_key: str) -> str:
     and independent of load order. Thresholds tuned on the "tune" half and
     reported on the "report" half keep the quoted recall from being fitted to
     the pairs it is quoted on.
+
+    A missing key is refused rather than hashed: str(None) is "None", one fixed
+    half, so every pair that lost its key would be filed there as if it were a
+    single predecessor.
     """
+    if entity_key is None or not str(entity_key).strip():
+        raise ValueError(
+            "split_half needs an entity key, got {!r}: a pair or predecessor "
+            "with no key cannot be assigned to a half".format(entity_key)
+        )
     parity = hashlib.sha256(str(entity_key).encode()).digest()[0] % 2
     return "tune" if parity == 0 else "report"

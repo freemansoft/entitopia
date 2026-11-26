@@ -413,8 +413,8 @@ Verified 2026-11-08 by running CMS-Providers `hospital-duplicates` twice: the ru
 
 Declared links make recall computable, and every way of getting the figure wrong makes a working matcher look broken or a broken one look sound. Each is silent:
 
-- **A declared path that never fires** tags every pair `none` and reads recall as zero. The paths are checked against the live mapping by `validate`, and a run whose truth links exist but none were retrieved fails.
-- **Recall over links the sweep could never reach** (a target absent from the index, dated outside the window, or ended before the shutdown) quotes a matcher failure that is really a denominator. Such links leave the denominator and are still counted by name.
+- **A declared path that never fires** tags every pair `none` and reads recall as zero. The paths are checked against the live mapping by `validate`, but a mapped field can still hold nothing usable (dropped on reload, or emptied by a too-broad `ignore_values`). So the sweep also fails when its truth rules name no successor for any searched predecessor, and when truth links exist but none were retrieved. A truth rule recall cannot count (`shared`, or `reverse`) is refused at load.
+- **Recall over links the sweep could never reach** (a target absent from the index, dated outside the window, or ended before the shutdown) quotes a matcher failure that is really a denominator. Such links leave the denominator and are still counted by exclusion reason.
 - **A pair of sweeps whose windows overlap or leave a gap** counts a pair twice, or leaves a succession in neither sweep, so recall reads low and nothing reports it.
 - **A tune/report split that moves between runs** lets figures be fitted to the links they are quoted on. The hash is stable and keyed on the predecessor.
 - **A date sentinel loaded as a date.** The FDIC's `12/31/9999` "not ended" value became a real shutdown in year 9999 for every active bank.
@@ -426,10 +426,10 @@ Declared links make recall computable, and every way of getting the figure wrong
 - `tests/test_lifecycle_window.py`: retrieval and the scorer gate read one window, including the undated rules.
 - `tests/test_lifecycle.py`: the temporal signal's dates, look-back and before-shutdown discount come from the configuration.
 - `tests/test_declared_links.py`: each rule kind fires, placeholders never do, and the half assignment is stable.
-- `tests/test_declared_accounting.py`: the declared, retrieved and emitted counts, and that retrieving none fails the run.
-- `tests/test_measure_declared_links.py`: unreachable links leave the recall denominator, and the output names no entity.
+- `tests/test_declared_accounting.py`: the declared, retrieved and emitted counts, and that retrieving none, or a truth field that names no successor, fails the run.
+- `tests/test_measure_declared_links.py`: unreachable links leave the recall denominator, the output names no entity, and a pair index from another step, a superseded source or a sweep without declared links is refused.
 - `tests/test_succession_window_pairs.py`: the two sweeps' windows partition time and agree on lifecycle, population and declared links.
-- `tests/test_fdic_fetch.py`: the fetch rejects a stub or an error page and does not fuse records across a page boundary.
+- `tests/test_fdic_fetch.py`: the fetch rejects a stub or an error page, does not fuse records across a page boundary, and does not stop early when the server caps its pages.
 - `tests/test_fdic_pipeline.py`: the `12/31/9999` sentinel is dropped before the date conversion, and `WEB_DOMAIN` is derived.
 - `tests/test_fdic_street_local.py`: both sweeps compare streets only within one town.
 

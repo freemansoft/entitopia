@@ -327,7 +327,7 @@
         "complete_truth": {
           "type": "boolean",
           "default": false,
-          "description": "True only when the truth rules cover every real succession in the data. Recall is only meaningful then; otherwise an unlinked pair may be a real succession the data does not record."
+          "description": "True only when the truth rules cover every real succession in the data. Precision needs it, because precision counts an undeclared pair as a false match, and otherwise an unlinked pair may be a real succession the data does not record. Recall needs only the truth rules."
         },
         "rules": {
           "type": "array",
@@ -338,7 +338,10 @@
             "required": ["name", "role", "kind", "field"],
             "properties": {
               "name": { "type": "string", "description": "Written onto the pair as declared_by." },
-              "role": { "enum": ["truth", "explains"] },
+              "role": {
+                "enum": ["truth", "explains"],
+                "description": "truth: a recorded succession, counted toward recall. Must be a forward key rule (kind key, no reverse), because recall counts only the targets a predecessor names itself; a shared or reverse truth rule is refused at load. explains: a recorded relationship that is not a succession; keeps the pair out of the findings."
+              },
               "kind": {
                 "enum": ["key", "shared"],
                 "description": "key: a value at field on one side equals the other side's entity key. shared: both sides carry the same non-ignored value at field."
@@ -349,7 +352,7 @@
               },
               "reverse": {
                 "type": "boolean",
-                "description": "Key rules only. Reads field on the candidate and compares it with the predecessor's key. Rejected on a shared rule, where it would be silently ignored."
+                "description": "Key rules with role explains only. Reads field on the candidate and compares it with the predecessor's key. Rejected on a shared rule, where it would be silently ignored, and on a truth rule, whose targets recall could not count."
               }
             }
           }

@@ -3,8 +3,11 @@
 A recall figure over links the sweep could never reach (a target absent from
 the index, or dated outside the gap window) looks like a matcher that misses
 real successions, and the number gets quoted that way. These tests pin that
-such links leave the denominator and are still counted by name, and that the
-output carries no entity key, since a score is an analysis and not a finding.
+such links leave the denominator and are still counted by exclusion reason,
+and that the output carries no entity key, since a score is an analysis and not
+a finding. A pair index from another step, from a superseded source index, or
+swept without declared links is refused: the re-run search would otherwise be
+joined to pairs from a sweep that never ran.
 """
 
 import datetime
@@ -140,6 +143,7 @@ def test_denominators_partition():
     reappearance max_gap_days (+365) is in neither window by design: too late
     to be a reappearance and not before the shutdown, so not an absorption. The
     claim therefore covers successor creation dates up to max_gap_days only.
+    An undated candidate is probed too: it must land in absorption alone.
     """
     lifecycle_windows = []
     for path in (REAPPEARANCE, ABSORPTION):
@@ -163,6 +167,12 @@ def test_denominators_partition():
         )
     for gap in (max_gap + 1, 2000):
         assert admitting(gap) == [], "gap {} should be in neither window".format(gap)
+
+    # An undated candidate has no gap to place it, so only undated_candidates
+    # decides; both sweeps keeping it would emit it twice, neither would lose it.
+    undated = EntityDoc("C", {})
+    admitted = [w for w in lifecycle_windows if w.admits(pred, undated)]
+    assert admitted == [lifecycle_windows[1]], "undated candidate must be absorption's"
 
 
 def test_window_decides_target_dating():
@@ -318,3 +328,92 @@ def test_failed_search_aborts_and_names_progress():
     env = _env(sources, _StubFinder(error=ValueError("boom")), _window())
     with pytest.raises(RuntimeError, match=r"after 7 predecessors.*incomplete"):
         script.predecessor_links(env, hit, pred, ["T"])
+
+
+# --- the pair index must be the sweep being reproduced --------------------
+
+_ACCOUNTING = {"truth_links": 4, "truth_retrieved": 2, "truth_emitted": 1}
+_TEMPLATE = "bank-reappearance-pairs-{now/d}-000001"
+_PAIRS = "bank-reappearance-pairs-2026.11.26-000011"
+
+
+class _MetaIndices:
+    """Answers get_mapping and get_alias the way the measurement reads them."""
+
+    def __init__(self, pair_meta, pair_index=_PAIRS, aliases=None):
+        self.pair_meta = pair_meta
+        self.pair_index = pair_index
+        self.aliases = aliases if aliases is not None else {"src-alias": ["src-2"]}
+
+    def get_mapping(self, index):
+        return {self.pair_index: {"mappings": {"_meta": self.pair_meta}}}
+
+    def get_alias(self, name):
+        return {index: {} for index in self.aliases.get(name, [])}
+
+
+def _check(meta, **kwargs):
+    es = SimpleNamespace(indices=_MetaIndices(meta, **kwargs))
+    return script.check_pair_index(
+        es, "bank-reappearance-pairs-000001", "src-alias", _TEMPLATE
+    )
+
+
+def test_matching_pair_index_is_accepted():
+    meta = {"source_index": "src-2", "declared_accounting": _ACCOUNTING}
+    assert _check(meta) == _PAIRS
+
+
+def test_pair_index_from_a_superseded_source_is_refused():
+    """Recall over a source the sweep never read describes no real run.
+
+    The candidate search re-runs against whatever the alias names today, and
+    its result is joined to the pair index by _id, so after a reload the miss
+    split compares a search over new documents with pairs from old ones.
+    """
+    meta = {"source_index": "src-1", "declared_accounting": _ACCOUNTING}
+    with pytest.raises(SystemExit, match=r"src-1.*src-2"):
+        _check(meta)
+
+
+def test_pair_index_without_declared_accounting_is_refused():
+    """A sweep run without declared links tags nothing, so precision reads 0.0."""
+    with pytest.raises(SystemExit, match="declared_accounting"):
+        _check({"source_index": "src-2"})
+
+
+def test_another_steps_pair_index_is_refused():
+    meta = {"source_index": "src-2", "declared_accounting": _ACCOUNTING}
+    with pytest.raises(SystemExit, match="bank-absorption-pairs"):
+        _check(meta, pair_index="bank-absorption-pairs-2026.11.26-000009")
+
+
+def test_concrete_source_index_is_compared_as_named():
+    # A project may configure a concrete index rather than an alias.
+    meta = {"source_index": "src-alias", "declared_accounting": _ACCOUNTING}
+    assert _check(meta, aliases={}) == _PAIRS
+
+
+# --- a pair with no predecessor key --------------------------------------
+
+
+def _hits(*sources):
+    return [{"_id": str(i), "_source": s} for i, s in enumerate(sources)]
+
+
+def test_pair_with_no_predecessor_key_is_refused(monkeypatch):
+    """Hashing str(None) would file every such pair under one fixed half."""
+    hits = _hits({"total_score": 0.9, "declared": "none", "predecessor": {}})
+    monkeypatch.setattr(script, "scan", lambda *a, **k: iter(hits))
+    with pytest.raises(ValueError, match=r"predecessor\.entity_key"):
+        script.read_pairs(None, "idx", "predecessor")
+
+
+def test_all_entities_pairs_are_read_by_their_own_side_name(monkeypatch):
+    # An all-entities sweep writes left/right, so reading `predecessor` would
+    # find no key on any pair.
+    hits = _hits({"total_score": 0.9, "declared": "truth", "left": {"entity_key": "L1"}})
+    monkeypatch.setattr(script, "scan", lambda *a, **k: iter(hits))
+    scores, rows = script.read_pairs(None, "idx", "left")
+    assert rows == [PairRow("L1", "truth", 0.9)]
+    assert scores == {"0": 0.9}

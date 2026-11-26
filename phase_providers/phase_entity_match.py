@@ -355,6 +355,19 @@ class ScoringContextBuilder:
         return tables
 
 
+def pair_side_names_for(population_mode):
+    """The two side names a sweep of this population mode writes on its pairs.
+
+    Module-level so a reader of the pair index that holds only the config, such
+    as scripts/measure_declared_links.py, gets the same answer as the writer
+    without building a phase. PhaseEntityMatch.pair_side_names says why the
+    names differ by mode.
+    """
+    if population_mode == "all-entities":
+        return "left", "right"
+    return "predecessor", "successor"
+
+
 def build_sweep_components(es, config, logger):
     """The scorer, finder, selector and context builder a sweep runs with.
 
@@ -498,6 +511,7 @@ class PhaseEntityMatch:
             "truth_links": 0,
             "truth_retrieved": 0,
             "truth_emitted": 0,
+            "predecessors_searched": 0,
             "lookup_errors": 0,
             "scoring_errors": 0,
             "index_errors": 0,
@@ -574,9 +588,7 @@ class PhaseEntityMatch:
         and a second implementation of this choice would be a second place for
         it to drift.
         """
-        if self.population_mode == "all-entities":
-            return "left", "right"
-        return "predecessor", "successor"
+        return pair_side_names_for(self.population_mode)
 
     def _raise_on_catastrophic_error_rate(self, stats):
         """Fail the run when most comparisons failed, rather than reporting success.
@@ -884,7 +896,37 @@ class PhaseEntityMatch:
         reads as undeclared and recall reads as zero, which looks like a bad
         matcher rather than a tag or search that cannot reach the targets.
         This used to log success.
+
+        The second check covers a truth field that exists but holds nothing
+        usable: dropped on reload, or emptied by an ignore_values entry that
+        is too broad. truth_links is then 0, so the first check cannot fire,
+        and every pair is tagged none. It needs a searched predecessor, since
+        an empty or wholly skipped population carries no evidence either way.
+        A trial whose few predecessors all lack a successor (failed banks with
+        no acquirer, say) trips it too; widen the trial rather than the guard.
+
+        The first check is not exact either. truth_links counts every target a
+        searched predecessor names, including targets outside this sweep's
+        window or missing from the index, while truth_retrieved can only count
+        targets inside the window. A narrow window or a small max_records trial
+        can therefore retrieve none on a correct configuration and fail here;
+        read the measurement script's exclusions before changing the config.
         """
+        has_truth = (
+            self.declared_links is not None and self.declared_links.has_truth_rules()
+        )
+        if (
+            has_truth
+            and stats.get("predecessors_searched", 0) > 0
+            and stats["truth_links"] == 0
+        ):
+            raise RuntimeError(
+                "{} predecessors were searched but their declared_links truth "
+                "rules named no successor at all. The truth field is missing, "
+                "empty, or every value it holds is in ignore_values, so every "
+                "pair would be tagged none and recall would be "
+                "meaningless.".format(stats["predecessors_searched"])
+            )
         if stats["truth_links"] > 0 and stats["truth_retrieved"] == 0:
             raise RuntimeError(
                 "{} truth links were declared but none of their targets was "
@@ -1001,6 +1043,9 @@ class PhaseEntityMatch:
 
             if pred_doc is None:
                 continue
+            # The denominator of the no-truth guard: a predecessor that was
+            # searched had its truth targets counted, whether or not it had any.
+            stats["predecessors_searched"] += 1
             stats["candidates"] += len(cand_docs)
             targets = (
                 self.declared_links.truth_targets(pred_doc, ctx)
@@ -1123,8 +1168,19 @@ class PhaseEntityMatch:
             "source_index": provenance.source_index,
         }
         if self.declared_links is not None:
+            if self.scoring_context is None:
+                # An empty fallback context carries no ignore_values, so a
+                # placeholder such as a "0" successor id would fire and the
+                # pair would be written as truth. Only a change in call order
+                # reaches this, and it must fail rather than tag quietly wrong.
+                raise RuntimeError(
+                    "Cannot tag pair {} -> {}: declared_links is set but no "
+                    "scoring context was built, so ignore_values would not "
+                    "apply. handle() must build the context before writing "
+                    "pairs.".format(pred.entity_key, succ.entity_key)
+                )
             declared, declared_by = self.declared_links.classify(
-                pred, succ, self.scoring_context or ScoringContext()
+                pred, succ, self.scoring_context
             )
             document["declared"] = declared
             if declared_by:

@@ -19,6 +19,7 @@ and holds no entity key or name: a score is an analysis, not a finding.
 import argparse
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,35 +32,105 @@ from elasticsearch.helpers import scan
 from matching.candidates import to_entity_doc
 from matching.declared import DeclaredLinks, split_half
 from matching.signals import _latest_date
-from phase_providers.phase_entity_match import build_sweep_components
-from utils import file_utils, id_utils
+from phase_providers.phase_entity_match import build_sweep_components, pair_side_names_for
+from utils import elasticsearch_utils, file_utils, id_utils
 from utils.declared_measure import LinkOutcome, PairRow, gap_histogram, summarize
 
 SCAN_SIZE = 2000
 CONFIGURATION_DIR = "configuration"
 
 
-def read_pairs(es, index):
+def _step_index_pattern(template):
+    """A regex matching every dated generation the step's index-config names.
+
+    Built from the template rather than from the alias, because an earlier
+    generation is detached from the alias yet is still this step's, and
+    measuring one is how two runs are compared.
+    """
+    escaped = re.escape(template)
+    for placeholder in ("{now/d}", "{now/s}"):
+        escaped = escaped.replace(re.escape(placeholder), r"\d{4}\.\d{2}\.\d{2}")
+    escaped = re.sub(r"\d+$", r"\\d+", escaped)
+    return re.compile(escaped + "$")
+
+
+def check_pair_index(es, index, source_index, step_template):
+    """Refuse a pair index that cannot be the sweep this run reproduces.
+
+    The candidate search re-runs against whatever the source alias names
+    today and is joined to `index` by _id. After a source reload, or with
+    another step's pair index, recall and the miss split would then describe a
+    sweep that never ran, and nothing in the numbers would show it. A pair
+    index with no declared_accounting was swept without declared links, so
+    every pair reads as none and precision reads 0.0.
+
+    Returns the concrete pair index, which is what a quoted figure should cite.
+    """
+    mapping = dict(es.indices.get_mapping(index=index))
+    if len(mapping) != 1:
+        raise SystemExit(
+            "--index {} names {} indexes ({}); pass one concrete pair "
+            "index".format(index, len(mapping), ", ".join(sorted(mapping)))
+        )
+    concrete, body = next(iter(mapping.items()))
+    if step_template and not _step_index_pattern(step_template).match(concrete):
+        raise SystemExit(
+            "--index {} resolves to {}, which is not a generation of this "
+            "step's {}; it is another step's pair index".format(
+                index, concrete, step_template
+            )
+        )
+    meta = (body.get("mappings") or {}).get("_meta") or {}
+    if "declared_accounting" not in meta:
+        raise SystemExit(
+            "{} has no _meta.declared_accounting: it was swept without "
+            "declared links, so every pair would read as none".format(concrete)
+        )
+    resolved = elasticsearch_utils.alias_targets(es.indices, source_index) or [
+        source_index
+    ]
+    swept = meta.get("source_index")
+    if len(resolved) != 1 or swept != resolved[0]:
+        raise SystemExit(
+            "{} was swept from {}, but {} now resolves to {}; the candidate "
+            "search would run against a different index than the one its pairs "
+            "came from. Re-sweep, or measure against the index it was swept "
+            "from".format(concrete, swept, source_index, ", ".join(resolved))
+        )
+    return concrete
+
+
+def read_pairs(es, index, side):
     """Every pair's score keyed by _id, plus per-predecessor rows for precision.
 
     One scan serves both uses: link lookup by the sweep's own id scheme, and
     precision over every emitted pair. Only the fields needed are projected,
     since the per-signal array is most of a pair's bytes.
+
+    `side` is the name the sweep wrote its first record under, which depends
+    on the population mode. A pair with no key there is refused: hashing
+    str(None) into the split would file all such pairs under one half.
     """
     scores = {}
     rows = []
+    field = "{}.entity_key".format(side)
     for hit in scan(
         es,
         index=index,
         query={"query": {"match_all": {}}},
-        _source=["total_score", "declared", "predecessor.entity_key"],
+        _source=["total_score", "declared", field],
         size=SCAN_SIZE,
     ):
         source = hit["_source"]
         score = float(source["total_score"])
         scores[hit["_id"]] = score
-        pred_key = str((source.get("predecessor") or {}).get("entity_key"))
-        rows.append(PairRow(pred_key, source.get("declared", "none"), score))
+        pred_key = (source.get(side) or {}).get("entity_key")
+        if pred_key is None:
+            raise ValueError(
+                "Pair {} in {} has no {}; precision cannot assign it to a "
+                "half".format(hit["_id"], index, field)
+            )
+        rows.append(PairRow(str(pred_key), source.get("declared", "none"), score))
     return scores, rows
 
 
@@ -185,13 +256,19 @@ def measure(es, project, step, index, half):
         raise SystemExit("{}/{} declares no links to measure".format(project, step))
 
     source_index = config.source_index
+    index_config = file_utils.load_from_project_file(
+        project, CONFIGURATION_DIR, step, "index-config.json"
+    )
+    step_template = getattr(index_config, "index", None) if index_config else None
+    index = check_pair_index(es, index, source_index, step_template)
+    side, _ = pair_side_names_for(getattr(config.population, "mode", "lifecycle"))
     components = build_sweep_components(es, config, logging.getLogger(__name__))
     finder = components.finder
     selector = components.selector
     window = finder.window
     ctx = components.context_builder.build_context(source_index, config.signals, config)
 
-    scores, rows = read_pairs(es, index)
+    scores, rows = read_pairs(es, index, side)
     key_field = finder.entity_key_field
     env = SimpleNamespace(
         es=es, source_index=source_index, key_field=key_field, window=window,
@@ -210,7 +287,7 @@ def measure(es, project, step, index, half):
         links.extend(predecessor_links(env, pred_hit, pred_doc, targets))
 
     half_rows = [r for r in rows if split_half(r.pred_key) == half]
-    result = {"half": half}
+    result = {"half": half, "pair_index": index}
     result.update(summarize(links, half_rows, declared.complete_truth))
     return result, links
 

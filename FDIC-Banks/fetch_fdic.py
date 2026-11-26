@@ -31,7 +31,8 @@ BASE_URL = "https://api.fdic.gov/banks"
 USER_AGENT = "entitopia-fetch"
 
 # Verified 2026-11-26: the API returned a header plus 10,000 rows for
-# limit=10000, so the whole institutions table is three requests.
+# limit=10000, so the whole institutions table is three pages plus the empty
+# one that ends the fetch.
 PAGE_SIZE = 10000
 
 # Same plausibility floor as the CMS script. The smallest real file here has
@@ -118,6 +119,14 @@ def fetch(
     The file is written beside dest and moved into place only after it passes
     the plausibility floor, so a failed or stubby run leaves whatever good file
     was already there untouched instead of replacing it with the stub.
+
+    Paging ends only on a page with no data rows, which costs one extra
+    request. Ending on the first short page assumed the server honours
+    page_size; one that caps pages lower would end the fetch after page one,
+    and that fraction of the data can still clear the plausibility floor. For
+    the same reason the next offset follows the rows actually served, not
+    page_size, or the rows between the cap and page_size would be skipped.
+    Measured 2026-11-26: past the last row the API returns an empty body.
     """
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -140,9 +149,9 @@ def fetch(
                 if body.lstrip().startswith("<"):
                     raise RuntimeError("{} returned HTML, not CSV".format(url))
                 lines = body.splitlines(keepends=True)
-                if not lines:
-                    break
                 data = lines[1:]
+                if not data:
+                    break
                 # The API ends a page without a newline, so appending the next
                 # page fused two records into one row. Measured 2026-11-26: it
                 # swallowed one institution at each of two page boundaries and
@@ -163,9 +172,7 @@ def fetch(
                     header_written = True
                 out.writelines(data)
                 total += len(data)
-                if len(data) < page_size:
-                    break
-                offset += page_size
+                offset += len(data)
         with open(tmp, encoding="utf-8") as check:
             line_count = sum(1 for _ in check)
         if line_count < min_lines:
