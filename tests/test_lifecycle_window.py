@@ -17,7 +17,8 @@ from types import SimpleNamespace
 import pytest
 
 from matching.documents import EntityDoc
-from matching.window import DEFAULT_BACKWARD_WINDOW_DAYS, LifecycleWindow
+from matching.signals import DEFAULT_BACKWARD_WINDOW_DAYS
+from matching.window import LifecycleWindow
 from phase_providers.phase_entity_match import PhaseEntityMatch
 from utils import file_utils
 
@@ -126,15 +127,22 @@ def test_filter_and_gate_agree(undated):
 
 
 def test_filter_and_gate_agree_on_end_date():
-    lifecycle = SimpleNamespace(shutdown_date="shut", registration_date="reg", end_date="ended")
+    lifecycle = SimpleNamespace(
+        shutdown_date="shut", registration_date="reg", end_date="ended"
+    )
     window = _window(lifecycle, min_gap_days=-180, max_gap_days=365)
     clauses = window.query_filter(_SHUTDOWN)
-    for offset in (-1, 0, 1, None):
+    # Explicit outcomes as well as agreement: two sides that both admitted
+    # everything would agree and still be wrong.
+    expected = {-1: False, 0: True, 1: True, None: True}
+    for offset, admitted in expected.items():
         source = {"reg": _SHUTDOWN.isoformat()}
         if offset is not None:
-            source["ended"] = (_SHUTDOWN + datetime.timedelta(days=offset)).isoformat()
+            ended = _SHUTDOWN + datetime.timedelta(days=offset)
+            source["ended"] = ended.isoformat()
         in_filter = all(_clause_passes(c, source) for c in clauses)
-        assert window.admits(_pred(), _cand(**source)) == in_filter, offset
+        assert window.admits(_pred(), _cand(**source)) is admitted, offset
+        assert in_filter is admitted, offset
 
 
 def test_skips_undated_predecessor():

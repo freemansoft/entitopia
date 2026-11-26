@@ -64,15 +64,16 @@ class CandidateFinder:
         self.max_candidates = int(getattr(candidates_config, "max_candidates", 100))
         self.seed_signals = set(getattr(candidates_config, "seed_signals", []) or [])
         self.signal_configs = list(signal_configs)
-        # Built from the same configs scorer.py uses, so retrieval and scoring
-        # can never disagree about what a signal reads.
-        # lifecycle is threaded through even though no dated signal seeds a
-        # candidate query: the signals are built from the whole config list, so
-        # a temporal entry is constructed here too and would refuse without it.
         # Kept to order and bound retrieval by the same dates and window the
         # scorer judges a pair by; see LifecycleWindow.query_filter and _sort.
         self.lifecycle = lifecycle
         self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
+        # Built from the same configs scorer.py uses, so retrieval and scoring
+        # can never disagree about what a signal reads. lifecycle is threaded
+        # through even though no dated signal seeds a candidate query: the
+        # signals are built from the whole config list, so a temporal entry is
+        # constructed here too and would refuse without it. The window comes
+        # first because that temporal entry scores its look-back from it.
         self.signals = [
             build_signal(c, lifecycle, self.window) for c in self.signal_configs
         ]

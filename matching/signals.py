@@ -498,6 +498,13 @@ _MONTHS = {
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
 }
 
+# Fallback look-back when no negative min_gap_days is configured. A successor
+# that registered before the shutdown is still plausible (the new entity is
+# often set up first), but an unbounded look-back would pull in every old
+# record. Lives here, not in matching.window, because window imports this
+# module and the signal needs the default when it is given no window.
+DEFAULT_BACKWARD_WINDOW_DAYS = 180
+
 # Credit for a successor registered before the shutdown, as a fraction of what
 # the same nearness afterwards earns. A pre-positioned shell is a real tactic
 # but weaker evidence than reopening days afterward. Per-signal so a dataset
@@ -620,15 +627,10 @@ class TemporalSignal(Signal):
         self.lifecycle = lifecycle
         # The look-back comes from the window so the overlap an operator
         # configures changes the score as well as which candidates survive; a
-        # separate constant here let the two disagree. Imported late because
-        # matching.window imports this module. Without a window (unit tests
-        # with no scoring config) the default look-back applies.
+        # separate constant here let the two disagree. Without a window (unit
+        # tests with no scoring config) the default look-back applies.
         if window is None:
-            import matching.window  # noqa: PLC0415 -- circular at module level
-
-            self.backward_window_days = float(
-                matching.window.DEFAULT_BACKWARD_WINDOW_DAYS
-            )
+            self.backward_window_days = float(DEFAULT_BACKWARD_WINDOW_DAYS)
         else:
             self.backward_window_days = float(window.backward_window_days())
         self.before_shutdown_scale = float(

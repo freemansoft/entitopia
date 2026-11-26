@@ -13,12 +13,7 @@ import datetime
 from dataclasses import dataclass
 
 from matching.documents import EntityDoc, read_path
-from matching.signals import _latest_date
-
-# Fallback look-back when no negative min_gap_days is configured. A successor
-# that registered before the shutdown is still plausible (the new entity is
-# often set up first), but an unbounded look-back would pull in every old record.
-DEFAULT_BACKWARD_WINDOW_DAYS = 180
+from matching.signals import DEFAULT_BACKWARD_WINDOW_DAYS, _latest_date
 
 _UNDATED_CANDIDATES = ("keep", "exclude")
 _UNDATED_PREDECESSORS = ("unbounded", "skip")
