@@ -35,6 +35,10 @@ SUCCESSOR = {"name": "fdic-successor", "role": "truth", "kind": "key", "field": 
 CHAIN = {"name": "fdic-chain-end", "role": "explains", "kind": "key", "field": "ULTCERT"}
 CTX = ScoringContext()
 
+# Invented CERTs in a range no FDIC institution uses (checked against the loaded
+# index), so a fixture can never name a real bank. Labelled CERTs are what the
+# anonymization scanner looks up, and these must come back NOT_FOUND.
+
 
 def test_key_rule_truth():
     pred = EntityDoc("990000", {"NEWCERT": "990002"})
@@ -49,7 +53,7 @@ def test_truth_beats_explains():
 
 
 def test_explains_chain():
-    pred = EntityDoc("1", {"NEWCERT": "990001", "ULTCERT": "990002"})
+    pred = EntityDoc("990000", {"NEWCERT": "990001", "ULTCERT": "990002"})
     cand = EntityDoc("990002", {})
     assert links(SUCCESSOR, CHAIN).classify(pred, cand, CTX) == ("explains", "fdic-chain-end")
 

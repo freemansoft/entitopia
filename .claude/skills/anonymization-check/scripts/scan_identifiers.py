@@ -84,6 +84,11 @@ _TITLE_SUFFIX = (
     r"Hospital|Medical Center|Clinic|Health System|Healthcare|Trucking|Transport|"
     r"Logistics|Freight|Hauling|LLC|Inc\.?|Corp\.?|Company"
 )
+# Bank names end differently from carriers and hospitals ("State Bank",
+# "Savings and Loan Association"), and the town after "Bank of" is often the only
+# part that tells one bank from hundreds of namesakes, so it is kept in the match.
+_BANK_SUFFIX_UPPER = r"BANK|BANCORP|BANCSHARES|ASSOCIATION|TRUST(?:\s+COMPANY)?|N\.A\."
+_BANK_SUFFIX_TITLE = r"Bank|Bancorp|Bancshares|Association|Trust(?:\s+Company)?"
 _STREET_SUFFIX = (
     r"ST|STREET|AVE|AVENUE|RD|ROAD|BLVD|BOULEVARD|DR|DRIVE|LN|LANE|HWY|HIGHWAY|"
     r"PKWY|PARKWAY|WAY|CT|COURT|PL|PLACE|CIR|CIRCLE|TER|TERRACE|TRL|TRAIL|PIKE"
@@ -100,6 +105,18 @@ PATTERNS = {
             r"(?<![\w#+])(?:[" + _UPPER + r"0-9#][" + _UPPER + r"0-9&'.+#\-]*,?\s+){1,5}(?:" + _ORG_SUFFIX + r")(?![\w])"
         ),
         re.compile(r"\b(?:[" + _UPPER + r"][" + _LOWER + r"][\w'&.\-]*,?\s+){1,5}(?:" + _TITLE_SUFFIX + r")(?![\w])"),
+        re.compile(
+            r"(?<![\w#+])(?:[" + _UPPER + r"0-9][" + _UPPER + r"0-9&'.\-]*,?\s+){1,6}(?:" + _BANK_SUFFIX_UPPER + r")"
+            r"(?:\s+OF(?:\s+THE)?(?:\s+[" + _UPPER + r"][" + _UPPER + r"'.\-]*){1,3})?(?![\w])"
+        ),
+        # Title case only, so an upper-case word ("BANK") cannot start a match
+        # and swallow the next name; "and", "of", "the" may sit inside one.
+        re.compile(
+            r"\b[" + _UPPER + r"][" + _LOWER + r"][\w'&.\-]*"
+            r"(?:,?\s+(?:[" + _UPPER + r"][" + _LOWER + r"][\w'&.\-]*|and|of|the|&)){0,6}?"
+            r"\s+(?:" + _BANK_SUFFIX_TITLE + r")"
+            r"(?:\s+of(?:\s+the)?(?:\s+[" + _UPPER + r"][" + _LOWER + r"][\w'.\-]*){1,3})?(?![\w])"
+        ),
     ],
     "street": [
         re.compile(
@@ -118,6 +135,19 @@ PATTERNS = {
         re.compile(
             r"(?i)\b(?:US\s?DOT|DOT(?:[\s_#\-]*(?:number|no\.?|num))?|dot_number|entity_key|"
             r"facility[\s_]id|CCN)[\s\"':=#]{0,4}([0-9A-Z]{3,8})\b"
+        )
+    ],
+    # An FDIC certificate, by any label FDIC gives one: the bank's own CERT, its
+    # successor's NEWCERT, its chain end's ULTCERT. CERTs run from one digit up,
+    # so without the label most are below the bare-number floor and were never
+    # looked up. A placeholder such as <CERT-1> is excluded by the look-behind.
+    # Backticks and asterisks may sit between label and value because docs
+    # write the field name as code or bold (`NEWCERT` 4-digit-value). A decimal
+    # or percentage after the label is a figure about CERTs, not one.
+    "cert": [
+        re.compile(
+            r"(?i)(?<![\w<])(?:NEW|ULT)?CERT(?:IFICATE)?(?:[\s_]*(?:number|no\.?|num|#))?"
+            r"[\s\"'`*:=#]{0,6}(\d{1,6})(?![\w\-%]|\.\d)"
         )
     ],
     # A bare 5-8 digit number. DOT numbers and CMS facility IDs are both this
@@ -173,6 +203,9 @@ class Finding:
     verdict: str = "NOT_FOUND"
     source_hits: dict[str, str] = field(default_factory=dict)
     flagged_pairs: dict[str, int] = field(default_factory=dict)
+    # Pairs the registrar itself recorded as a succession (`declared: truth`).
+    # Kept apart from flagged_pairs because CLAUDE.md lets those be named.
+    truth_pairs: dict[str, int] = field(default_factory=dict)
 
 
 def normalize(value: str) -> str:
@@ -261,7 +294,7 @@ def extract(text: str) -> Iterator[Candidate]:
                 value = (match.group(1) if pattern.groups else match.group(0)).strip(" .,;:")
                 if value:
                     found[Candidate(kind, value)] = None
-    labelled = {c.value for c in found if c.kind == "key"}
+    labelled = {c.value for c in found if c.kind in ("key", "cert")}
     yield from (c for c in found if not (c.kind == "number" and c.value in labelled))
 
 
@@ -393,8 +426,15 @@ def field_clause(properties: dict, path: str, value: str) -> dict | None:
 
 
 def source_lookup(es: Elasticsearch, project: Project, properties: dict, candidate: Candidate) -> tuple[str, list[str]]:
-    """How many source records carry the value (capped at the shared threshold), and their keys."""
-    if candidate.kind in ("key", "number"):
+    """How many source records carry the value (capped at the shared threshold), and their keys.
+
+    A labelled CERT is looked up only in a project keyed by CERT. Searching it
+    as a DOT number or CMS facility ID too would attach an unrelated carrier's
+    pair count to a bank certificate and report a coincidence as a leak.
+    """
+    if candidate.kind == "cert":
+        clauses = [{"term": {project.entity_key: candidate.value}}] if project.entity_key == "CERT" else []
+    elif candidate.kind in ("key", "number"):
         clauses = [{"term": {project.entity_key: candidate.value}}]
     else:
         clauses = [
@@ -417,32 +457,43 @@ def source_lookup(es: Elasticsearch, project: Project, properties: dict, candida
     return count, keys
 
 
-def pair_count(es: Elasticsearch, project: Project, keys: list[str]) -> int:
-    """Pairs, across every sweep this project has kept, that name any of these entities.
+def pair_count(es: Elasticsearch, project: Project, keys: list[str]) -> tuple[int, int]:
+    """(flagged, recorded) pairs, across every sweep this project has kept, naming these entities.
 
     Every retained sweep counts, not just the one the alias points at: an
     entity matched by last week's experiment was still matched, and the text
     being checked may describe that run.
+
+    A pair tagged `declared: truth` is a succession the registrar recorded, which
+    CLAUDE.md lets be named, so it is counted apart; every other pair, including
+    `explains`, counts as flagged. Sweeps without declared links carry no
+    `declared` field, so excluding truth leaves all their pairs flagged.
     """
     if not keys:
-        return 0
+        return 0, 0
     clauses = [{"match_phrase": {side + ".entity_key": key}} for key in keys for side in PAIR_SIDES]
-    response = es.count(
-        index=project.pair_pattern,
-        query={"bool": {"should": clauses, "minimum_should_match": 1}},
-        allow_no_indices=True,
-        ignore_unavailable=True,
-    )
-    return response["count"]
+    names = {"bool": {"should": clauses, "minimum_should_match": 1}}
+    truth = {"term": {"declared": "truth"}}
+    scope = {"index": project.pair_pattern, "allow_no_indices": True, "ignore_unavailable": True}
+    flagged = es.count(query={"bool": {"filter": [names], "must_not": [truth]}}, **scope)["count"]
+    recorded = es.count(query={"bool": {"filter": [names, truth]}}, **scope)["count"]
+    return flagged, recorded
 
 
 def verdict_for(finding: Finding) -> str:
-    """Rank the evidence: shared outranks flagged, because a shared value identifies no one entity."""
+    """Rank the evidence: shared outranks flagged, because a shared value identifies no one entity.
+
+    DECLARED sits below FLAGGED: a bank in one undeclared pair is flagged even
+    if FDIC recorded its other successions, because that one pair is the
+    unverified claim.
+    """
     counts = [hits for hits in finding.source_hits.values() if hits]
     if any(hits.endswith("+") for hits in counts):
         return "SHARED"
     if any(finding.flagged_pairs.values()):
         return "FLAGGED"
+    if any(finding.truth_pairs.values()):
+        return "DECLARED"
     if any(hits != "0" for hits in counts):
         return "REAL"
     return "NOT_FOUND"
@@ -463,7 +514,9 @@ def evaluate(es: Elasticsearch, projects: list[Project], findings: list[Finding]
             hits, keys = source_lookup(es, project, properties, finding.candidate)
             finding.source_hits[project.name] = hits
             if keys and not hits.endswith("+"):
-                finding.flagged_pairs[project.name] = pair_count(es, project, keys)
+                flagged, recorded = pair_count(es, project, keys)
+                finding.flagged_pairs[project.name] = flagged
+                finding.truth_pairs[project.name] = recorded
     for finding in findings:
         if finding.verdict != "ALLOWED":
             finding.verdict = verdict_for(finding)
@@ -477,7 +530,7 @@ def report(findings: list[Finding], data_files: list[str], unchecked: list[str])
         for path in data_files:
             print("  " + path)
         print()
-    order = ["FLAGGED", "REAL", "SHARED"]
+    order = ["FLAGGED", "DECLARED", "REAL", "SHARED"]
     for verdict in order:
         group = [f for f in findings if f.verdict == verdict]
         if not group:
@@ -485,7 +538,12 @@ def report(findings: list[Finding], data_files: list[str], unchecked: list[str])
         print("{} ({})".format(verdict, len(group)))
         for finding in group:
             evidence = ", ".join(
-                "{}: {} source records, {} pairs".format(name, hits, finding.flagged_pairs.get(name, "-"))
+                "{}: {} source records, {} pairs{}".format(
+                    name,
+                    hits,
+                    finding.flagged_pairs.get(name, "-"),
+                    " + {} recorded successions".format(finding.truth_pairs[name]) if finding.truth_pairs.get(name) else "",
+                )
                 for name, hits in finding.source_hits.items()
                 if hits and hits != "0"
             )
@@ -537,7 +595,7 @@ def main() -> int:
         print(json.dumps({
             "findings": [
                 {"kind": f.candidate.kind, "value": f.candidate.value, "verdict": f.verdict,
-                 "source_hits": f.source_hits, "flagged_pairs": f.flagged_pairs,
+                 "source_hits": f.source_hits, "flagged_pairs": f.flagged_pairs, "truth_pairs": f.truth_pairs,
                  "locations": [w for w, _ in f.locations]}
                 for f in findings if f.verdict not in ("ALLOWED", "NOT_FOUND")
             ],
