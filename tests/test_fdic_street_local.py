@@ -28,30 +28,45 @@ _SWEEPS = ("bank-reappearance", "bank-absorption")
 
 
 def _load(*parts):
+    """One committed FDIC config file, read as plain JSON.
+
+    Plain json rather than file_utils.load_from_file, because these tests
+    assert on keys and list order exactly as written, and a SimpleNamespace
+    would hide a key that is present but misspelled behind getattr defaults.
+    """
     return json.loads(_CONFIG.joinpath(*parts).read_text())
 
 
 @pytest.mark.parametrize("step", _SWEEPS)
 def test_address_signal_reads_the_town_qualified_street(step):
-    """Pointed back at ADDRESS, every bare "Main Street" matches across towns."""
+    """Pointed back at ADDRESS, every bare "Main Street" matches across towns.
+
+    The subfields are pinned too: swapped, the exact comparison would read the
+    town-stripped tokens and the fix would be undone with the field name intact.
+    """
     signals = _load(step, "entity-match.json")["signals"]
     address = [s for s in signals if s["type"] == "address"]
     assert [s["fields"] for s in address] == [["STREET_LOCAL"]]
+    assert address[0]["exact_subfield"] == "clean"
+    assert address[0]["fuzzy_subfield"] == "tokens"
 
 
 def test_pipeline_qualifies_the_street_by_city_and_state():
-    """The derived value must carry the town, and a blank street none at all.
+    """The derived value must carry the town, and a blank part none at all.
 
     Without CITY and STALP in the value, the exact comparison is the old
     ADDRESS one. Without the guard on a blank ADDRESS, every bank with no
-    street would share " | <city> <state>" with every other bank in its town.
+    street would share " | <city> <state>" with every other bank in its town;
+    without the guards on CITY and STALP, a bank with no town would carry
+    "Main Street | " and match every other bare "Main Street" missing one.
     """
     processors = _load("institutions-ingestion-setup", "pipelines.json")["processors"]
     derive = [p["set"] for p in processors if p.get("set", {}).get("field") == "STREET_LOCAL"]
     assert len(derive) == 1
     value = derive[0]["value"]
     assert value.index("ADDRESS") < value.index("|") < value.index("CITY") < value.index("STALP")
-    assert "ctx.ADDRESS != null" in derive[0]["if"]
+    for field in ("ADDRESS", "CITY", "STALP"):
+        assert "ctx.{} != null".format(field) in derive[0]["if"]
 
 
 def test_fuzzy_subfield_drops_the_town_and_exact_keeps_it():

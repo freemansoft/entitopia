@@ -89,7 +89,15 @@ identifier (`CERT` is) and is loaded only as a keyword.
    whole value, so an exact match and the seed need the same street in the same
    town, and its `tokens` subfield drops the town again, so the fuzzy
    comparison still reads the street alone. Both sweeps' address signal reads
-   it. Guarded by `tests/test_fdic_street_local.py`, which reads the committed
+   it. A bank missing its city or state gets no `STREET_LOCAL` at all, since a
+   town-less `Main Street | ` would bring the cross-town match back (no loaded
+   bank has a street without both).
+
+   The hazard is only partly closed. The fuzzy comparison still reads the bare
+   street, so two "Main Street" banks in different towns of the same state
+   still score containment 1.0 times `fuzzy_scale` 0.7, an address score of
+   0.7; the cross-state penalty halves that only between states. What the fix
+   removes is the exact 1.0 and the seed flood. Guarded by `tests/test_fdic_street_local.py`, which reads the committed
    files; the pipeline and analyzer were checked once with `_simulate` and
    `_analyze`.
 
@@ -239,7 +247,13 @@ shows is not quite so.
 
 The valley rule wants the gap between a reappearance mode near the shutdown and
 an absorption mode years before it. Tune-half `NEWCERT` links with both dates
-(11,519), binned by successor `ESTYMD` minus predecessor `ENDEFYMD`:
+(11,519), binned by successor `ESTYMD` minus predecessor `ENDEFYMD`. The
+`--gaps` bins of `measure_declared_links.py` are too coarse for this, so the
+table was computed directly from `institutions-000001`: every document with
+`INACTIVE` 1 and `split_half(CERT) == "tune"` (`matching/declared.py`), whose
+`NEWCERT` is not `0` and names a `CERT` in the index, and where both dates are
+present. Each bin includes its lower bound and excludes its upper bound in whole
+days; the rows sum to the `--gaps` totals (133 at -180 to -1, 661 at 0 to 365).
 
 | Gap (days)     | Links | Per 30 days |
 | -------------- | ----- | ----------- |
@@ -257,7 +271,7 @@ an absorption mode years before it. Tune-half `NEWCERT` links with both dates
 | 7 to 365       | 0     | 0           |
 | after 365      | 2     |             |
 
-The reappearance mode is a spike: 651 of the 796 links in the reappearance
+The reappearance mode is a spike: 651 of the 794 links in the reappearance
 window have a successor registered on the shutdown day itself, and none at all
 from 7 to 365 days after. Before the shutdown the density falls to about 6 to 8
 links per 30 days by -90 and stays there back to -3650; the absorption mode
@@ -318,7 +332,13 @@ What the rejected runs showed, so they need not be rerun blind:
   both sweeps (reappearance precision at 0.6 rose from 0.63 to 0.91), but it
   dilutes every truth pair whose successor sits in another town or in a city
   common enough to have low rarity, and that cost recall at 0.70. The field
-  stays loaded so the trial is a config edit.
+  stays loaded so the trial is a config edit. Before re-enabling it, note that
+  the sweep counts value frequencies with a terms aggregation capped at
+  `RARITY_TERMS_SIZE` = 500 (`phase_providers/phase_entity_match.py`), and
+  `LOCALITY` has 10,269 distinct values. The 500 most common cover 9,687 banks
+  and reach down to towns with 8; any town outside them reads as unseen and
+  scores rarity 1.0, against about 0.77 for the least common town inside, so
+  every small town scores as if it were unique.
 - **R6, seeding on unstopped name words.** It is the reappearance recall lever:
   not-retrieved links fell from 300 to 50 and overall recall rose from 0.62 to
   0.79. The cost is eight times the pairs, 5.3 million candidates examined
@@ -456,8 +476,8 @@ neither sweep searches.
   90.8% precision there (97.4% at 0.80). The tune half read 0.509 and 0.960 at
   0.70, so the report half is a little lower on both, as a held-out half should
   be. 270 of the 272 misses were never retrieved: the successor shares neither
-  a phonetic name word nor a street in the same town. Only 2 were retrieved and
-  scored too low, so no weight change can recover the rest; seeding as in R6
+  a phonetic name word nor a street in the same town. Only 2 were retrieved but
+  not emitted, so no weight change can recover the rest; seeding as in R6
   retrieves most of them.
 - **Absorption does not work on institution records.** It finds 12.4% of the
   report half's absorptions, 2.1% at 0.70, with 18.4% precision at 0.70 (87.0%
@@ -470,6 +490,21 @@ neither sweep searches.
   absorption links are same-state, 13% same-town), so the fields FDIC carries on
   an institution record cannot connect most absorptions to their acquirer. No
   weight, threshold or `max_candidates` value changes that.
+
+  How these were produced, so they can be regenerated: the 8,508 are the links
+  `measure_declared_links.py --step bank-absorption --half tune` classifies
+  `not_retrieved` under the first-run `entity-match.json` (commit `3fe1e38`,
+  address on `ADDRESS`); retrieval status comes from re-running the candidate
+  search, so it needs only that config and the institutions index. Each link's
+  predecessor and target documents were then compared: a shared name word is a
+  lowercased whitespace token of `NAME` or `PRIORNAME1`, stripped of
+  `,.&()'`, that is not in the stop list above (with its legal suffixes, plus
+  `n.a.` and `na`), so the 440 is approximate; the town is `CITY` equal
+  ignoring case with the same `STALP`; the street is `ADDRESS` equal ignoring
+  case; the holding company is a non-empty `RSSDHCR` equal on both. The 84% and
+  13% are the same state and town comparisons over all 10,723 tune-half links
+  whose gap is below -180 days.
+
 - **Precision depends on the score band far more than in reappearance.**
   Absorption at 0.35 to 0.70 is mostly unrelated banks that share a name word,
   in another town and usually another state (69% of undeclared pairs at 0.5

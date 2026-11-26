@@ -96,10 +96,10 @@
     },
     {
       "set": {
-        "description": "STREET_LOCAL is the street qualified by its town, so the address signal's exact comparison and its seed need the same street in the same city and state. FDIC lists a bare 'Main Street' for 1,481 banks; compared on ADDRESS alone, each of them matched every other at 1.0 across state lines",
+        "description": "STREET_LOCAL is the street qualified by its town, so the address signal's exact comparison and its seed need the same street in the same city and state. FDIC lists a bare 'Main Street' for 1,481 banks; compared on ADDRESS alone, each of them matched every other at 1.0 across state lines. A missing city or state leaves it absent rather than town-less, because 'Main Street | ' would again match every bare Main Street with no town",
         "field": "STREET_LOCAL",
         "value": "{{{ADDRESS}}} | {{{CITY}}} {{{STALP}}}",
-        "if": "ctx.ADDRESS != null && ctx.ADDRESS.toString().trim() != ''"
+        "if": "ctx.ADDRESS != null && ctx.ADDRESS.toString().trim() != '' && ctx.CITY != null && ctx.CITY.toString().trim() != '' && ctx.STALP != null && ctx.STALP.toString().trim() != ''"
       }
     },
     {
