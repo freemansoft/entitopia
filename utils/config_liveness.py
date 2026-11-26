@@ -85,7 +85,7 @@ def _declared_paths(raw):
     yield (raw.get("population") or {}).get("sort_field"), "population.sort_field"
 
     lifecycle = raw.get("lifecycle") or {}
-    for key in ("shutdown_date", "registration_date", "shutdown_reason"):
+    for key in ("shutdown_date", "registration_date", "shutdown_reason", "end_date"):
         yield lifecycle.get(key), "lifecycle.{}".format(key)
 
     for signal_type, key, path in _signal_field_paths(raw):

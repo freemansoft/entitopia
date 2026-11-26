@@ -4,7 +4,8 @@ import logging
 from dataclasses import dataclass, field
 
 from matching.documents import EntityDoc, ScoringContext
-from matching.signals import _latest_date, build_signal
+from matching.signals import build_signal
+from matching.window import LifecycleWindow
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +124,6 @@ class PairScorer:
         # tier had exactly that shape and is not a reincarnation by the
         # project's own definition. None on either bound leaves the gate off,
         # so a deployment that has not opted in keeps its population.
-        self.min_gap_days = getattr(scoring_config, "min_gap_days", None)
-        self.max_gap_days = getattr(scoring_config, "max_gap_days", None)
         # The same lifecycle block TemporalSignal scores from, so the gate and
         # the score cannot disagree about which dates a pair's gap is measured
         # between. This used to reach into the temporal signal's own config for
@@ -132,27 +131,9 @@ class PairScorer:
         # a second source for them -- and the phase had already done exactly
         # that, with literals of its own.
         self.lifecycle = lifecycle
-
-    def _gap_outside_window(self, pred, cand):
-        """Whether this pair's timing puts it outside the configured window.
-
-        Returns False when either date is unparseable: that is "not evaluable",
-        not "incoherent", and dropping it would discard every carrier carrying
-        a malformed legacy date — a recall loss wearing a precision gain's
-        clothes. Same distinction the signals draw between None and 0.0.
-        """
-        if self.min_gap_days is None and self.max_gap_days is None:
-            return False
-        if self.lifecycle is None:
-            return False
-        shutdown = _latest_date(pred.value(self.lifecycle.shutdown_date))
-        registered = _latest_date(cand.value(self.lifecycle.registration_date))
-        if shutdown is None or registered is None:
-            return False
-        gap = (registered - shutdown).days
-        if self.min_gap_days is not None and gap < self.min_gap_days:
-            return True
-        return self.max_gap_days is not None and gap > self.max_gap_days
+        # The gate and candidate retrieval read the window through one class,
+        # so a pair retrieval keeps is a pair this gate can pass.
+        self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
 
     def score_pair(  # noqa: PLR0911 -- one guard clause per rejection reason is
         # this module's whole design (see module and class docstrings); folding
@@ -173,7 +154,7 @@ class PairScorer:
         if pred.entity_key == cand.entity_key:
             return None
 
-        if self._gap_outside_window(pred, cand):
+        if self.window is not None and not self.window.admits(pred, cand):
             return None
 
         contributions: list[SignalContribution] = []

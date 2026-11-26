@@ -233,6 +233,7 @@ class PhaseEntityMatch:
             "candidates": 0,
             "pairs": 0,
             "truncated": 0,
+            "undated_predecessors": 0,
             "lookup_errors": 0,
             "scoring_errors": 0,
             "index_errors": 0,
@@ -260,9 +261,10 @@ class PhaseEntityMatch:
         self.logger.info(
             "entity-match complete: {} predecessors, {} candidates examined, "
             "{} pairs emitted, {} indexed, {} truncated candidate sets, "
-            "{} lookup / {} scoring / {} index errors".format(
+            "{} undated predecessors skipped, {} lookup / {} scoring / {} index errors".format(
                 stats["predecessors"], stats["candidates"], stats["pairs"],
-                indexed, stats["truncated"], stats["lookup_errors"],
+                indexed, stats["truncated"], stats["undated_predecessors"],
+                stats["lookup_errors"],
                 stats["scoring_errors"], stats["index_errors"],
             )
         )
@@ -855,6 +857,14 @@ class PhaseEntityMatch:
 
         for pred_hit in selector.iterate():
             stats["predecessors"] += 1
+            window = finder.window
+            if window is not None and window.skips_predecessor(
+                window.shutdown(pred_hit["_source"])
+            ):
+                # Counted, not silently dropped: a skipped predecessor is a
+                # real omission from the sweep and must show in its totals.
+                stats["undated_predecessors"] += 1
+                continue
             try:
                 pred_doc, cand_docs, truncated = finder.find(pred_hit, ctx)
             except Exception as e:

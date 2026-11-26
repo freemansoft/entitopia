@@ -116,7 +116,7 @@ def test_unparseable_date_is_not_treated_as_outside_the_window():
         scoring,
         lifecycle=_lifecycle(),
     )
-    assert scorer._gap_outside_window(_pred("not-a-date"), _cand()) is False
+    assert scorer.window.admits(_pred("not-a-date"), _cand()) is True
 
 
 def test_shipped_dot_lifecycle_matches_the_paths_that_were_hardcoded():

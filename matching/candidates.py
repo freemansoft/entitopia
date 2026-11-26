@@ -12,8 +12,9 @@ double-metaphone implementation drifting from the plugin's.
 import datetime
 import logging
 
-from matching.documents import EntityDoc, read_path
-from matching.signals import _latest_date, build_signal
+from matching.documents import EntityDoc
+from matching.signals import build_signal
+from matching.window import LifecycleWindow
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,9 @@ class CandidateFinder:
         # a temporal entry is constructed here too and would refuse without it.
         self.signals = [build_signal(c, lifecycle) for c in self.signal_configs]
         # Kept to order and bound retrieval by the same dates and window the
-        # scorer judges a pair by; see _window_filter and _sort.
+        # scorer judges a pair by; see LifecycleWindow.query_filter and _sort.
         self.lifecycle = lifecycle
-        self.min_gap_days = getattr(scoring_config, "min_gap_days", None)
-        self.max_gap_days = getattr(scoring_config, "max_gap_days", None)
+        self.window = LifecycleWindow.from_config(lifecycle, scoring_config)
 
     def sort_fields(self) -> dict[str, str]:
         """Fields the retrieval query sorts or filters on, with the type each needs.
@@ -86,48 +86,10 @@ class CandidateFinder:
         fields = {self.entity_key_field: "sortable"}
         if self.lifecycle is not None:
             fields[self.lifecycle.registration_date] = "date"
+            end_date = getattr(self.lifecycle, "end_date", None)
+            if end_date:
+                fields[end_date] = "date"
         return fields
-
-    def _shutdown(self, pred_source):
-        """The predecessor's most recent shutdown, read exactly as the scorer reads it."""
-        if self.lifecycle is None:
-            return None
-        return _latest_date(read_path(pred_source, self.lifecycle.shutdown_date))
-
-    def _window_filter(self, shutdown):
-        """The scorer's gap window as a query filter, or [] when there is none.
-
-        The scorer drops any pair whose successor registered outside
-        [min_gap_days, max_gap_days] of the shutdown, so every candidate
-        outside it takes a slot under max_candidates and can never be emitted.
-        Measured 2026-11-06 on DOT-Commercial, applying it cut the median
-        predecessor's seed hits from 14,128 to 1,095.
-
-        It must keep everything the scorer would keep, or it turns a precision
-        gate into a recall loss: bounds are inclusive and rounded to whole
-        days because the scorer counts whole days, and a candidate with no
-        registration date is kept because the scorer reads that as "not
-        evaluable" and lets it through.
-        """
-        if shutdown is None or (self.min_gap_days is None and self.max_gap_days is None):
-            return []
-        bounds = {}
-        if self.min_gap_days is not None:
-            bounds["gte"] = (shutdown + datetime.timedelta(days=self.min_gap_days)).isoformat() + "||/d"
-        if self.max_gap_days is not None:
-            bounds["lte"] = (shutdown + datetime.timedelta(days=self.max_gap_days)).isoformat() + "||/d"
-        field = self.lifecycle.registration_date
-        return [
-            {
-                "bool": {
-                    "should": [
-                        {"range": {field: bounds}},
-                        {"bool": {"must_not": {"exists": {"field": field}}}},
-                    ],
-                    "minimum_should_match": 1,
-                }
-            }
-        ]
 
     def _sort(self, shutdown):
         """A total order for the candidate search, so the cap cuts the same place every load.
@@ -215,7 +177,7 @@ class CandidateFinder:
             logger.debug("No seed clauses for predecessor %s", pred_id)
             return None, [], False
 
-        shutdown = self._shutdown(pred_source)
+        shutdown = self.window.shutdown(pred_source) if self.window else None
         query = {
             "bool": {
                 "should": clauses,
@@ -223,7 +185,7 @@ class CandidateFinder:
                 "must_not": [{"ids": {"values": [pred_id]}}],
             }
         }
-        window = self._window_filter(shutdown)
+        window = self.window.query_filter(shutdown) if self.window else []
         if window:
             query["bool"]["filter"] = window
         response = self.es.search(
