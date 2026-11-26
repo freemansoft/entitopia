@@ -596,10 +596,22 @@ class PhaseEntityMatch:
         """
         try:
             current = self.es.indices.get_mapping(index=target_index)
-            meta = {}
-            for entry in dict(current).values():
-                meta = dict(entry.get("mappings", {}).get("_meta", {}))
-                break
+            entries = list(dict(current).values())
+            if not entries or not isinstance(
+                getattr(entries[0], "get", lambda _k: None)("mappings"), dict
+            ):
+                # Writing from an empty fallback would erase the provenance
+                # stamp, which cannot be rebuilt; the counts can, from the
+                # completion log line. So skip rather than guess.
+                self.logger.error(
+                    "Could not read the existing _meta of {} (unexpected "
+                    "get_mapping response shape); skipping the declared-link "
+                    "accounting write so provenance is not erased".format(
+                        target_index
+                    )
+                )
+                return
+            meta = dict(entries[0]["mappings"].get("_meta", {}))
             meta["declared_accounting"] = {
                 "truth_links": stats["truth_links"],
                 "truth_retrieved": stats["truth_retrieved"],

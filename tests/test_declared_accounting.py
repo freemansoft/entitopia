@@ -7,6 +7,7 @@ emitted), that they survive in the index _meta without erasing provenance, and
 that retrieving nothing fails the run.
 """
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from matching.declared import DeclaredLinks
 from matching.documents import EntityDoc, ScoringContext
 from matching.scorer import ScoredPair
+from matching.window import LifecycleWindow
 from phase_providers.phase_entity_match import PhaseEntityMatch, RunProvenance
 
 # _to_action reads provenance attributes, so a bare dict cannot stand in.
@@ -134,3 +136,38 @@ def test_accounting_write_keeps_existing_provenance():
     assert indices.written["declared_accounting"] == {
         "truth_links": 2, "truth_retrieved": 1, "truth_emitted": 1,
     }
+
+
+def test_unreadable_meta_skips_the_write_and_logs_error(caplog):
+    """An unrecognised response must not fall back to an empty _meta.
+
+    put_mapping replaces _meta, so writing from an empty fallback would erase
+    the provenance stamp silently.
+    """
+    indices = _Indices({})
+    indices.get_mapping = lambda index: {index: {"unexpected": True}}
+    phase = _phase()
+    phase.es = SimpleNamespace(indices=indices)
+    with caplog.at_level(logging.ERROR):
+        phase._record_declared_accounting("pairs", _stats())
+    assert indices.written is None
+    assert len([r for r in caplog.records if r.levelno == logging.ERROR]) == 1
+
+
+def test_undated_skipped_predecessor_adds_no_truth_links():
+    """A skipped predecessor was never swept, so its target cannot count."""
+    window = LifecycleWindow.from_config(
+        SimpleNamespace(shutdown_date="shut", registration_date="reg"),
+        SimpleNamespace(undated_predecessors="skip"),
+    )
+    finder = _Finder([EntityDoc("B", {})])
+    finder.window = window
+    stats = _stats()
+    list(
+        _phase()._generate_actions(
+            _Selector(), finder, _Scorer({"B": 0.9}), ScoringContext(),
+            "t", 10, _PROVENANCE, stats,
+        )
+    )
+    assert stats["undated_predecessors"] == 1
+    assert stats["truth_links"] == 0
