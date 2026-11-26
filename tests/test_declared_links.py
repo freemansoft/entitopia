@@ -156,3 +156,12 @@ def test_liveness_reports_missing_rule_field():
         "declared_links": {"rules": [{**SUCCESSOR, "field": "NEWCERT_GONE"}]},
     }
     assert any("NEWCERT_GONE" in e for e in config_liveness.check(_Es(), raw, "t"))
+
+
+@pytest.mark.parametrize(
+    "override", [{"role": "truths"}, {"kind": "chain"}], ids=["role", "kind"]
+)
+def test_unknown_role_or_kind_is_refused(override):
+    # A typo must fail at load, not leave a rule that never fires.
+    with pytest.raises(ValueError, match="role must be one of"):
+        links({**SUCCESSOR, **override})

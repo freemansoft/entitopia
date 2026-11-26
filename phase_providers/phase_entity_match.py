@@ -243,6 +243,9 @@ class PhaseEntityMatch:
             "pairs": 0,
             "truncated": 0,
             "undated_predecessors": 0,
+            "truth_links": 0,
+            "truth_retrieved": 0,
+            "truth_emitted": 0,
             "lookup_errors": 0,
             "scoring_errors": 0,
             "index_errors": 0,
@@ -270,13 +273,21 @@ class PhaseEntityMatch:
         self.logger.info(
             "entity-match complete: {} predecessors, {} candidates examined, "
             "{} pairs emitted, {} indexed, {} truncated candidate sets, "
-            "{} undated predecessors skipped, {} lookup / {} scoring / {} index errors".format(
+            "{} undated predecessors skipped, {} lookup / {} scoring / {} index errors, "
+            "truth links {} / retrieved {} / emitted {}".format(
                 stats["predecessors"], stats["candidates"], stats["pairs"],
                 indexed, stats["truncated"], stats["undated_predecessors"],
                 stats["lookup_errors"],
                 stats["scoring_errors"], stats["index_errors"],
+                stats["truth_links"], stats["truth_retrieved"],
+                stats["truth_emitted"],
             )
         )
+        if self.declared_links is not None:
+            # Before the guard can raise, so the evidence of a failed run is
+            # still on the index afterwards.
+            self._record_declared_accounting(index_config.index, stats)
+        self._raise_if_no_truth_retrieved(stats)
         self._raise_on_catastrophic_error_rate(stats)
 
         if indexed == 0:
@@ -572,6 +583,53 @@ class PhaseEntityMatch:
                 "Could not stamp source provenance onto {} ({}); the index will not "
                 "record which analyzers scored its pairs, though the pair "
                 "documents still will".format(target_index, e)
+            )
+
+    def _record_declared_accounting(self, target_index, stats):
+        """Persist the truth-link counts so a recall figure can be audited later.
+
+        put_mapping replaces the whole _meta, and _stamp_provenance keeps the
+        source index and analysis fingerprint there, so this reads the current
+        _meta and writes the union. Overwriting would silently erase the
+        provenance of every pair in the index. Not fatal, for the same reason
+        stamping is not: the counts are also in the log line.
+        """
+        try:
+            current = self.es.indices.get_mapping(index=target_index)
+            meta = {}
+            for entry in dict(current).values():
+                meta = dict(entry.get("mappings", {}).get("_meta", {}))
+                break
+            meta["declared_accounting"] = {
+                "truth_links": stats["truth_links"],
+                "truth_retrieved": stats["truth_retrieved"],
+                "truth_emitted": stats["truth_emitted"],
+            }
+            self.es.indices.put_mapping(index=target_index, meta=meta)
+        except Exception as e:
+            self.logger.error(
+                "Could not record declared-link accounting on {} ({})".format(
+                    target_index, e
+                )
+            )
+
+    def _raise_if_no_truth_retrieved(self, stats):
+        """Fail a sweep whose recall would be zero by construction.
+
+        When truth links exist but none reached the candidate set, every pair
+        reads as undeclared and recall reads as zero, which looks like a bad
+        matcher rather than a tag or search that cannot reach the targets.
+        This used to log success.
+        """
+        if stats["truth_links"] > 0 and stats["truth_retrieved"] == 0:
+            raise RuntimeError(
+                "{} truth links were declared but none of their targets was "
+                "retrieved as a candidate. Check the declared_links fields "
+                "(the rule's field must hold the successor's entity key, in "
+                "the same form): either the tag or the search cannot reach "
+                "the targets, so recall would be meaningless.".format(
+                    stats["truth_links"]
+                )
             )
 
     def _check_analysis_fingerprint(self, source_index, stored, expected):
@@ -889,6 +947,15 @@ class PhaseEntityMatch:
             if pred_doc is None:
                 continue
             stats["candidates"] += len(cand_docs)
+            targets = (
+                self.declared_links.truth_targets(pred_doc, ctx)
+                if self.declared_links is not None
+                else set()
+            )
+            stats["truth_links"] += len(targets)
+            stats["truth_retrieved"] += len(
+                targets & {c.entity_key for c in cand_docs}
+            )
             if truncated:
                 stats["truncated"] += 1
 
@@ -914,6 +981,8 @@ class PhaseEntityMatch:
                     continue
                 seen_pairs.add(key)
                 stats["pairs"] += 1
+                if pair.successor.entity_key in targets:
+                    stats["truth_emitted"] += 1
                 yield self._to_action(pair, target_index, provenance)
 
     def _to_action(self, pair, target_index, provenance):
