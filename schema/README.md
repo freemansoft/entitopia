@@ -39,6 +39,25 @@ The rule: **schematize what entitopia invented; let Elasticsearch reject what El
 
 This does mean a mapping can be well-formed and still wrong — an analyzer naming a column the source has since renamed is silently inert. No schema can see that. It is what the `validate` phase's third tier is for, which asks the live index whether the fields and subfields a config names actually exist.
 
+## What the lifecycle, window and declared-link keys mean
+
+These keys of `entity-match.schema.json` are the framework's measurement vocabulary. All are optional, and each defaults to what a project did before the key existed, so DOT-Commercial and CMS-Providers are unaffected. The README's § Inside `entity-match` explains why they exist.
+
+| Key                               | Values                        | Why it exists                                                                                                                                                               |
+| --------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.end_date`              | path on the candidate         | The candidate's own end. One that ended before the predecessor's shutdown cannot be its successor, so retrieval and the scorer gate both drop it. Must be mapped as a date. |
+| `scoring.undated_candidates`      | `keep` (default), `exclude`   | What a candidate with no registration date does. Two sweeps that must partition the links cannot both keep it, or each emits every undated candidate.                       |
+| `scoring.undated_predecessors`    | `unbounded` (default), `skip` | What a predecessor with no shutdown date does: search with no window, or get no search and be counted in the run totals.                                                    |
+| `signals[].before_shutdown_scale` | 0 to 1, default 0.5           | On a `temporal` signal, the credit for a successor registered before the shutdown. 1.0 is the no-downtime case. Its look-back is `scoring.min_gap_days`.                    |
+| `declared_links.complete_truth`   | boolean, default `false`      | True only when the truth rules cover every real succession. Recall needs only truth rules; precision needs this, because it treats an undeclared pair as a false match.     |
+| `declared_links.rules[].name`     | string                        | Written onto each pair as `declared_by`.                                                                                                                                    |
+| `declared_links.rules[].role`     | `truth`, `explains`           | `truth` is a recorded succession and forms the recall denominator. `explains` is a recorded relationship that is not one, and keeps the pair out of the findings.           |
+| `declared_links.rules[].kind`     | `key`, `shared`               | `key`: a value at `field` on one side equals the other side's entity key. `shared`: both sides carry the same non-ignored value at `field`.                                 |
+| `declared_links.rules[].field`    | source path                   | Checked against the live mapping by `validate`, so a path that never fires is reported instead of reading as zero recall.                                                   |
+| `declared_links.rules[].reverse`  | boolean                       | `key` rules only: read `field` on the candidate against the predecessor's key. Rejected on a `shared` rule, where it would be silently ignored.                             |
+
+The overlap itself is not a key. It is `scoring.min_gap_days` and `scoring.max_gap_days`, read by the scorer gate, the candidate filter and the `temporal` signal alike.
+
 ## How they are used
 
 Automatically, by the `validate` phase, as its first of three tiers:

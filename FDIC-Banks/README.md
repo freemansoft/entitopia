@@ -335,7 +335,7 @@ What the rejected runs showed, so they need not be rerun blind:
   stays loaded so the trial is a config edit. Before re-enabling it, note that
   the sweep counts value frequencies with a terms aggregation capped at
   `RARITY_TERMS_SIZE` = 500 (`phase_providers/phase_entity_match.py`), and
-  `LOCALITY` has 10,269 distinct values. The 500 most common cover 9,687 banks
+  `LOCALITY` has 10,178 distinct values. The 500 most common cover 9,687 banks
   and reach down to towns with 8; any town outside them reads as unseen and
   scores rarity 1.0, against about 0.77 for the least common town inside, so
   every small town scores as if it were unique.

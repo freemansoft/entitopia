@@ -77,6 +77,20 @@ FLAGGED value from a duplicate-detection sweep, today
 text implies wrongdoing; CLAUDE.md exempts it. When a new project adds a
 sweep, decide which kind it is before relying on this paragraph.
 
+**The declared tag matters too.** A pair in a lifecycle sweep carries
+`declared: truth | explains | none` (see `matching/declared.py`).
+CLAUDE.md lets the two entities of a `truth` pair be named, because a
+registrar's own recorded succession, such as an FDIC `NEWCERT` merger, is a
+public record of a lawful event and not a matcher's suspicion. It never lets
+you name an entity from an `explains` pair or a `none` pair. The scanner
+cannot see the tag, so when a FLAGGED finding comes from
+`FDIC-Banks/bank-reappearance` or `FDIC-Banks/bank-absorption`, check which tag
+the pair carries before ruling. If you cannot show the pair is `truth`,
+anonymize it. An undeclared pair scoring 0.95 is still anonymized: the tag
+decides, not the score. When writing a `truth` pair into a doc, say that it is
+the registrar's recorded succession, so the sentence cannot read as the
+matcher's finding.
+
 ALLOWED (placeholders and ignore-list junk such as `(000) 000-0000`) and
 NOT_FOUND are only counted, because neither identifies anyone.
 

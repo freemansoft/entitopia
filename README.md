@@ -8,12 +8,13 @@ The initial focus is **entity resolution** — finding records that describe the
 
 ### Reference implementations
 
-The framework ships with two example projects. They exist to prove the framework works against real, messy, public data, and each one is where that dataset's specifics live:
+The framework ships with three example projects. They exist to prove the framework works against real, messy, public data, and each one is where that dataset's specifics live:
 
-| Project                             | Dataset                                                          | What it proves                                                                                                                                               |
-| ----------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`CMS-Providers`](CMS-Providers/)   | Medicare provider data (~5.6M rows across three datasets)        | Scale, composite document IDs, and phonetic/fuzzy analyzers on names and addresses. No enrichment.                                                           |
-| [`DOT-Commercial`](DOT-Commercial/) | FMCSA commercial trucking data (~25M rows across seven datasets) | Multi-dataset enrichment, two-level enrichment chains, ingestion pipelines, and entity matching — detecting "chameleon carriers" that reopen under a new ID. |
+| Project                             | Dataset                                                              | What it proves                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`CMS-Providers`](CMS-Providers/)   | Medicare provider data (~5.6M rows across three datasets)            | Scale, composite document IDs, and phonetic/fuzzy analyzers on names and addresses. No enrichment.                                                                                                                                                                              |
+| [`DOT-Commercial`](DOT-Commercial/) | FMCSA commercial trucking data (~25M rows across seven datasets)     | Multi-dataset enrichment, two-level enrichment chains, ingestion pipelines, and entity matching — detecting "chameleon carriers" that reopen under a new ID.                                                                                                                    |
+| [`FDIC-Banks`](FDIC-Banks/)         | FDIC BankFind institution records (27,838 institutions, one dataset) | **Measured** entity resolution: the FDIC records each bank's successor, so a sweep can be scored against known matches. Two sweeps (reappearance and absorption) split at one overlap window, with recall and precision reported on a half of the links kept apart from tuning. |
 
 Each project has its own README covering its datasets, the steps it runs, its index relationships, and the dataset-specific problems solved there. **This README covers the framework and the hazards common to any dataset.**
 
@@ -73,6 +74,12 @@ Two vocabularies meet in this repo: **entity resolution**, where most terms come
 - **Frequency scan** — the automatic half: a per-field pass over the corpus at sweep start that finds values shared by too many records to identify anything. Covers what nobody knew to declare. Both halves merge into one per-field ignore set.
 - **`max_shared_records`** — how many records may share a value before the frequency scan treats it as non-identifying. Per field, because the right number belongs to the attribute: siblings legitimately share a phone; two records sharing a VIN is already suspicious.
 - **Rarity weighting (IDF)** — scoring a shared value by how rare it is, rather than treating every match equally. Used where a field is real evidence but a weak one.
+- **Declared link** — a relationship the data itself records between two entities, named in `declared_links` in `entity-match.json`, such as the FDIC's recorded successor of a closed bank. Every emitted pair is tagged `declared: truth | explains | none` with the name of the rule that fired (`declared_by`). The point is to measure a sweep against something other than opinion, so a pair is tagged and kept, never dropped for being explained: dropping the truth pairs would destroy the measurement.
+- **Truth link** — a declared link whose role is `truth`: a recorded succession. Truth links alone form the known-match set, which is the recall denominator, the target of retrieval accounting and the source of the gap distribution. A pair tagged `none` is a finding; a `truth` pair is the matcher agreeing with the registrar.
+- **Explains link** — a declared link whose role is `explains`: a recorded relationship that is not a succession (a shared holding company, a multi-step merger chain). It keeps the pair out of the findings and out of the precision figure's false matches, and is not counted toward recall. Counting parents and siblings as truth would make recall mostly a measure of sibling retrieval.
+- **Overlap window** — the span of days between a predecessor's shutdown and a candidate's registration that a sweep will consider, set by `scoring.min_gap_days` and `scoring.max_gap_days`. A negative lower bound is the overlap: an operator who forms the new company before the old one stops trading has a successor registered before the shutdown, and it is still a reappearance. The scorer's gate, the candidate search's filter and the `temporal` signal's look-back all read this one setting, so they cannot disagree.
+- **Absorption sweep** — the companion to a reappearance sweep, covering candidates registered before the overlap window began and not yet ended at the shutdown: an established company taking the business over. Its window starts where the reappearance window ends, so each pair belongs to exactly one sweep. It runs without a `temporal` signal, since an established company being alive at the time proves little.
+- **Tune half / report half** — a stable hash of the predecessor key assigns each truth link to one of two halves. Weights and thresholds are tuned on `tune` and recall and precision are quoted from `report`, so the quoted figures describe how well the matcher works and not how well it was fitted.
 - **Chameleon carrier** — the DOT-Commercial target: a trucking company shut down for safety or insurance reasons that reopens under a new identifier while reusing the same addresses, phones, vehicles, and near-identical names.
 
 ### Elasticsearch
@@ -237,6 +244,20 @@ Four configuration knobs shape this, all in the step's `entity-match.json`:
 
   That second half is why this is a query-time exclusion rather than a data-cleaning pass. There is nothing to repair — the filing service's email really is that carrier's contact address. It just cannot establish that two carriers are the same operation. Deleting it would destroy correct data and the audit trail with it.
 
+#### Lifecycle window and declared links
+
+Two optional blocks of `entity-match.json` turn a sweep from "pairs that look alike" into something that can be measured. Both default to the behaviour a project had before they existed, so DOT-Commercial and CMS-Providers are unchanged by them. Their keys are in [`schema/README.md`](schema/README.md).
+
+**The window is one setting read three times.** `scoring.min_gap_days` and `scoring.max_gap_days` bound the days from a predecessor's `lifecycle.shutdown_date` to a candidate's `lifecycle.registration_date`. The scorer gates on them, the candidate search filters on them so capped slots go to candidates the gate could pass, and the `temporal` signal looks back as far as `min_gap_days` and discounts a successor registered before the shutdown by its own `before_shutdown_scale` (default 0.5). The look-back used to be a constant of 180 days, so widening the window in configuration moved what was retrieved while the signal kept scoring against the old curve. `tests/test_lifecycle.py` pins that the signal now follows the setting.
+
+Three more settings stop a window from reading "not evaluable" as "inside":
+
+- **`lifecycle.end_date`** is the candidate's own end. A candidate that ended before the predecessor shut down took nothing over, so retrieval and the scorer both drop it; a candidate with no end date is kept as still operating.
+- **`scoring.undated_candidates`** is `keep` (default) or `exclude`. Two sweeps that must partition the links would otherwise both emit every undated candidate, so reappearance sets `exclude` and absorption sets `keep`.
+- **`scoring.undated_predecessors`** is `unbounded` (default) or `skip`. A predecessor with no shutdown date either searches the whole index or is counted in the run totals and given no search.
+
+**Declared links tag, they do not filter.** `declared_links.rules` each name a `role` (`truth` or `explains`) and a `kind`: `key`, where a predecessor field holds the candidate's entity key (and `reverse` reads the candidate's field against the predecessor's key), or `shared`, where both sides carry the same non-ignored value. When several rules fire, `truth` wins. `complete_truth: true` states that the truth rules cover every real succession, which is what makes an undeclared pair presumptively a false match and so makes precision measurable; without it only recall is reported. A sweep records how many truth links it declared, retrieved and emitted in the pair index's `_meta.declared_accounting` and fails if links exist and none were retrieved, because that means the tag or the search is broken and every number from the run is meaningless. `scripts/measure_declared_links.py --project P --step S --index <pair index> --half tune|report` recomputes recall per link (retrieved versus emitted, with the denominator and every exclusion printed) and `--gaps` bins the days from shutdown to successor registration, which is how the overlap is chosen. Its output holds no entity names.
+
 ### Data staging
 
 Source data lives in `data` subdirectories named after the step that consumes it. Setup-only steps have no data.
@@ -327,6 +348,8 @@ Elasticsearch accepts a mapping for a field that never appears in the data. It a
 
 **Guarded by:** `tests/test_config_liveness.py`, which covers the validate phase's check of every field the config names against the live mapping.
 
+The same test module covers a second form of this failure: an `exact-identifier` signal that names a `phone_fields` or `text_fields` entry whose mapping declares no `<field>.keyword` subfield. The signal seeds with a term query on that subfield and the shared-value scan aggregates on it, so on a bare `keyword` field both read nothing, the seed retrieves nothing and no value is ever suppressed, while scoring still runs and the sweep logs success. A bare-keyword website field did exactly this in FDIC-Banks, and the only symptom was counts identical to a run without the signal. `validate` now reports it (`_check_identifier_keywords` in `utils/config_liveness.py`).
+
 ### 4. Validation samples left switched on in production config
 
 `num_rows` in `index-config.json` caps the load. A sample left at `50000` makes a "full" run silently truncate — and if that index then feeds an enrichment policy, the truncation propagates into everything enriched from it. Set `num_rows: null` for full loads.
@@ -385,6 +408,30 @@ The trailing number is now a generation:
 Verified 2026-11-08 by running CMS-Providers `hospital-duplicates` twice: the runs created `hospital-duplicates-2026.11.08-000001` and `-000002`, each held the same 3,627 pair ids, and the alias ended on `-000002`.
 
 **Guarded by:** `tests/test_dated_index_generations.py`, `tests/test_rerun_guards.py` and `tests/test_alias_swap.py`. The `run-entitopia` skill's re-run table lists the other ways a re-run hides earlier work, with their guards.
+
+### 9. A measured sweep can read as matcher failure when the configuration is at fault
+
+Declared links make recall computable, and every way of getting the figure wrong makes a working matcher look broken or a broken one look sound. Each is silent:
+
+- **A declared path that never fires** tags every pair `none` and reads recall as zero. The paths are checked against the live mapping by `validate`, and a run whose truth links exist but none were retrieved fails.
+- **Recall over links the sweep could never reach** (a target absent from the index, dated outside the window, or ended before the shutdown) quotes a matcher failure that is really a denominator. Such links leave the denominator and are still counted by name.
+- **A pair of sweeps whose windows overlap or leave a gap** counts a pair twice, or leaves a succession in neither sweep, so recall reads low and nothing reports it.
+- **A tune/report split that moves between runs** lets figures be fitted to the links they are quoted on. The hash is stable and keyed on the predecessor.
+- **A date sentinel loaded as a date.** The FDIC's `12/31/9999` "not ended" value became a real shutdown in year 9999 for every active bank.
+- **A short or error-page download kept as the data**, which every later phase then loads.
+- **A bare street compared across towns.** FDIC lists a number-less "Main Street" for 1,481 banks, and on `ADDRESS` alone each matched every other at 1.0. A town-qualified `STREET_LOCAL` field fixed it; the measured effect is in [`FDIC-Banks/README.md`](FDIC-Banks/README.md).
+
+**Guarded by:**
+
+- `tests/test_lifecycle_window.py`: retrieval and the scorer gate read one window, including the undated rules.
+- `tests/test_lifecycle.py`: the temporal signal's dates, look-back and before-shutdown discount come from the configuration.
+- `tests/test_declared_links.py`: each rule kind fires, placeholders never do, and the half assignment is stable.
+- `tests/test_declared_accounting.py`: the declared, retrieved and emitted counts, and that retrieving none fails the run.
+- `tests/test_measure_declared_links.py`: unreachable links leave the recall denominator, and the output names no entity.
+- `tests/test_succession_window_pairs.py`: the two sweeps' windows partition time and agree on lifecycle, population and declared links.
+- `tests/test_fdic_fetch.py`: the fetch rejects a stub or an error page and does not fuse records across a page boundary.
+- `tests/test_fdic_pipeline.py`: the `12/31/9999` sentinel is dropped before the date conversion, and `WEB_DOMAIN` is derived.
+- `tests/test_fdic_street_local.py`: both sweeps compare streets only within one town.
 
 ## Framework code vs project-specific code
 
