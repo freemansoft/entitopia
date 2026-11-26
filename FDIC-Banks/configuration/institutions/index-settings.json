@@ -10,6 +10,21 @@
             "type": "pattern_replace",
             "pattern": "(?i)\\bp[.\\s]*o[.\\s]*(box|b\\b)",
             "replacement": "pobox"
+          },
+          "url_scheme_strip": {
+            "type": "pattern_replace",
+            "pattern": "(?i)^\\s*[a-z][a-z0-9+.-]*://",
+            "replacement": ""
+          },
+          "url_www_strip": {
+            "type": "pattern_replace",
+            "pattern": "(?i)^www\\.",
+            "replacement": ""
+          },
+          "url_trailing_slash_strip": {
+            "type": "pattern_replace",
+            "pattern": "/+\\s*$",
+            "replacement": ""
           }
         },
         "filter": {
@@ -23,35 +38,57 @@
             "encoder": "beider_morse",
             "rule_type": "approx",
             "name_type": "generic",
-            "languageset": ["english", "spanish"]
+            "languageset": [
+              "english",
+              "spanish"
+            ]
           },
-          "carrier_suffix_stop": {
+          "institution_word_stop": {
             "type": "stop",
             "ignore_case": true,
             "stopwords": [
-              "llc",
+              "bank",
+              "of",
+              "national",
+              "association",
+              "savings",
+              "first",
+              "and",
+              "the",
+              "state",
+              "loan",
+              "federal",
+              "trust",
+              "company",
+              "county",
+              "community",
+              "citizens",
+              "american",
+              "farmers",
+              "city",
+              "a",
+              "security",
+              "valley",
+              "texas",
+              "s",
+              "united",
+              "fsb",
+              "peoples",
+              "central",
+              "new",
+              "commerce",
+              "f",
+              "south",
+              "north",
+              "west",
+              "merchants",
+              "union",
               "inc",
-              "ltd",
               "co",
               "corp",
               "corporation",
-              "company",
-              "trucking",
-              "truck",
-              "transport",
-              "transportation",
-              "express",
-              "logistics",
-              "carrier",
-              "carriers",
-              "enterprises",
-              "enterprise",
-              "services",
-              "service",
-              "group",
-              "freight",
-              "hauling",
-              "the"
+              "ltd",
+              "llc"
             ]
           },
           "street_suffix_canon": {
@@ -140,7 +177,11 @@
         },
         "analyzer": {
           "name_clean": {
-            "filter": ["icu_normalizer", "icu_folding", "punct_white"],
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white"
+            ],
             "tokenizer": "standard"
           },
           "name_phonetic": {
@@ -148,7 +189,7 @@
               "icu_normalizer",
               "icu_folding",
               "punct_white",
-              "carrier_suffix_stop",
+              "institution_word_stop",
               "phonetic_dm"
             ],
             "tokenizer": "standard"
@@ -158,13 +199,15 @@
               "icu_normalizer",
               "icu_folding",
               "punct_white",
-              "carrier_suffix_stop",
+              "institution_word_stop",
               "phonetic_bm"
             ],
             "tokenizer": "standard"
           },
           "street_clean": {
-            "char_filter": ["po_box_canon"],
+            "char_filter": [
+              "po_box_canon"
+            ],
             "tokenizer": "keyword",
             "filter": [
               "icu_normalizer",
@@ -175,7 +218,9 @@
             ]
           },
           "street_tokens": {
-            "char_filter": ["po_box_canon"],
+            "char_filter": [
+              "po_box_canon"
+            ],
             "tokenizer": "standard",
             "filter": [
               "icu_normalizer",
@@ -186,8 +231,22 @@
             ]
           },
           "phone_clean": {
-            "filter": ["remove_non_digits"],
+            "filter": [
+              "remove_non_digits"
+            ],
             "tokenizer": "keyword"
+          },
+          "url_normalized": {
+            "char_filter": [
+              "url_scheme_strip",
+              "url_www_strip",
+              "url_trailing_slash_strip"
+            ],
+            "tokenizer": "keyword",
+            "filter": [
+              "lowercase",
+              "trim"
+            ]
           }
         }
       }
