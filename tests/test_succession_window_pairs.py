@@ -5,8 +5,9 @@ creation at one overlap value, so every succession is searched by exactly one
 of them. Configs edited apart break that quietly in either direction: windows
 that overlap count a pair twice (inflating pairs and recall), and windows with
 a gap leave a succession in neither, so recall reads low and nothing reports it.
-The sweeps must also agree on the lifecycle, population and declared links, or
-their denominators measure different things and cannot be added together.
+The sweeps must also agree on the lifecycle, population, declared links, ignored
+values, source index and entity key, or their denominators measure different
+things and cannot be added together.
 """
 
 from pathlib import Path
@@ -61,7 +62,21 @@ class TestWindowPair:
         assert _load(project, reappearance_step).scoring.undated_candidates == "exclude"
         assert _load(project, absorption_step).scoring.undated_candidates == "keep"
 
-    @pytest.mark.parametrize("block", ["lifecycle", "population", "declared_links"])
+    # ignore_values, source_index and entity feed classify and the denominators
+    # as directly as the declared rules do: a placeholder ignored in one sweep
+    # but not the other, or a different key column or index, would make the
+    # two tag and count different link sets while each still looked sound.
+    @pytest.mark.parametrize(
+        "block",
+        [
+            "lifecycle",
+            "population",
+            "declared_links",
+            "ignore_values",
+            "source_index",
+            "entity",
+        ],
+    )
     def test_shared_blocks_are_identical(
         self, project, reappearance_step, absorption_step, block
     ):

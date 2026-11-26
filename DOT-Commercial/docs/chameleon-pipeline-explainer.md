@@ -372,7 +372,8 @@ How it fits into the flow (the "Growing `entity-match.json`" chart above):
    fails no test — it quietly removes evidence from every future run, the
    same silent-failure shape this project works to avoid elsewhere.
 4. Once merged and committed, the addition is picked up the next time
-   `_declared_ignored_values` reads the file. No code change needed.
+   `ScoringContextBuilder._declared_ignored_values` reads the file. No code
+   change needed.
 
 Run this LLM flow when reviewing a new data extract or when the declared exclusion list seems
 stale, not as part of every dataset reload. It drives the hand-maintained list and
@@ -405,9 +406,10 @@ Measured 2026-08-08: of the **1,729 pairs scoring ≥ 0.70**, only **34.5%
 more than 180 days _before_ the predecessor even shut down — outside what
 the scorer itself treats as plausible pre-positioning. Mean score barely
 separates pre- from post-shutdown pairs: 0.4425 against 0.4520, a gap of
-0.0095. That's not because `temporal` is buggy — `matching/signals.py`
-deliberately gives a pre-shutdown pair partial credit
-(`BACKWARD_WINDOW_DAYS = 180`, `BACKWARD_SCALE = 0.5`) because standing a
+0.0095. That's not because `temporal` is buggy — it deliberately gives a
+pre-shutdown pair partial credit (a look-back derived from the
+`chameleon-detection` config's `scoring.min_gap_days` of -180, at the default
+`before_shutdown_scale` of 0.5) because standing a
 successor up ahead of a known-coming shutdown is a real tactic — it's because
 `temporal` can't move the needle much even at its theoretical best: it carries
 0.05 of the 0.94 configured weight (a ceiling of about 0.053 on any score),

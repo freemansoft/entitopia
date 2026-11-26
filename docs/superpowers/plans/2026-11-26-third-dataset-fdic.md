@@ -546,5 +546,7 @@ Write `docs/superpowers/plans/<date>-third-dataset-gleif.md` from the same spec.
 - Parent, child and shared-ultimate-parent `explains` rules.
 - The US-legal-address population.
 - Band-based findings with hand-reviewed samples.
+- The spec's undated-candidate band: a candidate with `registration_date: unknown` reported as its own band, with `measure_declared_links.py` printing the undated count per sweep.
+- Whether shared or reverse `truth` rules should be supported. `DeclaredLinks.from_config` refuses them for now, because `truth_targets` cannot name their targets and recall would never see them.
 
 It reuses everything above unchanged.

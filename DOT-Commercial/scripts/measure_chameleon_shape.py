@@ -13,9 +13,10 @@ every emitted pair, so this needs no labelled outcome and no new data: a
 negative `gap_days` at a high score is a direct, unambiguous miss.
 
 The gap bands (`DOT-Commercial/crash_lift.py`'s GAP_BANDS) are anchored to
-`matching/signals.py`'s own `BACKWARD_WINDOW_DAYS = 180`, not an arbitrary
-round number: that is the pre-shutdown window the `temporal` signal itself
-scores as plausible pre-positioning, so a pair outside it is implausible by
+`scoring.min_gap_days` = -180 in the `chameleon-detection` entity-match
+config, not an arbitrary round number: the `temporal` signal derives its
+look-back from it, so it is the pre-shutdown window that signal scores as
+plausible pre-positioning, so a pair outside it is implausible by
 the model's own design, and this report judges the model against its own
 claim rather than a boundary invented independently.
 

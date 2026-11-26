@@ -154,12 +154,14 @@ def gap_band(gap_days):
     A successor that already existed years before the shutdown is not that
     predecessor reincarnated, whatever the name and address similarity say.
 
-    The -180 edge is not an arbitrary round number: it is
-    matching/signals.py's own BACKWARD_WINDOW_DAYS, the pre-shutdown window
-    the temporal signal itself scores as plausible pre-positioning (at half
-    weight, per its BACKWARD_SCALE). Reusing it means this measurement judges
-    the model against the window IT claims is plausible, rather than against
-    a boundary this module invented independently.
+    The -180 edge is not an arbitrary round number: it is the
+    `scoring.min_gap_days` of DOT's chameleon-detection entity-match config,
+    from which the temporal signal derives its look-back, so it is the
+    pre-shutdown window that signal scores as plausible pre-positioning (at
+    half weight, per its default before_shutdown_scale of 0.5). Reusing it
+    means this measurement judges the model against the window IT claims is
+    plausible, rather than against a boundary this module invented
+    independently.
 
     Boundaries are half-open with zero falling on the "after" side, because
     same-day re-registration is the strongest chameleon shape in the data and

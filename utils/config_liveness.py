@@ -139,14 +139,24 @@ def _check_subfields(raw, paths, subfields, index, source) -> list[str]:
 def _check_identifier_keywords(raw, paths, subfields, index, source) -> list[str]:
     """Report exact-identifier fields whose `.keyword` subfield is undeclared.
 
-    The signal seeds candidates with a term query on `<field>.keyword` and
-    aggregates on it to find shared values to suppress. On a field mapped as a
-    bare keyword both read nothing: the seed retrieves no candidates and the
-    frequency scan sees no values, yet scoring still runs and the sweep logs
+    The signal aggregates on `<field>.keyword` to find shared values to
+    suppress, and for a text field it also seeds candidates with a term query
+    on it. A phone field seeds on its normalized `.clean` subfield instead, so
+    there only the frequency scan goes blind. On a field mapped as a bare
+    keyword the reads find nothing, yet scoring still runs and the sweep logs
     success. A bare-keyword website field did exactly that, and the only symptom
     was counts identical to a run without the signal. Same silent-failure
     class as the undeclared analyzed subfields above.
     """
+    # What a missing `.keyword` costs differs by kind, and the message must say
+    # which: telling an operator the phone seed is dead sends them after the
+    # wrong read.
+    consequence = {
+        "phone_fields": "the shared-value scan reads it, so the signal suppresses "
+        "no shared value (the seed reads .clean and is unaffected)",
+        "text_fields": "the candidate seed and the shared-value scan read it, so "
+        "the signal retrieves and suppresses nothing",
+    }
     messages = []
     for signal in raw.get("signals", []) or []:
         if signal.get("type") != "exact-identifier":
@@ -157,10 +167,9 @@ def _check_identifier_keywords(raw, paths, subfields, index, source) -> list[str
                 if field in paths and "{}.keyword".format(field) not in subfields:
                     messages.append(
                         "{}: exact-identifier {} names {!r}, but the mapping for "
-                        "{} declares no {!r} subfield; the candidate seed and the "
-                        "shared-value scan read it, so the signal retrieves and "
-                        "suppresses nothing".format(
-                            source, key, field, index, field + ".keyword"
+                        "{} declares no {!r} subfield; {}".format(
+                            source, key, field, index, field + ".keyword",
+                            consequence[key],
                         )
                     )
     return messages

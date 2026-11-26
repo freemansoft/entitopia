@@ -233,9 +233,10 @@ def test_standardize_tolerates_a_none_valued_stratum_element():
 def test_gap_bands_split_on_the_shutdown_date():
     # The sign of gap_days is the whole point: negative means the successor
     # already existed when the predecessor was shut down, so it cannot be that
-    # predecessor reincarnated. The 180-day edge is not arbitrary: it is
-    # matching/signals.py's own BACKWARD_WINDOW_DAYS, the pre-shutdown window
-    # the temporal signal itself treats as plausible pre-positioning — so a
+    # predecessor reincarnated. The 180-day edge is not arbitrary: it is the
+    # chameleon-detection config's scoring.min_gap_days, from which the
+    # temporal signal derives its look-back, so it is the pre-shutdown window
+    # that signal treats as plausible pre-positioning — so a
     # pair outside it is implausible by the model's own design, not by an
     # edge this test invented.
     assert gap_band(-1200) == "180d+ before"
