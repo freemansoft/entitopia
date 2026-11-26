@@ -68,6 +68,15 @@ identifier (`CERT` is) and is loaded only as a keyword.
    `CERT` columns, because branch events lack them. The history fetch is filtered
    to change codes 200-299, and `fetch()` refuses a header missing any requested
    column. Guarded by `tests/test_fdic_fetch.py`.
+4. **A website field mapped as a bare `keyword` makes `exact-identifier` inert.**
+   The signal seeds candidates and scans for shared values on
+   `<field>.keyword`. `WEB_DOMAIN` was first mapped as a bare keyword, which has
+   no such subfield: no candidates were retrieved, nothing was suppressed, and
+   the sweeps logged success. `utils/config_liveness.py` now reports any
+   `exact-identifier` field without a `.keyword` subfield, and the `validate`
+   phase would have failed both sweeps on the old mapping. Guarded by
+   `tests/test_config_liveness.py`
+   (`test_an_identifier_field_without_a_keyword_subfield_is_reported`).
 
 ## Does `NEWCERT` cover the history?
 
@@ -150,10 +159,19 @@ scheme, a leading `www.` and any path, query or fragment removed, so
 become `example.com` (checked with `_ingest/pipeline/.../_simulate`). A blank or
 missing `WEBADDR` leaves `WEB_DOMAIN` absent rather than empty, because blank
 must never match blank. The `exact-identifier` signal and its seed read
-`WEB_DOMAIN`. After the load, 4,137 banks carry one (4,079 distinct), the most
-shared domain is on 5 banks and none is empty, so no `ignore_values` or
-`max_shared_records` entry is needed for it. Re-running both sweeps on it gave
-the same pair and truth counts as the table below.
+`WEB_DOMAIN`, which is mapped as `text` with a `keyword` subfield because the
+signal's seed and shared-value scan read `WEB_DOMAIN.keyword`. After the load,
+4,137 banks carry one (4,079 distinct), the most shared domain is on 5 banks
+(checked with a terms aggregation on `WEB_DOMAIN.keyword`) and none is empty, so
+no `ignore_values` or `max_shared_records` entry is needed.
+
+Only 4 of the 23,634 inactive banks have a website, so as
+predecessor evidence the signal can fire for almost none of the swept population: FDIC keeps
+websites for active banks. Neither sweep's pairs carry an `exact-identifier`
+signal, and the counts below did not change when the signal went live. That is
+the expected result of a sparse field, not evidence that the signal is
+validated; it is kept for the successor side and for any later population that
+includes active predecessors.
 
 ## Sweeps
 

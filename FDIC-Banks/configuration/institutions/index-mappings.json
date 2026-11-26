@@ -143,7 +143,12 @@
         "type": "keyword"
       },
       "WEB_DOMAIN": {
-        "type": "keyword"
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
       }
     }
   }

@@ -136,6 +136,36 @@ def _check_subfields(raw, paths, subfields, index, source) -> list[str]:
     return messages
 
 
+def _check_identifier_keywords(raw, paths, subfields, index, source) -> list[str]:
+    """Report exact-identifier fields whose `.keyword` subfield is undeclared.
+
+    The signal seeds candidates with a term query on `<field>.keyword` and
+    aggregates on it to find shared values to suppress. On a field mapped as a
+    bare keyword both read nothing: the seed retrieves no candidates and the
+    frequency scan sees no values, yet scoring still runs and the sweep logs
+    success. A bare-keyword website field did exactly that, and the only symptom
+    was counts identical to a run without the signal. Same silent-failure
+    class as the undeclared analyzed subfields above.
+    """
+    messages = []
+    for signal in raw.get("signals", []) or []:
+        if signal.get("type") != "exact-identifier":
+            continue
+        for key in ("phone_fields", "text_fields"):
+            for field in signal.get(key) or []:
+                # A field the mapping lacks entirely is already reported once.
+                if field in paths and "{}.keyword".format(field) not in subfields:
+                    messages.append(
+                        "{}: exact-identifier {} names {!r}, but the mapping for "
+                        "{} declares no {!r} subfield; the candidate seed and the "
+                        "shared-value scan read it, so the signal retrieves and "
+                        "suppresses nothing".format(
+                            source, key, field, index, field + ".keyword"
+                        )
+                    )
+    return messages
+
+
 def _check_term_clauses(raw, types, index, source) -> list[str]:
     """Report `term` population clauses aimed at analyzed fields.
 
@@ -194,5 +224,6 @@ def check(es, entity_match: dict, source: str) -> list[str]:
     return [
         *_check_paths(entity_match, paths, index, source),
         *_check_subfields(entity_match, paths, subfields, index, source),
+        *_check_identifier_keywords(entity_match, paths, subfields, index, source),
         *_check_term_clauses(entity_match, types, index, source),
     ]

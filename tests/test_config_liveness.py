@@ -231,3 +231,33 @@ def test_an_address_state_field_the_mapping_declares_passes():
 def test_a_null_state_field_is_not_checked():
     raw = _config(signals=[_address_signal(None)])
     assert config_liveness.check(_FakeES(), raw, "t") == []
+
+
+def _identifier_signal(key, field):
+    return {"type": "exact-identifier", "weight": 0.2, key: [field]}
+
+
+def test_an_identifier_field_without_a_keyword_subfield_is_reported():
+    # The seed and the shared-value scan read `<field>.keyword`. A field mapped
+    # as a bare keyword has none, so the signal silently retrieves nothing.
+    mapping = {
+        "idx": {
+            "mappings": {
+                "properties": {
+                    "dot_number": {"type": "keyword"},
+                    "legal_name": {"type": "text"},
+                    "web_domain": {"type": "keyword"},
+                }
+            }
+        }
+    }
+    for key in ("text_fields", "phone_fields"):
+        raw = _config(signals=[_identifier_signal(key, "web_domain")])
+        errors = config_liveness.check(_FakeES(mapping), raw, "t")
+        assert any("web_domain.keyword" in e for e in errors), key
+
+
+def test_an_identifier_field_with_a_keyword_subfield_passes():
+    for key in ("text_fields", "phone_fields"):
+        raw = _config(signals=[_identifier_signal(key, "telephone")])
+        assert config_liveness.check(_FakeES(), raw, "t") == []

@@ -38,6 +38,18 @@ class TestWindowPair:
             absorption.scoring.max_gap_days == reappearance.scoring.min_gap_days - 1
         )
 
+    def test_overlap_is_the_measured_starting_value(
+        self, project, reappearance_step, absorption_step
+    ):
+        assert _load(project, reappearance_step).scoring.min_gap_days == -180
+
+    def test_undated_predecessors_are_handled_alike(
+        self, project, reappearance_step, absorption_step
+    ):
+        reappearance = _load(project, reappearance_step).scoring
+        absorption = _load(project, absorption_step).scoring
+        assert reappearance.undated_predecessors == absorption.undated_predecessors
+
     def test_absorption_is_unbounded_below(
         self, project, reappearance_step, absorption_step
     ):
