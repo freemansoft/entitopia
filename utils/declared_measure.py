@@ -25,6 +25,7 @@ EXCLUSIONS = (
     "target_outside_window",
     "target_undated",
     "predecessor_undated",
+    "predecessor_not_searched",
 )
 
 # Upper bounds (exclusive) of each gap bin, in days; the last bin is open.
@@ -80,9 +81,11 @@ def summarize(
     A ratio over an empty denominator is None ("not evaluable"), never 0.0
     ("evaluated, nothing found"). A 0.0 recall over links the sweep could not
     reach reads as matcher failure, which is the misreading this module exists
-    to prevent. The record still prints in full. precision is omitted, not zeroed, unless the truth
-    rules are complete: otherwise an unlinked pair may be a real succession the
-    data does not record, and counting it as a miss would understate precision.
+    to prevent. The record still prints in full.
+
+    precision is omitted, not zeroed, unless the truth rules are complete:
+    otherwise an unlinked pair may be a real succession the data does not
+    record, and counting it as a miss would understate precision.
     """
     unknown = {link.status for link in links} - set(MEASURED) - set(EXCLUSIONS)
     if unknown:

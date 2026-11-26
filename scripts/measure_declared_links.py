@@ -18,6 +18,7 @@ and holds no entity key or name: a score is an analysis, not a finding.
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,12 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import scan
 
-from matching.candidates import CandidateFinder, to_entity_doc
+from matching.candidates import to_entity_doc
 from matching.declared import DeclaredLinks, split_half
-from matching.population import PopulationSelector
 from matching.signals import _latest_date
-from matching.window import LifecycleWindow
-from phase_providers.phase_entity_match import PhaseEntityMatch
+from phase_providers.phase_entity_match import build_sweep_components
 from utils import file_utils, id_utils
 from utils.declared_measure import LinkOutcome, PairRow, gap_histogram, summarize
 
@@ -112,6 +111,17 @@ def predecessor_links(env, pred_hit, pred_doc, targets):
     missing target, window, retrieval, emission) reads in one place. The
     candidate search runs only when a target survives the window, because a
     search whose answer cannot change a count is the expensive part of a run.
+
+    Every exclusion, including predecessor_undated and predecessor_not_searched,
+    counts LINKS, one per truth target, so the denominator and the exclusions
+    share one unit and sum to the total links.
+
+    A failed candidate search aborts the measurement rather than being counted.
+    The sweep survives a lookup error by skipping the predecessor, but here a
+    skipped predecessor would silently shrink the denominator or inflate
+    misses, and a quietly wrong recall is worse than no number. The error is
+    re-raised naming the predecessor count reached so the run is not mistaken
+    for a complete one.
     """
     window = env.window
     pred_key = pred_doc.entity_key
@@ -135,7 +145,22 @@ def predecessor_links(env, pred_hit, pred_doc, targets):
     if not in_window:
         return links
 
-    _, candidates, _ = env.finder.find(pred_hit, env.ctx)
+    try:
+        searched_doc, candidates, _ = env.finder.find(pred_hit, env.ctx)
+    except Exception as e:
+        raise RuntimeError(
+            "Candidate lookup failed after {} predecessors; the measurement is "
+            "incomplete and must not be quoted: {}".format(env.progress["predecessors"], e)
+        ) from e
+    if searched_doc is None:
+        # The sweep skips a predecessor with no seed clauses before counting
+        # its truth links, so calling these misses would charge the matcher for
+        # a search that never ran.
+        links.extend(
+            LinkOutcome(pred_key, t, "predecessor_not_searched", None, g)
+            for t, g in in_window
+        )
+        return links
     retrieved = {c.entity_key for c in candidates}
     for target, gap in in_window:
         if target not in retrieved:
@@ -160,33 +185,21 @@ def measure(es, project, step, index, half):
         raise SystemExit("{}/{} declares no links to measure".format(project, step))
 
     source_index = config.source_index
-    lifecycle = getattr(config, "lifecycle", None)
-    finder = CandidateFinder(
-        es,
-        source_index,
-        config.candidates,
-        config.signals,
-        entity_config=getattr(config, "entity", None),
-        lifecycle=lifecycle,
-        scoring_config=config.scoring,
-    )
-    selector = PopulationSelector(es, source_index, config.population)
-    window = LifecycleWindow.from_config(lifecycle, config.scoring)
-    # The sweep's own context builder, not a copy: a context built differently
-    # suppresses different values, so find() would return different candidates
-    # and a "not retrieved" would describe a sweep that never ran.
-    phase = PhaseEntityMatch(es, project, step, None)
-    phase.lifecycle = lifecycle
-    ctx = phase._build_context(source_index, config.signals, config)
+    components = build_sweep_components(es, config, logging.getLogger(__name__))
+    finder = components.finder
+    selector = components.selector
+    window = finder.window
+    ctx = components.context_builder.build_context(source_index, config.signals, config)
 
     scores, rows = read_pairs(es, index)
     key_field = finder.entity_key_field
     env = SimpleNamespace(
         es=es, source_index=source_index, key_field=key_field, window=window,
-        finder=finder, ctx=ctx, scores=scores,
+        finder=finder, ctx=ctx, scores=scores, progress={"predecessors": 0},
     )
     links = []
     for pred_hit in selector.iterate():
+        env.progress["predecessors"] += 1
         pred_doc = to_entity_doc(pred_hit, {}, key_field)
         pred_key = pred_doc.entity_key
         if split_half(pred_key) != half:

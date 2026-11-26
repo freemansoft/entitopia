@@ -8,6 +8,7 @@ output carries no entity key, since a score is an analysis and not a finding.
 """
 
 import datetime
+import importlib.util
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,6 +45,7 @@ def test_exclusions_leave_denominator():
         "target_outside_window": 1,
         "target_undated": 0,
         "predecessor_undated": 0,
+        "predecessor_not_searched": 0,
     }
     assert result["misses"] == {"not_retrieved": 1, "retrieved_not_emitted": 0}
 
@@ -160,3 +162,148 @@ def test_window_decides_target_dating():
     window = LifecycleWindow(lifecycle, undated_candidates="exclude")
     pred = EntityDoc("P", {"closed": "2015-06-01"})
     assert not window.admits(pred, EntityDoc("C", {}))
+
+
+# --- per-link classification, cluster-free -------------------------------
+
+_SCRIPT = Path(__file__).parent.parent / "scripts" / "measure_declared_links.py"
+
+
+def _load_script():
+    spec = importlib.util.spec_from_file_location("measure_declared_links", _SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+script = _load_script()
+
+_LIFECYCLE = SimpleNamespace(
+    shutdown_date="closed", registration_date="opened", end_date=None
+)
+
+
+class _StubEs:
+    """Answers the term lookup fetch_target makes from a dict of sources."""
+
+    def __init__(self, sources):
+        self.sources = sources
+
+    def search(self, index, size, query, track_total_hits):
+        key = query["term"]["key"]
+        if key not in self.sources:
+            return {"hits": {"hits": []}}
+        return {"hits": {"hits": [{"_id": key, "_source": self.sources[key]}]}}
+
+
+class _StubFinder:
+    """Stands in for CandidateFinder.find with a canned answer or failure."""
+
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+        self.calls = 0
+
+    def find(self, pred_hit, ctx):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return self.result
+
+
+def _env(sources, finder, window, scores=None):
+    return SimpleNamespace(
+        es=_StubEs(sources),
+        source_index="idx",
+        key_field="key",
+        window=window,
+        finder=finder,
+        ctx=None,
+        scores=scores or {},
+        progress={"predecessors": 7},
+    )
+
+
+def _window(**kwargs):
+    return LifecycleWindow(
+        _LIFECYCLE,
+        min_gap_days=-30,
+        max_gap_days=400,
+        undated_candidates="exclude",
+        **kwargs,
+    )
+
+
+def _pred(source=None):
+    source = {"key": "P", "closed": "2015-06-01"} if source is None else source
+    return {"_id": "P", "_source": source}, EntityDoc("P", source)
+
+
+def _statuses(links):
+    return [link.status for link in links]
+
+
+def test_undated_target_is_target_undated():
+    hit, pred = _pred()
+    env = _env({"T": {"key": "T"}}, _StubFinder(), _window())
+    links = script.predecessor_links(env, hit, pred, ["T"])
+    assert _statuses(links) == ["target_undated"]
+    assert env.finder.calls == 0
+
+
+def test_out_of_window_target_is_target_outside_window():
+    hit, pred = _pred()
+    env = _env({"T": {"key": "T", "opened": "2020-01-01"}}, _StubFinder(), _window())
+    links = script.predecessor_links(env, hit, pred, ["T"])
+    assert _statuses(links) == ["target_outside_window"]
+    assert links[0].gap_days > 400
+
+
+def test_skipped_predecessor_yields_predecessor_undated_per_target():
+    hit, pred = _pred({"key": "P"})
+    window = _window(undated_predecessors="skip")
+    env = _env({}, _StubFinder(), window)
+    links = script.predecessor_links(env, hit, pred, ["T1", "T2"])
+    assert _statuses(links) == ["predecessor_undated"] * 2
+
+
+def test_missing_target_is_target_missing_from_index():
+    hit, pred = _pred()
+    env = _env({}, _StubFinder(), _window())
+    assert _statuses(script.predecessor_links(env, hit, pred, ["T"])) == [
+        "target_missing_from_index"
+    ]
+
+
+def test_unsearched_predecessor_is_not_a_miss():
+    hit, pred = _pred()
+    sources = {"T": {"key": "T", "opened": "2015-07-01"}}
+    env = _env(sources, _StubFinder(result=(None, [], False)), _window())
+    links = script.predecessor_links(env, hit, pred, ["T"])
+    assert _statuses(links) == ["predecessor_not_searched"]
+    result = summarize(links, [], False)
+    assert result["denominator"] == 0
+    assert result["exclusions"]["predecessor_not_searched"] == 1
+
+
+def test_emitted_unemitted_and_not_retrieved():
+    hit, pred = _pred()
+    sources = {
+        "T1": {"key": "T1", "opened": "2015-07-01"},
+        "T2": {"key": "T2", "opened": "2015-07-02"},
+        "T3": {"key": "T3", "opened": "2015-07-03"},
+    }
+    found = (pred, [EntityDoc("T1", {}), EntityDoc("T2", {})], False)
+    pair_id = script.id_utils.compute_id({"p": "P", "s": "T1"}, ["p", "s"])
+    env = _env(sources, _StubFinder(result=found), _window(), {pair_id: 0.8})
+    links = script.predecessor_links(env, hit, pred, ["T1", "T2", "T3"])
+    assert _statuses(links) == ["emitted", "retrieved_not_emitted", "not_retrieved"]
+    assert links[0].score == 0.8
+
+
+def test_failed_search_aborts_and_names_progress():
+    hit, pred = _pred()
+    sources = {"T": {"key": "T", "opened": "2015-07-01"}}
+    env = _env(sources, _StubFinder(error=ValueError("boom")), _window())
+    with pytest.raises(RuntimeError, match=r"after 7 predecessors.*incomplete"):
+        script.predecessor_links(env, hit, pred, ["T"])

@@ -129,6 +129,263 @@ class RunProvenance:
         )
 
 
+class ScoringContextBuilder:
+    """Gathers the corpus statistics a sweep scores against.
+
+    Lives apart from PhaseEntityMatch so scripts/measure_declared_links.py can
+    build the identical context without constructing a half-initialised phase.
+    A context built differently suppresses different values, so a re-run of
+    finder.find would return different candidates than the sweep did and a
+    measured miss would describe a sweep that never ran. Needs only a client, the
+    lifecycle block and a logger, which is why it is a class of its own.
+    """
+
+    def __init__(self, es, lifecycle, logger):
+        self.es = es
+        self.lifecycle = lifecycle
+        self.logger = logger
+
+    def _declared_ignored_values(self, config):
+        """Read entity-match.json's ignore_values into a field -> values map.
+
+        Exists so an operator can name a placeholder outright instead of
+        relying on it being common enough for the frequency scan to catch.
+        The two mechanisms cover different failures: frequency catches junk
+        nobody knew about, while a declaration catches a value that is
+        obviously meaningless but rare enough to slip under the threshold, and
+        documents the intent for the next reader.
+
+        Keyed by field path, with "*" applying to every field, because a value
+        that is junk in one attribute can be legitimate in another — "0" is
+        not a VIN but is a fine street number.
+        """
+        declared = getattr(config, "ignore_values", None)
+        if declared is None:
+            return {}
+        # Config loads through SimpleNamespace, so the field paths are
+        # attribute names on that namespace rather than dict keys.
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        ignored = {}
+        for field_path, values in as_dict.items():
+            if not values:
+                continue
+            ignored[field_path] = {str(v).strip().lower() for v in values}
+        if ignored:
+            self.logger.info(
+                "Config declares ignored values on {} field(s): {}".format(
+                    len(ignored), ", ".join(sorted(ignored))
+                )
+            )
+        return ignored
+
+    def _shared_limits(self, config):
+        """Read max_shared_records from config into a field -> limit map.
+
+        Separate from ignore_values because the two answer different questions:
+        that list names values already known to be meaningless, while this sets
+        how many records may share an *unknown* value before the sweep decides
+        it cannot be identifying. A dataset needs both — nobody can enumerate
+        every filing service in advance.
+        """
+        declared = getattr(config, "max_shared_records", None)
+        if declared is None:
+            return {}
+        as_dict = declared if isinstance(declared, dict) else vars(declared)
+        limits = {k: int(v) for k, v in as_dict.items()}
+        if limits:
+            self.logger.info(
+                "Shared-value limits from config: {}".format(
+                    ", ".join("{}={}".format(k, v) for k, v in sorted(limits.items()))
+                )
+            )
+        return limits
+
+    def _suppressed_values(self, source_index, signals, limits):
+        """Find values the corpus proves are not identifying, per field.
+
+        Every signal that scores a shared value 1.0 is asserting that the value
+        picks out one thing in the world. Real data violates that constantly,
+        in two different ways that need the same treatment:
+
+        - Outright placeholders. FMCSA crash reports carry the literal VIN
+          "GGGG" on 158 carriers, "UNKNOWN" on 79, "99999999999999999" on 51,
+          and the phone "(000) 000-0000" on 664.
+        - Values that are entirely correct but shared. A permit-filing service,
+          an insurance agency or a corporate parent puts its own phone or email
+          on every carrier it files for, so one address can legitimately cover
+          hundreds of unrelated carriers. These cannot be "cleaned" — the data
+          is right; it just is not identity evidence.
+
+        Both are found the same way and neither can be enumerated in advance,
+        which is why this is derived from the corpus rather than hard-coded.
+        The declared ignore_values list in config covers the remainder: values
+        an operator knows are meaningless but which are too rare to trip the
+        threshold.
+        """
+        suppressed = {}
+        for signal in signals:
+            for source_path, agg_field in signal.exact_evidence_fields():
+                limit = self._shared_limit(source_path, limits, signal)
+                try:
+                    response = self.es.search(
+                        index=source_index,
+                        size=0,
+                        aggs={
+                            "vals": {
+                                "terms": {
+                                    "field": agg_field,
+                                    "size": SUPPRESSION_TERMS_SIZE,
+                                    "min_doc_count": limit + 1,
+                                }
+                            }
+                        },
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        "Could not gather value frequencies for {} ({}); values shared by "
+                        "unrelated records - placeholders, filing services, corporate "
+                        "parents - will score as identity matches".format(agg_field, e)
+                    )
+                    continue
+                found = {
+                    str(b["key"]).strip().lower()
+                    for b in response["aggregations"]["vals"]["buckets"]
+                }
+                if found:
+                    suppressed.setdefault(source_path, set()).update(found)
+                    self.logger.info(
+                        "{}: {} value(s) on more than {} records are not identifying "
+                        "(e.g. {})".format(
+                            source_path, len(found), limit, sorted(found)[:3]
+                        )
+                    )
+        return suppressed
+
+    def _shared_limit(self, source_path, limits, signal):
+        """How many records may share a value before it stops being identifying.
+
+        Resolved most specific first - per-field, then the "*" default, then the
+        signal's own setting - because the right number is a property of the
+        attribute, not of the sweep. Two sibling carriers legitimately share a
+        phone, so a phone tolerates a handful; a VIN identifies one vehicle, so
+        even a few is already suspicious.
+        """
+        if source_path in limits:
+            return int(limits[source_path])
+        if "*" in limits:
+            return int(limits["*"])
+        return int(getattr(signal.config, "max_shared_entities", DEFAULT_SHARED_LIMIT))
+
+
+    def build_context(self, source_index, signal_configs, config=None):
+        """Gather corpus statistics once per sweep: value rarity and ignored values."""
+        window = LifecycleWindow.from_config(
+            self.lifecycle, getattr(config, "scoring", None)
+        )
+        signals = [build_signal(c, self.lifecycle, window) for c in signal_configs]
+        declared_ignored = self._declared_ignored_values(config) if config else {}
+        limits = self._shared_limits(config) if config else {}
+        suppressed = self._suppressed_values(source_index, signals, limits)
+        for field_path, values in declared_ignored.items():
+            suppressed.setdefault(field_path, set()).update(values)
+        return ScoringContext(
+            rarity_tables=self._rarity_tables(source_index, signal_configs),
+            ignored_values=suppressed,
+        )
+
+    def _rarity_tables(self, source_index, signal_configs):
+        """One value-frequency table per field a rarity-weighted signal reads.
+
+        A loop over the configured signals rather than one hardcoded lookup:
+        the mechanism is "count how common this field's values are", and which
+        fields need it is a project's decision. Previously this fetched exactly
+        one field, named by the signal type "agent".
+
+        A field that cannot be aggregated is skipped with a warning rather than
+        aborting the sweep, because the signal degrades honestly without it —
+        FieldRarityTable floors an empty corpus to 0.0, so the signal
+        contributes nothing instead of inventing a rarity.
+        """
+        tables = {}
+        for signal_config in signal_configs:
+            if getattr(signal_config, "type", None) != "rarity-weighted-value":
+                continue
+            field_path = signal_config.name_field
+            # .keyword because the source field is analyzed text; aggregating
+            # the analyzed form would count tokens rather than whole values.
+            keyword_field = "{}.keyword".format(field_path)
+            try:
+                response = self.es.search(
+                    index=source_index,
+                    size=0,
+                    aggs={
+                        "values": {
+                            "terms": {"field": keyword_field, "size": RARITY_TERMS_SIZE}
+                        }
+                    },
+                )
+            except Exception as e:
+                self.logger.warning(
+                    "Could not gather value frequencies for {} ({}); its signal has "
+                    "no corpus to weight against and will score every shared value "
+                    "at 0.0 (no discriminating power) rather than fabricate a "
+                    "rarity value".format(field_path, e)
+                )
+                continue
+
+            buckets = response["aggregations"]["values"]["buckets"]
+            counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
+            total = sum(counts.values())
+            if total == 0:
+                # A zero-value corpus is the signature of enrichment having
+                # silently produced nothing (see the README's documented enrich
+                # bugs) rather than a population that genuinely has no values.
+                self.logger.warning(
+                    "Loaded 0 distinct values for {}; the enrichment feeding it may "
+                    "not have run. Its signal will score every shared value at "
+                    "0.0.".format(field_path)
+                )
+            else:
+                self.logger.info(
+                    "Loaded {} distinct values for {} covering {} records".format(
+                        len(counts), field_path, total
+                    )
+                )
+            tables[field_path] = FieldRarityTable(counts=counts, total=total)
+        return tables
+
+
+def build_sweep_components(es, config, logger):
+    """The scorer, finder, selector and context builder a sweep runs with.
+
+    One construction for handle() and for the measurement script. Two copies
+    would drift: change an argument in one and the script's candidate search
+    silently stops reproducing the sweep's, so its recall describes a different
+    run. The context is a builder rather than a built context because the sweep
+    runs a preflight against the finder between construction and the corpus
+    scans.
+    """
+    lifecycle = getattr(config, "lifecycle", None)
+    entity_config = getattr(config, "entity", SimpleNamespace())
+    finder = CandidateFinder(
+        es,
+        config.source_index,
+        config.candidates,
+        config.signals,
+        entity_config=entity_config,
+        lifecycle=lifecycle,
+        scoring_config=config.scoring,
+    )
+    return SimpleNamespace(
+        lifecycle=lifecycle,
+        entity_config=entity_config,
+        scorer=PairScorer(config.signals, config.scoring, lifecycle=lifecycle),
+        finder=finder,
+        selector=PopulationSelector(es, config.source_index, config.population),
+        context_builder=ScoringContextBuilder(es, lifecycle, logger),
+    )
+
+
 class PhaseEntityMatch:
     """Sweeps shut-down carriers for likely successors and writes ranked pairs.
 
@@ -203,20 +460,13 @@ class PhaseEntityMatch:
         # _to_action needs it several call frames below, and threading it
         # through the generator would put a config object in the signature of
         # every intermediate method.
-        self.entity_config = getattr(config, "entity", SimpleNamespace())
-        self.lifecycle = getattr(config, "lifecycle", None)
+        components = build_sweep_components(self.es, config, self.logger)
+        self.entity_config = components.entity_config
+        self.lifecycle = components.lifecycle
         self.population_mode = getattr(config.population, "mode", "lifecycle")
-        scorer = PairScorer(config.signals, config.scoring, lifecycle=self.lifecycle)
-        finder = CandidateFinder(
-            self.es,
-            source_index,
-            config.candidates,
-            config.signals,
-            entity_config=self.entity_config,
-            lifecycle=self.lifecycle,
-            scoring_config=config.scoring,
-        )
-        selector = PopulationSelector(self.es, source_index, config.population)
+        scorer = components.scorer
+        finder = components.finder
+        selector = components.selector
 
         ok, resolved_index, source_fingerprint = self._preflight(
             source_index, finder.scored_subfields(), self._expected_analysis_fingerprint(config)
@@ -224,7 +474,9 @@ class PhaseEntityMatch:
         if not ok or not self._check_sort_field_types(source_index, finder.sort_fields()):
             return
 
-        ctx = self._build_context(source_index, config.signals, config)
+        ctx = components.context_builder.build_context(
+            source_index, config.signals, config
+        )
         self.declared_links = DeclaredLinks.from_config(config)
         self.scoring_context = ctx
         max_pairs = int(getattr(config.scoring, "max_pairs_per_predecessor", 10))
@@ -715,215 +967,6 @@ class PhaseEntityMatch:
                 mapping_properties = json.loads(json.dumps(properties, default=vars))
 
         return analysis_fingerprint.fingerprint_analysis(settings, mapping_properties)
-
-    def _declared_ignored_values(self, config):
-        """Read entity-match.json's ignore_values into a field -> values map.
-
-        Exists so an operator can name a placeholder outright instead of
-        relying on it being common enough for the frequency scan to catch.
-        The two mechanisms cover different failures: frequency catches junk
-        nobody knew about, while a declaration catches a value that is
-        obviously meaningless but rare enough to slip under the threshold, and
-        documents the intent for the next reader.
-
-        Keyed by field path, with "*" applying to every field, because a value
-        that is junk in one attribute can be legitimate in another — "0" is
-        not a VIN but is a fine street number.
-        """
-        declared = getattr(config, "ignore_values", None)
-        if declared is None:
-            return {}
-        # Config loads through SimpleNamespace, so the field paths are
-        # attribute names on that namespace rather than dict keys.
-        as_dict = declared if isinstance(declared, dict) else vars(declared)
-        ignored = {}
-        for field_path, values in as_dict.items():
-            if not values:
-                continue
-            ignored[field_path] = {str(v).strip().lower() for v in values}
-        if ignored:
-            self.logger.info(
-                "Config declares ignored values on {} field(s): {}".format(
-                    len(ignored), ", ".join(sorted(ignored))
-                )
-            )
-        return ignored
-
-    def _shared_limits(self, config):
-        """Read max_shared_records from config into a field -> limit map.
-
-        Separate from ignore_values because the two answer different questions:
-        that list names values already known to be meaningless, while this sets
-        how many records may share an *unknown* value before the sweep decides
-        it cannot be identifying. A dataset needs both — nobody can enumerate
-        every filing service in advance.
-        """
-        declared = getattr(config, "max_shared_records", None)
-        if declared is None:
-            return {}
-        as_dict = declared if isinstance(declared, dict) else vars(declared)
-        limits = {k: int(v) for k, v in as_dict.items()}
-        if limits:
-            self.logger.info(
-                "Shared-value limits from config: {}".format(
-                    ", ".join("{}={}".format(k, v) for k, v in sorted(limits.items()))
-                )
-            )
-        return limits
-
-    def _suppressed_values(self, source_index, signals, limits):
-        """Find values the corpus proves are not identifying, per field.
-
-        Every signal that scores a shared value 1.0 is asserting that the value
-        picks out one thing in the world. Real data violates that constantly,
-        in two different ways that need the same treatment:
-
-        - Outright placeholders. FMCSA crash reports carry the literal VIN
-          "GGGG" on 158 carriers, "UNKNOWN" on 79, "99999999999999999" on 51,
-          and the phone "(000) 000-0000" on 664.
-        - Values that are entirely correct but shared. A permit-filing service,
-          an insurance agency or a corporate parent puts its own phone or email
-          on every carrier it files for, so one address can legitimately cover
-          hundreds of unrelated carriers. These cannot be "cleaned" — the data
-          is right; it just is not identity evidence.
-
-        Both are found the same way and neither can be enumerated in advance,
-        which is why this is derived from the corpus rather than hard-coded.
-        The declared ignore_values list in config covers the remainder: values
-        an operator knows are meaningless but which are too rare to trip the
-        threshold.
-        """
-        suppressed = {}
-        for signal in signals:
-            for source_path, agg_field in signal.exact_evidence_fields():
-                limit = self._shared_limit(source_path, limits, signal)
-                try:
-                    response = self.es.search(
-                        index=source_index,
-                        size=0,
-                        aggs={
-                            "vals": {
-                                "terms": {
-                                    "field": agg_field,
-                                    "size": SUPPRESSION_TERMS_SIZE,
-                                    "min_doc_count": limit + 1,
-                                }
-                            }
-                        },
-                    )
-                except Exception as e:
-                    self.logger.warning(
-                        "Could not gather value frequencies for {} ({}); values shared by "
-                        "unrelated records - placeholders, filing services, corporate "
-                        "parents - will score as identity matches".format(agg_field, e)
-                    )
-                    continue
-                found = {
-                    str(b["key"]).strip().lower()
-                    for b in response["aggregations"]["vals"]["buckets"]
-                }
-                if found:
-                    suppressed.setdefault(source_path, set()).update(found)
-                    self.logger.info(
-                        "{}: {} value(s) on more than {} records are not identifying "
-                        "(e.g. {})".format(
-                            source_path, len(found), limit, sorted(found)[:3]
-                        )
-                    )
-        return suppressed
-
-    def _shared_limit(self, source_path, limits, signal):
-        """How many records may share a value before it stops being identifying.
-
-        Resolved most specific first - per-field, then the "*" default, then the
-        signal's own setting - because the right number is a property of the
-        attribute, not of the sweep. Two sibling carriers legitimately share a
-        phone, so a phone tolerates a handful; a VIN identifies one vehicle, so
-        even a few is already suspicious.
-        """
-        if source_path in limits:
-            return int(limits[source_path])
-        if "*" in limits:
-            return int(limits["*"])
-        return int(getattr(signal.config, "max_shared_entities", DEFAULT_SHARED_LIMIT))
-
-
-    def _build_context(self, source_index, signal_configs, config=None):
-        """Gather corpus statistics once per sweep: value rarity and ignored values."""
-        window = LifecycleWindow.from_config(
-            self.lifecycle, getattr(config, "scoring", None)
-        )
-        signals = [build_signal(c, self.lifecycle, window) for c in signal_configs]
-        declared_ignored = self._declared_ignored_values(config) if config else {}
-        limits = self._shared_limits(config) if config else {}
-        suppressed = self._suppressed_values(source_index, signals, limits)
-        for field_path, values in declared_ignored.items():
-            suppressed.setdefault(field_path, set()).update(values)
-        return ScoringContext(
-            rarity_tables=self._rarity_tables(source_index, signal_configs),
-            ignored_values=suppressed,
-        )
-
-    def _rarity_tables(self, source_index, signal_configs):
-        """One value-frequency table per field a rarity-weighted signal reads.
-
-        A loop over the configured signals rather than one hardcoded lookup:
-        the mechanism is "count how common this field's values are", and which
-        fields need it is a project's decision. Previously this fetched exactly
-        one field, named by the signal type "agent".
-
-        A field that cannot be aggregated is skipped with a warning rather than
-        aborting the sweep, because the signal degrades honestly without it —
-        FieldRarityTable floors an empty corpus to 0.0, so the signal
-        contributes nothing instead of inventing a rarity.
-        """
-        tables = {}
-        for signal_config in signal_configs:
-            if getattr(signal_config, "type", None) != "rarity-weighted-value":
-                continue
-            field_path = signal_config.name_field
-            # .keyword because the source field is analyzed text; aggregating
-            # the analyzed form would count tokens rather than whole values.
-            keyword_field = "{}.keyword".format(field_path)
-            try:
-                response = self.es.search(
-                    index=source_index,
-                    size=0,
-                    aggs={
-                        "values": {
-                            "terms": {"field": keyword_field, "size": RARITY_TERMS_SIZE}
-                        }
-                    },
-                )
-            except Exception as e:
-                self.logger.warning(
-                    "Could not gather value frequencies for {} ({}); its signal has "
-                    "no corpus to weight against and will score every shared value "
-                    "at 0.0 (no discriminating power) rather than fabricate a "
-                    "rarity value".format(field_path, e)
-                )
-                continue
-
-            buckets = response["aggregations"]["values"]["buckets"]
-            counts = {b["key"].strip().lower(): b["doc_count"] for b in buckets}
-            total = sum(counts.values())
-            if total == 0:
-                # A zero-value corpus is the signature of enrichment having
-                # silently produced nothing (see the README's documented enrich
-                # bugs) rather than a population that genuinely has no values.
-                self.logger.warning(
-                    "Loaded 0 distinct values for {}; the enrichment feeding it may "
-                    "not have run. Its signal will score every shared value at "
-                    "0.0.".format(field_path)
-                )
-            else:
-                self.logger.info(
-                    "Loaded {} distinct values for {} covering {} records".format(
-                        len(counts), field_path, total
-                    )
-                )
-            tables[field_path] = FieldRarityTable(counts=counts, total=total)
-        return tables
 
     def _generate_actions(
         self, selector, finder, scorer, ctx, target_index, max_pairs,
