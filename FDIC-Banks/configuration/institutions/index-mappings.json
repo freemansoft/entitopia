@@ -72,7 +72,7 @@
       "WEBADDR": {
         "type": "keyword",
         "fields": {
-          "normalized": { "type": "text", "analyzer": "name_clean" }
+          "normalized": { "type": "text", "analyzer": "url_normalized" }
         }
       }
     }

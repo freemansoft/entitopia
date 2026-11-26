@@ -131,27 +131,38 @@ def test_split_half_covers_both_halves():
     assert halves == {"tune", "report"}
 
 
-@pytest.mark.skipif(
-    not (REAPPEARANCE.exists() and ABSORPTION.exists()),
-    reason="FDIC sweep configs arrive in a later task",
-)
 def test_denominators_partition():
+    """Each succession lands in exactly one sweep's denominator, up to max_gap_days.
+
+    A pair counted by both sweeps inflates recall, and one counted by neither
+    is a succession no sweep can find, so the gaps either side of the seam
+    (-181 and -180) and the edges (0, +365) are probed. A gap above the
+    reappearance max_gap_days (+365) is in neither window by design: too late
+    to be a reappearance and not before the shutdown, so not an absorption. The
+    claim therefore covers successor creation dates up to max_gap_days only.
+    """
     lifecycle_windows = []
     for path in (REAPPEARANCE, ABSORPTION):
         config = file_utils.load_from_file(str(path))
         lifecycle_windows.append(
             LifecycleWindow.from_config(config.lifecycle, config.scoring)
         )
+    max_gap = file_utils.load_from_file(str(REAPPEARANCE)).scoring.max_gap_days
     lifecycle = lifecycle_windows[0].lifecycle
     shutdown = datetime.date(2015, 6, 1)
     pred = EntityDoc("P", {lifecycle.shutdown_date: shutdown.isoformat()})
-    for gap in (-400, -30, 0, 1, 200, 400, 2000):
+
+    def admitting(gap):
         registered = (shutdown + datetime.timedelta(days=gap)).isoformat()
         cand = EntityDoc("C", {lifecycle.registration_date: registered})
-        admitting = [w for w in lifecycle_windows if w.admits(pred, cand)]
-        assert len(admitting) == 1, "gap {} fell in {} denominators".format(
-            gap, len(admitting)
+        return [w for w in lifecycle_windows if w.admits(pred, cand)]
+
+    for gap in (-3000, -400, -181, -180, -30, 0, 1, 200, max_gap):
+        assert len(admitting(gap)) == 1, "gap {} fell in {} denominators".format(
+            gap, len(admitting(gap))
         )
+    for gap in (max_gap + 1, 2000):
+        assert admitting(gap) == [], "gap {} should be in neither window".format(gap)
 
 
 def test_window_decides_target_dating():

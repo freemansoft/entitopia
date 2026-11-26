@@ -38,10 +38,7 @@
             "encoder": "beider_morse",
             "rule_type": "approx",
             "name_type": "generic",
-            "languageset": [
-              "english",
-              "spanish"
-            ]
+            "languageset": ["english", "spanish"]
           },
           "institution_word_stop": {
             "type": "stop",
@@ -177,11 +174,7 @@
         },
         "analyzer": {
           "name_clean": {
-            "filter": [
-              "icu_normalizer",
-              "icu_folding",
-              "punct_white"
-            ],
+            "filter": ["icu_normalizer", "icu_folding", "punct_white"],
             "tokenizer": "standard"
           },
           "name_phonetic": {
@@ -205,9 +198,7 @@
             "tokenizer": "standard"
           },
           "street_clean": {
-            "char_filter": [
-              "po_box_canon"
-            ],
+            "char_filter": ["po_box_canon"],
             "tokenizer": "keyword",
             "filter": [
               "icu_normalizer",
@@ -218,9 +209,7 @@
             ]
           },
           "street_tokens": {
-            "char_filter": [
-              "po_box_canon"
-            ],
+            "char_filter": ["po_box_canon"],
             "tokenizer": "standard",
             "filter": [
               "icu_normalizer",
@@ -231,22 +220,13 @@
             ]
           },
           "phone_clean": {
-            "filter": [
-              "remove_non_digits"
-            ],
+            "filter": ["remove_non_digits"],
             "tokenizer": "keyword"
           },
           "url_normalized": {
-            "char_filter": [
-              "url_scheme_strip",
-              "url_www_strip",
-              "url_trailing_slash_strip"
-            ],
+            "char_filter": ["url_scheme_strip", "url_www_strip", "url_trailing_slash_strip"],
             "tokenizer": "keyword",
-            "filter": [
-              "lowercase",
-              "trim"
-            ]
+            "filter": ["lowercase", "trim"]
           }
         }
       }
