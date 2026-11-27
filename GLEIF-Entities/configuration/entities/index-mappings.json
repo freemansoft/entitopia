@@ -1,0 +1,200 @@
+{
+  "index": "entities-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "LEI": {
+        "type": "keyword"
+      },
+      "SUCCESSOR_LEI": {
+        "type": "keyword"
+      },
+      "SUCCESSOR_CHAIN_END": {
+        "type": "keyword"
+      },
+      "DIRECT_PARENT_LEI": {
+        "type": "keyword"
+      },
+      "ULTIMATE_PARENT_LEI": {
+        "type": "keyword"
+      },
+      "BRANCH_OF_LEI": {
+        "type": "keyword"
+      },
+      "FUND_MANAGER_LEI": {
+        "type": "keyword"
+      },
+      "UMBRELLA_FUND_LEI": {
+        "type": "keyword"
+      },
+      "MASTER_FUND_LEI": {
+        "type": "keyword"
+      },
+      "CATEGORY": {
+        "type": "keyword"
+      },
+      "LEGAL_FORM": {
+        "type": "keyword"
+      },
+      "ENTITY_STATUS": {
+        "type": "keyword"
+      },
+      "REGISTRATION_STATUS": {
+        "type": "keyword"
+      },
+      "LEGAL_COUNTRY": {
+        "type": "keyword"
+      },
+      "HQ_COUNTRY": {
+        "type": "keyword"
+      },
+      "LEGAL_REGION": {
+        "type": "keyword"
+      },
+      "HQ_REGION": {
+        "type": "keyword"
+      },
+      "LEGAL_POSTAL": {
+        "type": "keyword"
+      },
+      "HQ_POSTAL": {
+        "type": "keyword"
+      },
+      "CREATION_DATE": {
+        "type": "date",
+        "format": "strict_date_optional_time||yyyy-MM-dd"
+      },
+      "SHUTDOWN_DATE": {
+        "type": "date",
+        "format": "strict_date_optional_time||yyyy-MM-dd"
+      },
+      "LEGAL_NAME": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
+        }
+      },
+      "OTHER_NAMES": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          },
+          "phonetic": {
+            "type": "text",
+            "analyzer": "name_phonetic"
+          },
+          "phonetic_bm": {
+            "type": "text",
+            "analyzer": "name_phonetic_bm"
+          }
+        }
+      },
+      "LEGAL_STREET": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
+        }
+      },
+      "HQ_STREET": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_tokens"
+          }
+        }
+      },
+      "LEGAL_CITY": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
+        }
+      },
+      "HQ_CITY": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "name_clean"
+          }
+        }
+      },
+      "HQ_LOCAL": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_local_tokens"
+          }
+        }
+      },
+      "LEGAL_LOCAL": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          },
+          "clean": {
+            "type": "text",
+            "analyzer": "street_clean"
+          },
+          "tokens": {
+            "type": "text",
+            "analyzer": "street_local_tokens"
+          }
+        }
+      }
+    }
+  }
+}

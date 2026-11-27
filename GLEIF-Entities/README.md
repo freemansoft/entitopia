@@ -257,6 +257,183 @@ list would need every spelling. That is why the address signal reads the
 headquarters address, and why any legal-address signal needs a
 `max_shared_records` limit rather than an ignore list.
 
+## Name stop list
+
+The phonetic analyzers drop the words below (`entity_word_stop` in
+`configuration/entities/index-settings.json`), so two unrelated entities do not
+score as alike because both are an "LLC" or a "GmbH". The analyzers themselves
+are FDIC-Banks' with this list in place of the bank words. Measured 2026-11-26,
+before the first load, as the share of `LEGAL_NAME` values containing each
+word (a word counted once per name), in two populations: the 366,339 US
+records, where the predecessors are, and all 3,508,047 records, where the
+candidates come from. The list is the union of both.
+
+Words are counted as the stop filter sees them: the `name_phonetic` chain up
+to the filter (standard tokenizer, `icu_normalizer`, `icu_folding`,
+`punct_white`), applied by Elasticsearch to a scratch index of the names and
+counted with a terms aggregation. That matters for dotted spellings: the
+standard tokenizer keeps `L.L.C.` as one token and `punct_white` turns its dots
+into spaces, so the stopword that matches it is `l l c`, with spaces. A
+stopword written `l.l.c.` would never match anything. The four single
+characters are the ideographs of the Chinese legal form for a limited company,
+which the standard tokenizer splits one per token.
+
+| Word         | US     | All    | Word            | US    | All   |
+| ------------ | ------ | ------ | --------------- | ----- | ----- |
+| `llc`        | 52.35% | 5.56%  | `co`            | 1.01% | 1.65% |
+| `inc`        | 11.90% | 2.21%  | `management`    | 1.64% | 1.07% |
+| `limited`    | 1.15%  | 10.41% | `equity`        | 1.62% | 0.68% |
+| `fund`       | 8.35%  | 3.62%  | `s l`           | 0.00% | 1.59% |
+| `gmbh`       | 0.00%  | 5.55%  | `investment`    | 1.57% | 0.96% |
+| `trust`      | 5.10%  | 3.21%  | `corporation`   | 1.55% | 0.44% |
+| `lp`         | 4.85%  | 0.80%  | `a`             | 0.96% | 1.54% |
+| `b v`        | 0.00%  | 4.79%  | `realty`        | 1.47% | 0.21% |
+| `private`    | 0.40%  | 4.59%  | `associates`    | 1.45% | 0.26% |
+| `l p`        | 4.19%  | 0.72%  | `oy`            | 0.00% | 1.44% |
+| `holdings`   | 4.06%  | 1.32%  | `invest`        | 0.11% | 1.42% |
+| `s r l`      | 0.00%  | 3.99%  | `investments`   | 1.40% | 1.12% |
+| `ltd`        | 0.86%  | 3.91%  | `global`        | 1.38% | 1.15% |
+| `holding`    | 0.61%  | 3.80%  | `series`        | 1.37% | 0.24% |
+| `限`         | 0.00%  | 3.03%  | `s a`           | 0.00% | 1.34% |
+| `有`         | 0.00%  | 3.02%  | `s`             | 0.62% | 1.32% |
+| `公`         | 0.00%  | 3.01%  | `property`      | 1.30% | 0.34% |
+| `司`         | 0.00%  | 3.01%  | `iii`           | 1.27% | 0.35% |
+| `owner`      | 2.93%  | 0.31%  | `international` | 1.24% | 0.93% |
+| `ab`         | 0.15%  | 2.83%  | `bank`          | 1.23% | 0.33% |
+| `partners`   | 2.75%  | 0.70%  | `income`        | 1.22% | 0.34% |
+| `etf`        | 2.74%  | 0.50%  | `apartments`    | 1.21% | 0.13% |
+| `ii`         | 2.71%  | 0.77%  | `portfolio`     | 1.19% | 0.34% |
+| `company`    | 2.69%  | 1.15%  | `and`           | 1.19% | 1.04% |
+| `l l c`      | 2.61%  | 0.29%  | `credit`        | 1.16% | 0.38% |
+| `capital`    | 2.55%  | 1.55%  | `partnership`   | 1.15% | 0.24% |
+| `of`         | 2.32%  | 0.70%  | `real`          | 1.12% | 0.40% |
+| `aps`        | 0.00%  | 2.31%  | `kg`            | 0.01% | 1.10% |
+| `properties` | 2.22%  | 0.42%  | `park`          | 1.08% | 0.22% |
+| `the`        | 2.19%  | 2.16%  | `energy`        | 1.05% | 0.49% |
+| `sl`         | 0.07%  | 2.19%  | `estate`        | 1.04% | 0.38% |
+| `i`          | 1.92%  | 0.99%  | `di`            | 0.01% | 1.02% |
+| `as`         | 0.07%  | 1.90%  | `cap`           | 1.01% | 0.19% |
+| `street`     | 1.89%  | 0.27%  | `corp`          | 0.90% | 0.28% |
+| `group`      | 1.78%  | 1.12%  | `srl`           | 0.00% | 0.89% |
+| `de`         | 0.21%  | 1.76%  | `sa`            | 0.06% | 0.77% |
+
+The cut is every word at or above 1% in either population. `corp`, `srl` and
+`sa` are also stopped although each is under 1%, because each is another
+spelling of a stopped form (`corporation`, `s r l`, `s a`). As with FDIC the
+list holds generic words as well as legal forms (`street`, `owner`, `ii`,
+`properties`); a word in more than 1% of names identifies nobody whatever it
+means. A name made only of stopped words has no phonetic tokens and the phonetic
+signals read it as not evaluable; in a seeded sample of 5,000 names that was 2
+US names (0.04%) and 4 worldwide (0.08%). The `name-token` signal reads the
+unstopped `clean` subfield and still scores them.
+
+The legal forms on this list that the anonymization scanner's suffix list
+lacked were added to it in the same change (`LIMITED`, `HOLDING`,
+`PARTNERSHIP`, `B.V.`, `S.R.L.`, `S.L.`, `SA`, `AB`, `APS`, `AS`, `OY`, `KG`
+and their spellings), so a GLEIF name ending in one is extracted and looked up
+(`tests/test_scan_identifiers_leis.py`,
+`test_gleif_stop_list_legal_forms_are_extracted`).
+
+## Phonetic encoders
+
+`name_phonetic` uses `double_metaphone` at its default code length of 4, and
+`name_phonetic_bm` uses `beider_morse` pinned to English and Spanish, chosen
+with `scripts/compare_phonetic_encoders.py` before the load. The script was run
+on `LEGAL_NAME` in the scratch index of all 3,508,047 names used for the stop
+list, with the stop list applied (`--base-filters
+icu_normalizer,icu_folding,punct_white,entity_word_stop`). All-edits AUC on 600
+names, three seeds, 2026-11-26:
+
+| Encoder                            | Seed 20261126 | Seed 7 | Seed 99 |
+| ---------------------------------- | ------------- | ------ | ------- |
+| `double_metaphone`, max_code_len 4 | 0.860         | 0.871  | 0.860   |
+| `double_metaphone`, max_code_len 6 | 0.851         | 0.863  | 0.854   |
+| `metaphone`                        | 0.851         | 0.862  | 0.852   |
+| `beider_morse` english+spanish     | 0.772         | 0.787  | 0.782   |
+| no encoder (cleaned tokens)        | 0.737         | 0.745  | 0.748   |
+
+The order held on every seed, so the code length is 4, as CMS-Providers chose
+for hospital names, rather than FDIC-Banks' and DOT-Commercial's 6. The margin
+is under 0.01, a small gain rather than a fix. Recall at a 1% false-match rate
+agrees (66.6%, 68.2% and 67.3% at length 4 against 66.3%, 66.4% and 66.2% at
+6). Beider-Morse scores below every metaphone variant on its own but is kept as
+the second arm: it is its own subfield, so a sweep can weight it on its
+own, and DOT-Commercial showed it catching cross-language respellings that
+double-metaphone keeps apart ("Name and address analyzers" there), which
+matters more in a register that is mostly non-US names. The sampled names are
+only those written in Latin capitals, digits and common punctuation, because
+the script's edits are defined over A-Z.
+
+## Loading
+
+```bash
+.venv/bin/python scripts/check_mapping_coverage.py --project=GLEIF-Entities --step=entities
+.venv/bin/python execute_project.py --project=GLEIF-Entities --step=entities-ingestion-setup
+.venv/bin/python execute_project.py --project=GLEIF-Entities --step=entities   # about 3 minutes
+```
+
+The coverage check reports 0 of 27 columns unpinned. It lists `HQ_LOCAL` and
+`LEGAL_LOCAL` as "pinned but not in CSV", which is expected: the ingest
+pipeline derives both.
+
+Loaded 2026-11-26 into `entities-2026.11.26-000001`, behind the alias
+`entities-000001`: 3,508,047 documents from 3,508,047 CSV rows, no failed
+documents, in 174 seconds for the whole step (2 minutes 42 seconds of
+indexing). The index is 5.4 GB on one shard once merges settled (5,375 MB; the
+replica is unassigned on the one-node cluster). `CREATION_DATE` and
+`SHUTDOWN_DATE` are mapped as `date` (`strict_date_optional_time||yyyy-MM-dd`),
+the parent and successor columns as `keyword` arrays.
+
+Checked against the CSV after the load:
+
+| Field                 | CSV rows with a value | Indexed documents with it |
+| --------------------- | --------------------- | ------------------------- |
+| `CREATION_DATE`       | 2,908,848             | 2,908,848                 |
+| `SHUTDOWN_DATE`       | 258,562               | 258,562                   |
+| `SUCCESSOR_LEI`       | 35,562                | 35,562                    |
+| `SUCCESSOR_CHAIN_END` | 62,911                | 62,911                    |
+| `DIRECT_PARENT_LEI`   | 127,758               | 127,758                   |
+| `ULTIMATE_PARENT_LEI` | 133,967               | 133,967                   |
+| `FUND_MANAGER_LEI`    | 153,655               | 153,655                   |
+| `UMBRELLA_FUND_LEI`   | 75,295                | 75,295                    |
+| `BRANCH_OF_LEI`       | 2,008                 | 2,008                     |
+| `MASTER_FUND_LEI`     | 1,409                 | 1,409                     |
+
+No date was dropped by the pipeline's `on_failure`. Every list column was
+split: the indexed values equal the CSV's `|`-separated values
+(`SUCCESSOR_LEI` 35,723, `SUCCESSOR_CHAIN_END` 63,048), and no indexed
+`SUCCESSOR_LEI` contains a `|`. Of the 19,413 US inactive records, 21 have no
+`SHUTDOWN_DATE`, the profile's figure; those are the predecessors
+`undated_predecessors: "skip"` will skip. 6,320 have no `CREATION_DATE`, also
+as profiled.
+
+`HQ_LOCAL` is on 2,566,272 documents and `LEGAL_LOCAL` on 2,563,963; the rest
+lack a street, a city or a region (`LEGAL_REGION` is blank on 26.0% of
+records, mostly outside the US). 10,809 US records have no `HQ_LOCAL`.
+
+**The loader reads literal "NA"-like strings as missing.** `pd.read_csv`
+keeps its default `na_values`, so a whole cell reading `NA`, `N/A`, `n/a`,
+`NULL`, `null` or `None` loads as no value. In this file that is:
+
+| Column(s)                      | Values read as missing                               |
+| ------------------------------ | ---------------------------------------------------- |
+| `ENTITY_STATUS`                | 9,133 `NULL`, GLEIF's own value; the field is absent |
+| `LEGAL_COUNTRY` / `HQ_COUNTRY` | 109 / 103 `NA`, the ISO code for Namibia             |
+| `LEGAL_STREET` / `HQ_STREET`   | 4,562 / 4,547, almost all `N/A`                      |
+| `LEGAL_CITY` / `HQ_CITY`       | 4,385 / 4,389, almost all `N/A`                      |
+| `LEGAL_POSTAL` / `HQ_POSTAL`   | 166 / 165                                            |
+| `OTHER_NAMES` (whole cell)     | 25                                                   |
+| `LEGAL_NAME`                   | 1 `NA`                                               |
+
+The placeholders (`N/A` streets and cities) are better absent. They are also
+why `HQ_LOCAL`, `LEGAL_LOCAL` and `OTHER_NAMES` sit 17, 20 and 25 documents
+short of a strict count of non-blank CSV cells: every one of those rows has a
+part that pandas read as missing. The rest is a real loss. The predecessor
+population selects `INACTIVE` US records, so neither the absent `NULL` status
+nor the absent Namibian country changes it, but a candidate filter or signal
+that read either field would have to allow for it. A `term` query for
+`ENTITY_STATUS` `NULL` finds nothing; use `must_not exists`. See hazard 17.
+
 ## Hazards
 
 1. **An offset date converted to UTC moves a day.** GLEIF writes
@@ -326,3 +503,30 @@ headquarters address, and why any legal-address signal needs a
     read from the first additional line, or left blank when there is none (see
     "Shared legal addresses" for the counts). Guarded by
     `test_care_of_street_read_from_next_line`.
+14. **A street without its town matches every same-named street.** FDIC
+    listed a bare "Main Street" for 1,481 banks, and compared on the street
+    alone each matched every other at 1.0 across state lines (FDIC hazard 5).
+    `HQ_LOCAL` and `LEGAL_LOCAL` copy FDIC's `STREET_LOCAL`:
+    `<street> | <city> <region>`, set only when all three parts are present,
+    because `<street> | ` would again match every namesake with no town.
+    Guarded by `tests/test_gleif_pipeline.py`
+    (`test_local_address_needs_city_and_region`).
+15. **A date that fails the strict mapping drops the whole entity.**
+    Elasticsearch rejects the document, not the value, so one malformed
+    creation date would remove a predecessor or its successor from every
+    sweep, and the load would report one failure among millions. Each date
+    processor removes its own field on failure instead. Guarded by
+    `test_date_failure_removes_field`.
+16. **A `|`-joined column left unsplit is one long keyword.** A parent or
+    successor LEI inside it would never equal the other record's `LEI`, so
+    every declared link through it would read as missing while the load
+    succeeded. The pipeline splits every column `EntityColumns.list_valued()`
+    names, read from the prepare script itself so a new list column cannot be
+    missed. Guarded by `test_list_columns_are_split`.
+17. **The loader turns a literal `NA`, `N/A` or `NULL` into no value.**
+    `utils/csv_load_utils.py` reads with pandas' default `na_values`, which
+    every project's load shares, so Namibia's country code `NA` and GLEIF's
+    `ENTITY_STATUS` `NULL` load as absent (counts under "Loading"). Nothing
+    errors and the count matches. Nothing guards this: changing the loader
+    would change what the other projects load, so it is recorded rather than
+    fixed here.

@@ -79,12 +79,19 @@ _ORG_SUFFIX = (
     r"LLC|L\.L\.C\.?|INC\.?|INCORPORATED|CORP\.?|CORPORATION|CO\.|COMPANY|LTD\.?|"
     r"LLP|PLLC|TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|FREIGHT|EXPRESS|"
     r"CARRIERS?|HAULING|LINES|ENTERPRISES|HOSPITAL|CLINIC|MEDICAL CENTER|HEALTH SYSTEM|"
-    r"LP|L\.P\.|LLLP|L\.L\.L\.P\.|HOLDINGS|PARTNERS|GROUP|PLC|N\.V\.|S\.A\.|GMBH|AG"
+    r"LP|L\.P\.|LLLP|L\.L\.L\.P\.|HOLDINGS|PARTNERS|GROUP|PLC|N\.V\.|S\.A\.|GMBH|AG|"
+    # The legal forms in GLEIF's measured name stop list (GLEIF-Entities
+    # README, "Name stop list"), each in at least 1% of legal names or a
+    # spelling of one that is. Most GLEIF names end in a European form rather
+    # than a US one, and a name no pattern extracts is never looked up, so a
+    # real entity's name would pass as clean.
+    r"LIMITED|HOLDING|PARTNERSHIP|B\.V\.|BV|S\.R\.L\.|SRL|S\.L\.|SL|SA|AB|APS|AS|OY|KG"
 )
 _TITLE_SUFFIX = (
     r"Hospital|Medical Center|Clinic|Health System|Healthcare|Trucking|Transport|"
     r"Logistics|Freight|Hauling|LLC|Inc\.?|Corp\.?|Company|"
-    r"Holdings|Partners|Group|L\.P\.|LP"
+    r"Holdings|Partners|Group|L\.P\.|LP|"
+    r"Limited|Ltd\.?|Holding|Partnership|GmbH|B\.V\.|S\.r\.l\.|S\.L\.|S\.A\.|AB|ApS|AS|Oy|KG"
 )
 # Bank names end differently from carriers and hospitals ("State Bank",
 # "Savings and Loan Association"), and the town after "Bank of" is often the only

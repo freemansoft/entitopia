@@ -124,3 +124,30 @@ def test_explains_pair_is_flagged():
         truth_pairs={"P/step": truth},
     )
     assert scan_identifiers.verdict_for(finding) == "FLAGGED"
+
+
+def test_gleif_stop_list_legal_forms_are_extracted():
+    # One line per legal form the GLEIF stop list measured (GLEIF-Entities
+    # README, "Name stop list") that the suffix list lacked.
+    text = (
+        "QUUXWORTH LIMITED; ZORBLAT B.V.; GLIMMER S.R.L.; WEXO SRL; FROBANT S.L.; "
+        "PLINDER SA; VORTAL AB; KRESSEL APS; MOOVIK AS; TARNO OY; BLEXEN KG; "
+        "QUUXWORTH HOLDING; ZORBLAT PARTNERSHIP; Quuxworth Vantage Limited; Zorblat Beheer GmbH"
+    )
+    assert {
+        "QUUXWORTH LIMITED",
+        "ZORBLAT B.V",
+        "GLIMMER S.R.L",
+        "WEXO SRL",
+        "FROBANT S.L",
+        "PLINDER SA",
+        "VORTAL AB",
+        "KRESSEL APS",
+        "MOOVIK AS",
+        "TARNO OY",
+        "BLEXEN KG",
+        "QUUXWORTH HOLDING",
+        "ZORBLAT PARTNERSHIP",
+        "Quuxworth Vantage Limited",
+        "Zorblat Beheer GmbH",
+    } <= _values(text, "name")
