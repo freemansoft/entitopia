@@ -34,7 +34,15 @@ from matching.declared import DeclaredLinks, split_half
 from matching.signals import _latest_date
 from phase_providers.phase_entity_match import build_sweep_components, pair_side_names_for
 from utils import elasticsearch_utils, file_utils, id_utils
-from utils.declared_measure import LinkOutcome, PairRow, gap_histogram, summarize
+from utils.declared_measure import (
+    FINE_GAP_EDGES,
+    LinkOutcome,
+    PairRow,
+    candidate_undated,
+    gap_histogram,
+    step_is_dated,
+    summarize,
+)
 
 SCAN_SIZE = 2000
 CONFIGURATION_DIR = "configuration"
@@ -100,7 +108,7 @@ def check_pair_index(es, index, source_index, step_template):
     return concrete
 
 
-def read_pairs(es, index, side):
+def read_pairs(es, index, side, cand_side, dated):
     """Every pair's score keyed by _id, plus per-predecessor rows for precision.
 
     One scan serves both uses: link lookup by the sweep's own id scheme, and
@@ -110,15 +118,19 @@ def read_pairs(es, index, side):
     `side` is the name the sweep wrote its first record under, which depends
     on the population mode. A pair with no key there is refused: hashing
     str(None) into the split would file all such pairs under one half.
+
+    `cand_side` and `dated` (step_is_dated) mark each row's undated
+    candidate; the add_date is projected only for that.
     """
     scores = {}
     rows = []
     field = "{}.entity_key".format(side)
+    add_date = "{}.add_date".format(cand_side)
     for hit in scan(
         es,
         index=index,
         query={"query": {"match_all": {}}},
-        _source=["total_score", "declared", field],
+        _source=["total_score", "declared", field, add_date],
         size=SCAN_SIZE,
     ):
         source = hit["_source"]
@@ -130,7 +142,10 @@ def read_pairs(es, index, side):
                 "Pair {} in {} has no {}; precision cannot assign it to a "
                 "half".format(hit["_id"], index, field)
             )
-        rows.append(PairRow(str(pred_key), source.get("declared", "none"), score))
+        undated = candidate_undated(source, cand_side, dated)
+        rows.append(
+            PairRow(str(pred_key), source.get("declared", "none"), score, undated)
+        )
     return scores, rows
 
 
@@ -162,6 +177,18 @@ def classify_target(window, pred_doc, target_doc):
     if registered is None and window.undated_candidates == "exclude":
         return "target_undated"
     return "target_outside_window"
+
+
+def target_is_undated(window, target_doc):
+    """True for a fetched target with no parseable registration date.
+
+    Read whatever the link's status, since an undated target is measured by
+    one sweep and excluded by the other and both need counting. False with no
+    window: a step without a lifecycle has no registration date to miss.
+    """
+    if window is None:
+        return False
+    return _latest_date(target_doc.value(window.lifecycle.registration_date)) is None
 
 
 def gap_between(window, pred_doc, target_doc):
@@ -208,11 +235,12 @@ def predecessor_links(env, pred_hit, pred_doc, targets):
             continue
         target_doc = to_entity_doc(hit, {}, env.key_field)
         gap = gap_between(window, pred_doc, target_doc)
+        undated = target_is_undated(window, target_doc)
         exclusion = classify_target(window, pred_doc, target_doc)
         if exclusion:
-            links.append(LinkOutcome(pred_key, target, exclusion, None, gap))
+            links.append(LinkOutcome(pred_key, target, exclusion, None, gap, undated))
         else:
-            in_window.append((target, gap))
+            in_window.append((target, gap, undated))
     if not in_window:
         return links
 
@@ -228,19 +256,21 @@ def predecessor_links(env, pred_hit, pred_doc, targets):
         # its truth links, so calling these misses would charge the matcher for
         # a search that never ran.
         links.extend(
-            LinkOutcome(pred_key, t, "predecessor_not_searched", None, g)
-            for t, g in in_window
+            LinkOutcome(pred_key, t, "predecessor_not_searched", None, g, u)
+            for t, g, u in in_window
         )
         return links
     retrieved = {c.entity_key for c in candidates}
-    for target, gap in in_window:
+    for target, gap, undated in in_window:
         if target not in retrieved:
-            links.append(LinkOutcome(pred_key, target, "not_retrieved", None, gap))
+            links.append(
+                LinkOutcome(pred_key, target, "not_retrieved", None, gap, undated)
+            )
             continue
         pair_id = id_utils.compute_id({"p": pred_key, "s": target}, ["p", "s"])
         score = env.scores.get(pair_id)
         status = "retrieved_not_emitted" if score is None else "emitted"
-        links.append(LinkOutcome(pred_key, target, status, score, gap))
+        links.append(LinkOutcome(pred_key, target, status, score, gap, undated))
     return links
 
 
@@ -261,14 +291,16 @@ def measure(es, project, step, index, half):
     )
     step_template = getattr(index_config, "index", None) if index_config else None
     index = check_pair_index(es, index, source_index, step_template)
-    side, _ = pair_side_names_for(getattr(config.population, "mode", "lifecycle"))
+    side, cand_side = pair_side_names_for(
+        getattr(config.population, "mode", "lifecycle")
+    )
     components = build_sweep_components(es, config, logging.getLogger(__name__))
     finder = components.finder
     selector = components.selector
     window = finder.window
     ctx = components.context_builder.build_context(source_index, config.signals, config)
 
-    scores, rows = read_pairs(es, index, side)
+    scores, rows = read_pairs(es, index, side, cand_side, step_is_dated(config))
     key_field = finder.entity_key_field
     env = SimpleNamespace(
         es=es, source_index=source_index, key_field=key_field, window=window,
@@ -299,16 +331,23 @@ def main():
     parser.add_argument("--index", required=True, help="The sweep's pair index")
     parser.add_argument("--half", required=True, choices=("tune", "report"))
     parser.add_argument("--host", default="http://localhost:9200")
+    # A bare --gaps keeps the coarse bins earlier runs were quoted with;
+    # "fine" gives the bins overlap_days is chosen from.
     parser.add_argument(
         "--gaps",
-        action="store_true",
-        help="Also bin days from shutdown to target registration",
+        nargs="?",
+        const="coarse",
+        choices=("coarse", "fine"),
+        help="Also bin days from shutdown to target registration "
+        "(fine: the bins for choosing overlap_days)",
     )
     args = parser.parse_args()
 
     es = Elasticsearch(args.host)
     result, links = measure(es, args.project, args.step, args.index, args.half)
-    if args.gaps:
+    if args.gaps == "fine":
+        result["gap_histogram"] = gap_histogram(links, FINE_GAP_EDGES)
+    elif args.gaps:
         result["gap_histogram"] = gap_histogram(links)
     print(json.dumps(result, indent=2))
     return 0

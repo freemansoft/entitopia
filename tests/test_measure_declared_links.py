@@ -22,7 +22,13 @@ from matching.declared import split_half
 from matching.documents import EntityDoc
 from matching.window import LifecycleWindow
 from utils import file_utils
-from utils.declared_measure import LinkOutcome, PairRow, gap_histogram, summarize
+from utils.declared_measure import (
+    FINE_GAP_EDGES,
+    LinkOutcome,
+    PairRow,
+    gap_histogram,
+    summarize,
+)
 
 REAPPEARANCE = Path("FDIC-Banks/configuration/bank-reappearance/entity-match.json")
 ABSORPTION = Path("FDIC-Banks/configuration/bank-absorption/entity-match.json")
@@ -406,7 +412,7 @@ def test_pair_with_no_predecessor_key_is_refused(monkeypatch):
     hits = _hits({"total_score": 0.9, "declared": "none", "predecessor": {}})
     monkeypatch.setattr(script, "scan", lambda *a, **k: iter(hits))
     with pytest.raises(ValueError, match=r"predecessor\.entity_key"):
-        script.read_pairs(None, "idx", "predecessor")
+        script.read_pairs(None, "idx", "predecessor", "successor", False)
 
 
 def test_all_entities_pairs_are_read_by_their_own_side_name(monkeypatch):
@@ -414,6 +420,231 @@ def test_all_entities_pairs_are_read_by_their_own_side_name(monkeypatch):
     # find no key on any pair.
     hits = _hits({"total_score": 0.9, "declared": "truth", "left": {"entity_key": "L1"}})
     monkeypatch.setattr(script, "scan", lambda *a, **k: iter(hits))
-    scores, rows = script.read_pairs(None, "idx", "left")
+    scores, rows = script.read_pairs(None, "idx", "left", "right", False)
     assert rows == [PairRow("L1", "truth", 0.9)]
     assert scores == {"0": 0.9}
+
+
+# --- band and undated counts, added for GLEIF ------------------------------
+
+
+def test_existing_keys_unchanged():
+    """FDIC's quoted report-half figures must not move when keys are added.
+
+    The literals were captured from summarize before the band and undated
+    counts existed. Every key part 1 defined is compared whole, so a change
+    that quietly re-cut a band or re-defined a denominator fails here even
+    though the new keys beside it are correct.
+    """
+    links = [
+        LinkOutcome("P1", "T1", "emitted", 0.95, 0),
+        LinkOutcome("P2", "T2", "emitted", 0.62, -40),
+        LinkOutcome("P3", "T3", "emitted", 0.41, 3),
+        LinkOutcome("P4", "T4", "not_retrieved", None, -200),
+        LinkOutcome("P5", "T5", "retrieved_not_emitted", None, 10),
+        LinkOutcome("P6", "T6", "target_missing_from_index"),
+        LinkOutcome("P7", "T7", "target_outside_window", None, -4000),
+        LinkOutcome("P8", "T8", "target_undated", target_undated=True),
+        LinkOutcome("P9", "T9", "predecessor_undated"),
+        LinkOutcome("P10", "T10", "predecessor_not_searched", None, 5),
+    ]
+    pairs = [
+        PairRow("P1", "truth", 0.95),
+        PairRow("P2", "truth", 0.62),
+        PairRow("P3", "none", 0.85, candidate_undated=True),
+        PairRow("P4", "none", 0.55),
+        PairRow("P5", "explains", 0.72),
+        PairRow("P6", "explains", 0.36),
+        PairRow("P7", "none", 0.2),
+        PairRow("P8", "truth", 0.41),
+    ]
+    result = summarize(links, pairs, complete_truth=True)
+    expected = {
+        "denominator": 5,
+        "exclusions": {
+            "target_missing_from_index": 1,
+            "target_outside_window": 1,
+            "target_undated": 1,
+            "predecessor_undated": 1,
+            "predecessor_not_searched": 1,
+        },
+        "recall": 0.6,
+        "recall_by_band": {
+            "0.35": 0.6,
+            "0.5": 0.4,
+            "0.6": 0.4,
+            "0.7": 0.2,
+            "0.8": 0.2,
+            "0.9": 0.2,
+        },
+        "misses": {"not_retrieved": 1, "retrieved_not_emitted": 1},
+        "explains_by_band": {
+            "0.35": 2,
+            "0.5": 1,
+            "0.6": 1,
+            "0.7": 1,
+            "0.8": 0,
+            "0.9": 0,
+        },
+        "precision_by_band": {
+            "0.35": 0.6,
+            "0.5": 0.5,
+            "0.6": 0.6666666666666666,
+            "0.7": 0.5,
+            "0.8": 0.5,
+            "0.9": 1.0,
+        },
+    }
+    for key, value in expected.items():
+        assert result[key] == value, key
+    assert set(result) - set(expected) == {"undated", "pairs_in_band"}
+    assert gap_histogram(links) == {
+        "<-3650": 1,
+        "-3650..-366": 0,
+        "-365..-181": 1,
+        "-180..-1": 1,
+        "0..365": 4,
+        ">365": 0,
+    }
+
+
+def test_undated_targets_counted_both_ways():
+    """An undated successor counts in a denominator, and its exclusions show too.
+
+    Absorption keeps undated candidates, so their truth links are measured
+    there and excluded from reappearance as target_undated. Reporting only one
+    side would hide how much of a recall figure rests on links with no date.
+    """
+    links = [
+        LinkOutcome("P", "T1", "emitted", 0.8, target_undated=True),
+        LinkOutcome("P", "T2", "not_retrieved", target_undated=True),
+        LinkOutcome("P", "T3", "target_undated", target_undated=True),
+        _link("emitted", 0.9),
+    ]
+    undated = summarize(links, [], complete_truth=False)["undated"]
+    assert undated["target_links_measured"] == 2
+    assert undated["target_links_excluded"] == 1
+
+
+def test_pairs_in_band_are_intervals():
+    pairs = [
+        PairRow("P1", "truth", 0.55),
+        PairRow("P2", "none", 0.95),
+        PairRow("P3", "none", 0.2),
+    ]
+    in_band = summarize([], pairs, complete_truth=False)["pairs_in_band"]
+    assert list(in_band) == [
+        "0.35-0.5",
+        "0.5-0.6",
+        "0.6-0.7",
+        "0.7-0.8",
+        "0.8-0.9",
+        "0.9+",
+    ]
+    empty = {"truth": 0, "explains": 0, "none": 0, "none_undated": 0}
+    assert in_band["0.5-0.6"] == {**empty, "truth": 1}
+    assert in_band["0.9+"] == {**empty, "none": 1}
+    others = [label for label in in_band if label not in ("0.5-0.6", "0.9+")]
+    assert all(in_band[label] == empty for label in others)
+
+
+def test_interval_lower_edge_is_inclusive():
+    """A score on an edge belongs to the interval above it, as in recall_by_band."""
+    in_band = summarize([], [PairRow("P", "none", 0.6)], False)["pairs_in_band"]
+    assert in_band["0.6-0.7"]["none"] == 1
+    assert in_band["0.5-0.6"]["none"] == 0
+
+
+def test_undated_pairs_by_band():
+    """Undated pairs are cumulative like recall_by_band; none_undated is per interval.
+
+    none_undated is a subset of none, so the truth share a reader computes
+    per interval covers every pair, and the dated findings are the difference.
+    """
+    pairs = [
+        PairRow("P1", "none", 0.4, candidate_undated=True),
+        PairRow("P2", "none", 0.75, candidate_undated=True),
+        PairRow("P3", "truth", 0.95, candidate_undated=True),
+        PairRow("P4", "none", 0.75),
+        PairRow("P5", "none", 0.1, candidate_undated=True),
+    ]
+    result = summarize([], pairs, complete_truth=False)
+    assert result["undated"]["pairs_by_band"] == {
+        "0.35": 3,
+        "0.5": 2,
+        "0.6": 2,
+        "0.7": 2,
+        "0.8": 1,
+        "0.9": 1,
+    }
+    assert result["pairs_in_band"]["0.7-0.8"]["none"] == 2
+    assert result["pairs_in_band"]["0.7-0.8"]["none_undated"] == 1
+    assert result["pairs_in_band"]["0.9+"]["none_undated"] == 0
+
+
+def test_fine_gap_bins_match_fdic_table():
+    """The bins of FDIC-Banks/README.md's "Choosing overlap_days" table, in order.
+
+    That table was computed by a one-off because the coarse bins could not show
+    the valley. Pinning one gap per bin keeps the script able to reproduce it.
+    """
+    gaps = [-3651, -1096, -366, -181, -91, -61, -31, -8, -1, 0, 1, 7, 366]
+    histogram = gap_histogram([_link("emitted", 0.9, gap=g) for g in gaps], FINE_GAP_EDGES)
+    assert list(histogram) == [
+        "<-3650",
+        "-3650..-1096",
+        "-1095..-366",
+        "-365..-181",
+        "-180..-91",
+        "-90..-61",
+        "-60..-31",
+        "-30..-8",
+        "-7..-1",
+        "0",
+        "1..6",
+        "7..365",
+        ">365",
+    ]
+    assert list(histogram.values()) == [1] * len(gaps)
+
+
+def test_fetched_undated_target_is_flagged_whatever_its_status():
+    hit, pred = _pred()
+    sources = {"T1": {"key": "T1"}, "T2": {"key": "T2", "opened": "2015-07-01"}}
+    keep = LifecycleWindow(
+        _LIFECYCLE, min_gap_days=-30, max_gap_days=400, undated_candidates="keep"
+    )
+    found = (pred, [EntityDoc("T1", {})], False)
+    env = _env(sources, _StubFinder(result=found), keep)
+    links = script.predecessor_links(env, hit, pred, ["T1", "T2", "T3"])
+    flags = {link.target_key: (link.status, link.target_undated) for link in links}
+    assert flags == {
+        "T3": ("target_missing_from_index", False),
+        "T1": ("retrieved_not_emitted", True),
+        "T2": ("not_retrieved", False),
+    }
+    excluded = script.predecessor_links(_env(sources, _StubFinder(), _window()), hit, pred, ["T1"])
+    assert [(link.status, link.target_undated) for link in excluded] == [
+        ("target_undated", True)
+    ]
+
+
+def test_candidate_undated_only_when_the_step_is_dated(monkeypatch):
+    """A step with no registration_date has no add_date to miss.
+
+    Flagging its every pair undated would report the whole sweep as the
+    undated band.
+    """
+    hits = _hits(
+        {"total_score": 0.9, "predecessor": {"entity_key": "P1"}, "successor": {}},
+        {
+            "total_score": 0.8,
+            "predecessor": {"entity_key": "P2"},
+            "successor": {"add_date": "2015-07-01"},
+        },
+    )
+    monkeypatch.setattr(script, "scan", lambda *a, **k: iter(hits))
+    _, dated = script.read_pairs(None, "idx", "predecessor", "successor", True)
+    assert [row.candidate_undated for row in dated] == [True, False]
+    _, undated = script.read_pairs(None, "idx", "predecessor", "successor", False)
+    assert [row.candidate_undated for row in undated] == [False, False]
