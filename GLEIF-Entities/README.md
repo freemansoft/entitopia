@@ -193,9 +193,11 @@ Level 2 rows by type and relationship status. Every type and status is kept;
 - **Every further relationship type is kept as a parent column**:
   `BRANCH_OF_LEI`, `FUND_MANAGER_LEI`, `UMBRELLA_FUND_LEI` and
   `MASTER_FUND_LEI`, beside `DIRECT_PARENT_LEI` and `ULTIMATE_PARENT_LEI`. Each
-  lets an explains rule recognize two funds of one manager, a sub-fund and its
+  lets an explains rule recognize a fund and its manager, a sub-fund and its
   umbrella, a feeder and its master, or a branch and its head office as
-  related rather than as a finding. The excluded categories still appear as
+  related rather than as a finding. The rules are forward and reverse key
+  rules only, so two funds of one manager are not recognized through the
+  manager (that would need a `shared` rule on `FUND_MANAGER_LEI`). The excluded categories still appear as
   candidates, so their links matter there.
 
 ## Shutdown date
@@ -379,8 +381,10 @@ pipeline derives both.
 Loaded 2026-11-26 into `entities-2026.11.26-000001`, behind the alias
 `entities-000001`: 3,508,047 documents from 3,508,047 CSV rows, no failed
 documents, in 174 seconds for the whole step (2 minutes 42 seconds of
-indexing). The index is 5.4 GB on one shard once merges settled (5,375 MB; the
-replica is unassigned on the one-node cluster). `CREATION_DATE` and
+indexing). The index was 5.4 GB on one shard at load, once merges settled
+(5,375 MB; the replica is unassigned on the one-node cluster). Read again on
+2026-11-27 the primary store is 2,788 MB, the same 3,508,047 documents after
+later merges, so the at-load figure overstates what the index keeps. `CREATION_DATE` and
 `SHUTDOWN_DATE` are mapped as `date` (`strict_date_optional_time||yyyy-MM-dd`),
 the parent and successor columns as `keyword` arrays.
 
@@ -548,7 +552,10 @@ that read either field would have to allow for it. A `term` query for
     sweep logged one error line per predecessor and carried on. Found in the
     first timed sample. The name signals now seed one clause per name; a
     scalar field builds the same clause as before, so FDIC's and
-    DOT-Commercial's queries are unchanged. Guarded by `tests/test_signals.py`
+    DOT-Commercial's queries are unchanged. This governs seeding only: scoring
+    still reads the `OTHER_NAMES` token set from mtermvectors, which is the
+    union of up to ten names, so containment can be met by tokens drawn from
+    different names (see follow-up 7). Guarded by `tests/test_signals.py`
     (`test_list_valued_name_field_seeds_one_clause_per_name`).
 20. **A registered agent's address on a legal-address signal links every
     client of the agent** (see "Shared legal addresses"). The address signal
@@ -765,10 +772,10 @@ both of its bounds, in whole days.
 GLEIF has too few reappearance-shaped links to show a valley. 17 links (3.3% of 520) fall in the 30 days before the shutdown or on the day itself, a third of
 the research sample's 10%, and only 4 are same-day, against FDIC's 651. 434
 (83%) were registered more than ten years before the shutdown. From -3650 to
-the shutdown the density only rises, from 0.4 to 14 links per 30 days, so there
-is no minimum between the spike and the mass to aim at. 180 sits on that slope
-with 5 links within 90 days on its reappearance side and 7 within 185 days on
-the other, so `overlap_days` stays 180 in both configs and
+the shutdown the density rises to 14 links per 30 days in -30 to -8 (8.6 in
+the last week), so there is no minimum between the spike and the mass to aim
+at. 180 sits on that slope, with 5 links in the -180 to -91 bin on its
+reappearance side and 7 in the -365 to -181 bin on the other, so `overlap_days` stays 180 in both configs and
 `tests/test_succession_window_pairs.py` is unchanged.
 
 ### Where the absorption links are lost
@@ -839,7 +846,11 @@ town) and changes no score: at weight 0 it adds nothing to a pair's total or
 to the weight it is divided by, and it reads the same field as `address`, so
 `min_signals` counts it as the same evidence. A seed on the fuzzy subfield is
 not otherwise expressible: `address` seeds on its exact subfield only.
-Removing it as an unused weight would quietly undo R3. It does appear in each
+Removing it as an unused weight would quietly undo R3. Guarded by
+`tests/test_gleif_configs.py`
+(`test_hq_street_seed_retrieves_on_street_tokens_by_signal_type`), which
+builds the real finder from the committed config and fails if the signal is
+removed or seeding stops selecting by signal type. It does appear in each
 pair's `signals` list and `signals_present` count.
 
 ### Tuning log (tune half)
@@ -1334,9 +1345,10 @@ Placeholders stand for the entities, and the numbers inside them are invented.
    stem shared at one headquarters would need a new rule kind. Measure it on
    the tune half first, since it changes the truth share.
 2. **Foreign candidates in reappearance.** 42 of 45 look-alikes below 0.70 are
-   registered outside the US. A country filter on candidates would remove them,
-   but only after counting how many registered successors of US entities are
-   themselves foreign, on the tune half.
+   registered outside the US. A country filter on candidates would remove them.
+   The profile already counts the cost: 1,395 of 1,401 distinct successors are
+   US, so the filter could lose the links naming at most 6 successors. Measure
+   it on the tune half before adopting it, as it changes recall.
 3. **A score-stratified sample of undated pairs.** Absorption's undated
    sample is one stratum across every score, so the 1,856 undated undeclared
    pairs at 0.80 and above are unreviewed. Drawing the undated pairs per
@@ -1347,3 +1359,7 @@ Placeholders stand for the entities, and the numbers inside them are invented.
 5. **A worldwide population**, which needs multilingual analyzers.
 6. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
    the spec.
+7. **Per-name scoring of `OTHER_NAMES`.** The name signals score the field's
+   merged token set, so a pair can reach containment with tokens from two
+   different names. Scoring each name separately and taking the best would
+   remove it; measure on the tune half first, since it can only lower scores.

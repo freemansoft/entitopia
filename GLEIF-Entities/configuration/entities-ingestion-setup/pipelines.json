@@ -3,7 +3,7 @@
   "processors": [
     {
       "split": {
-        "description": "prepare_gleif.py joins up to ten other and transliterated names with |; left whole, they would be one run-on name whose tokens and phonetic codes blend unrelated names into one",
+        "description": "prepare_gleif.py joins up to ten other and transliterated names with |; left whole, seeding would send one run-on name as a single query. Splitting governs seeding only (one clause per name); scoring still reads one merged token set for the field, so tokens from different names can jointly satisfy containment",
         "field": "OTHER_NAMES",
         "separator": "\\|",
         "ignore_missing": true

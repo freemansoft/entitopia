@@ -173,8 +173,9 @@ class EntityColumns:
     )
     # Further relationship types kept as parent columns, decided from the
     # 2026-11-26 profile (README, "Decisions from the profile"). Each lets a shared or
-    # parent-child explains rule recognize two funds of one manager, a branch
-    # and its head office, or a sub-fund and its umbrella as related.
+    # parent-child explains rule recognize a fund and its manager, a branch
+    # and its head office, or a sub-fund and its umbrella as related. Two funds of
+    # one manager are not covered: the configs hold no `shared` rule on these columns.
     BRANCH_OF_LEI: tuple[str, ...] = field(
         default=("IS_INTERNATIONAL_BRANCH_OF",), metadata=_PARENT
     )

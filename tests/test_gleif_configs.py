@@ -10,15 +10,24 @@ every client of that agent, because tens of thousands of US entities carry one
 filing service's street as their legal address. None of these shows in a run's
 log: the sweep completes and its counts look plausible.
 
+A third guard covers retrieval. The reappearance sweep's recall gain at R3
+rests on `hq-street-seed`, an `address` signal at weight 0 that exists only to
+seed candidates on street words. It seeds because `CandidateFinder` selects
+seed signals by signal type, not by name. Seeding by name, or deleting the
+apparently unused zero-weight signal, would leave the sweep running and
+logging success with its tuned recall quietly gone.
+
 The expected exclusions are written here from the decision the README records
 ("Decisions from the profile"), never read from the config under test, so a
 config edited to drop one fails rather than redefining what is expected.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from matching.candidates import CandidateFinder
 from matching.population import PopulationSelector
 from matching.signals import build_signal
 from utils import file_utils
@@ -122,3 +131,30 @@ def test_legal_address_is_rarity_limited(step):
         "limit: {}. Today no signal reads a LEGAL_* address field, so this test "
         "passes vacuously until one is added".format(unguarded)
     )
+
+
+def test_hq_street_seed_retrieves_on_street_tokens_by_signal_type():
+    """The zero-weight `hq-street-seed` must still seed, and on HQ street tokens.
+
+    Built through the real finder rather than by calling the signal, so the
+    test fails if seeding stops selecting by signal type (a name-based
+    selection would not see a signal the config lists only by type) as well as
+    if the signal is deleted. The `address` signal seeds on its exact subfield,
+    here `clean`; only the seed signal seeds on `tokens`, so a clause on
+    `HQ_LOCAL.tokens` proves it, not the scored `address` signal, did the work.
+    """
+    config = _load("lei-reappearance")
+    seeds = [s for s in config.signals if getattr(s, "name", None) == "hq-street-seed"]
+    assert len(seeds) == 1, "hq-street-seed signal is missing from the config"
+    assert seeds[0].weight == 0.0, "the seed must not change any score"
+
+    finder = CandidateFinder(
+        es=SimpleNamespace(),
+        source_index=config.source_index,
+        candidates_config=config.candidates,
+        signal_configs=config.signals,
+        entity_config=config.entity,
+        lifecycle=config.lifecycle,
+    )
+    clauses = finder._seed_clauses({"HQ_LOCAL": "100 MAIN ST"})
+    assert {"match": {"HQ_LOCAL.tokens": {"query": "100 MAIN ST"}}} in clauses
