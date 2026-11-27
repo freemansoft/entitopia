@@ -868,8 +868,9 @@ scores; only the best candidate was swept.
 | R4  | `max_candidates` 500 to 1,000     | `lei-reappearance-pairs-2026.11.27-000001` | 141,923 | 11,075 / 11,312 vs R3  | 0.250 (7)      | 0.00528 (7 / 1,326)  | yes: final |
 
 Recall at 0.70 counts links out of 533 (absorption) and 28 (reappearance), so
-every kept step after A2 is one link. Overall tune-half recall (every emitted
-pair) went from 0.128 to 0.126 in absorption and from 0.393 to 0.464 in
+every reappearance step and the last two absorption steps (A4, A5) are one link
+each; A1 added 2 and A2 and A3 added 3 each. Overall tune-half recall (every
+emitted pair) went from 0.128 to 0.126 in absorption and from 0.393 to 0.464 in
 reappearance.
 
 **Changes replayed but not swept**, because the replay left recall at 0.70
@@ -1157,9 +1158,10 @@ tuning log.
 
 **Absorption kept 7 of its 10 links.** Report-half recall at 0.70 rose from
 24 to 31 links of 521 (0.0461 to 0.0595), against 25 to 35 of 533 on the tune
-half. Three links' worth of the gain did not carry over, as many as the last
-three one-link steps added, but most of it did, and the truth share at 0.70
-and above rose on the report half as on the tune half.
+half. Three links' worth of the gain did not carry over, out of the 5 the last
+three kept steps added (3 at A3, then 1 each at A4 and A5), but most of it did,
+and the truth share at 0.70 and above rose on the report half as on the tune
+half.
 
 **Reappearance kept none of its 4 links at 0.70.** The report half reads 6 of
 25 before and after tuning, against 3 to 7 of 28 on the tune half. At these
@@ -1216,8 +1218,8 @@ half, is a `_count` on `lei-absorption-pairs-2026.11.27-000003` filtered on
 | 0.35-0.5 | 24,906           | 6 of 31,790  | 15     | 0      | 0                  | 15           |
 | 0.5-0.6  | 16,210           | 14 of 21,273 | 15     | 0      | 2                  | 13           |
 | 0.6-0.7  | 5,539            | 12 of 8,095  | 15     | 0      | 3                  | 12           |
-| 0.7-0.8  | 1,694            | 15 of 2,807  | 15     | 1      | 7                  | 7            |
-| 0.8-0.9  | 762              | 5 of 2,511   | 15     | 2      | 13                 | 0            |
+| 0.7-0.8  | 1,694            | 15 of 2,807  | 15     | 0      | 8                  | 7            |
+| 0.8-0.9  | 762              | 5 of 2,511   | 15     | 0      | 15                 | 0            |
 | 0.9+     | 228              | 11 of 432    | 15     | 2      | 12                 | 1            |
 | undated  | 17,240           | 6 of 17,403  | 15     | 0      | 8                  | 7            |
 
@@ -1231,26 +1233,25 @@ it has no undated band:
 | 0.6-0.7  | 6,235            | 4 of 6,240  | 15     | 0      | 0                  | 15           |
 | 0.7-0.8  | 990              | 2 of 992    | 15     | 0      | 5                  | 10           |
 | 0.8-0.9  | 420              | 3 of 424    | 15     | 0      | 14                 | 1            |
-| 0.9+     | 34               | 1 of 35     | 15     | 6      | 8                  | 1            |
+| 0.9+     | 34               | 1 of 35     | 15     | 5      | 9                  | 1            |
 
-**Judgement calls.** 19 of the 195 rows (13 absorption, 6 reappearance) were
-not clear from the record. In 9 it was unclear whether the two entities were
-related at all (a shared sponsor-like word, neighbouring street numbers, the
-same town), and each was marked `look-alike`, the conservative verdict. The
-other 10 were plainly related, and the call was which kind. 4 were marked
-`real`: 2 absorption pairs with the same name stem under another legal form in
-the same town, 1 absorption pair of a fund's two registrations, and 1
-reappearance pair with an identical name registered the same day in another
-town. 6 were marked `explained-missed`: a company named after the predecessor
-in its town, the same name registered abroad, or a fund paired with a sibling
-fund of its family. Without those 4, `real` reads 2 in absorption and 5 in
-reappearance. `explained-missed` is the conservative side of those 6: read as
-`real` instead, they would raise `real` by up to 4 in absorption and 2 in
-reappearance.
+**Judgement calls.** 19 of the 195 rows (13 absorption, 6 reappearance) were not
+clear from the record, and none of them went to `real`. In 9 it was unclear
+whether the two entities were related at all (a shared sponsor-like word,
+neighbouring street numbers, the same town), and each was marked `look-alike`.
+The other 10 were plainly related and the doubt was only which kind, so each was
+marked `explained-missed`, which says they are related without claiming a
+succession: 4 pairs whose successor is another registration of the predecessor's
+name (under "Patterns in the sample"), among them the one reappearance pair with
+the same name stem under another legal form, registered the day the predecessor
+closed, in another town; a company named after the predecessor in its town, the
+same name registered abroad, and funds paired with a sibling fund of their
+family. Read as `real` instead, those 10 would raise `real` by up to 7 in
+absorption and 3 in reappearance.
 
 ### Where to start reviewing
 
-**Reappearance: 0.9 and above.** It is the only interval with a `real` row: 6
+**Reappearance: 0.9 and above.** It is the only interval with a `real` row: 5
 of 15, against none in the 75 rows below it. The 0.8-0.9 interval is related
 pairs GLEIF did not link (14 of 15), not successions, and below 0.70 every row
 read is a look-alike (45 of 45, 42 of them a candidate registered outside the
@@ -1259,17 +1260,22 @@ above 0.90**; the whole pair index holds 68 (a `_count` on
 `lei-reappearance-pairs-2026.11.27-000001` filtered on `declared: none` and
 `total_score` at least 0.9).
 
-**Absorption: 0.8 and above.** From 0.80 up, look-alikes nearly vanish (1 of
-30, against 7 of 15 in 0.7-0.8 and 40 of 45 below 0.70) and `real` rows appear
-at 4 of 30, against 1 of 15 in 0.7-0.8 and none below. Most of what a reviewer
-reads there is a relationship GLEIF does not record rather than a succession
-(25 of 30), so the band finds Level 2 gaps more often than undeclared
-successors. The report half holds **990 undeclared pairs at or above 0.80 with
-a dated successor, and 1,856 with an undated one**; the whole pair index holds
-2,044 and 3,719 (a `_count` on `lei-absorption-pairs-2026.11.27-000003`
-filtered on `declared: none` and `total_score` at least 0.8, with and without
-a `successor.add_date`). The undated band is not worth reading as a band:
-none of its 15 rows was `real`.
+**Absorption: 0.9 and above, dated successors only.** It too is the only
+interval with a `real` row: 2 of 15, against none in the other 90 rows read.
+From 0.80 up look-alikes nearly vanish (1 of 30, against 7 of 15 in 0.7-0.8 and
+40 of 45 below 0.70), but every row read in 0.8-0.9 is a relationship GLEIF
+does not record (15 of 15): worth reading for Level 2 gaps, not for
+successions. The report half holds **228 undeclared pairs at or above 0.90 with
+a dated successor**; the whole pair index holds 531 (a `_count` on
+`lei-absorption-pairs-2026.11.27-000003` filtered on `declared: none`,
+`total_score` at least 0.9 and an existing `successor.add_date`).
+
+**The high-scoring undated pairs are unreviewed and kept out of that set.** The
+report half holds 1,856 undeclared pairs at or above 0.80 with an undated
+successor, 180 of them at 0.90 or above (whole index 3,719 and 352: the same
+`_count` with no `successor.add_date`, at 0.8 and 0.9). The undated sample was
+drawn across every score, and only 1 of its 15 rows scores 0.80 or more, so its
+verdicts (none `real`) say nothing about these pairs.
 
 These are pairs, not successions: a predecessor can contribute up to 10
 (`max_pairs_per_predecessor`).
@@ -1286,19 +1292,24 @@ Placeholders stand for the entities, and the numbers inside them are invented.
   same name, form and town, registered 7 and 9 days before the shutdown. These
   read as much like one entity registered twice, the older LEI lapsing, as like
   a succession.
-- **Same day, new form, new town (1 `real`, a judgement call).**
-  `<ENTITY-C> LLC -> <ENTITY-C> LP`, the successor registered the day the
-  predecessor closed.
-- **Absorption by an older registration of the same business (5 `real`).**
+- **Absorption by an older registration of the same business (2 `real`).**
   `<ENTITY-D>, Inc. -> <ENTITY-D>, INC.` in one town, the successor registered
-  2.5 years before the shutdown (score 1.00); three where the same name stem in
-  the same town carries another legal form, registered 3 to 19 years before;
-  and `<TRUST> - <FUND-E> -> <FUND-E>`, a fund's series registration closing
-  while the fund's own registration, in the same city, carries on.
+  2.5 years before the shutdown (score 1.00), and
+  `THE <ENTITY-E> COMPANY -> <ENTITY-E> COMPANY, LLC` in one town, registered 3
+  years before.
+- **Another registration of the same name (4 `explained-missed`, all judgement
+  calls).** In reappearance, `<ENTITY-C> LLC -> <ENTITY-C> LP`: the same name
+  stem under another legal form, registered the day the predecessor closed, in
+  another town. In absorption, two pairs with the same name stem under another
+  legal form in the same town, the successor registered 7 and 19 years before
+  the shutdown, and `<TRUST> - <FUND-E> -> <FUND-E>`, a fund's series
+  registration closing while the fund's own registration, in the same city,
+  carries on. Each may be a succession, but an older or same-day registration
+  under the same name reads as readily as an affiliate.
 - **Numbered siblings (`explained-missed`).**
   `<SPONSOR> FUND 2-C -> <SPONSOR> FUND 2-A` and
   `<SPONSOR> TRUST 4 -> <SPONSOR> TRUST 7`: vehicles of one sponsor at one
-  headquarters whose names differ only in a number or letter. 18 of the 25
+  headquarters whose names differ only in a number or letter. 18 of the 27
   related absorption rows at 0.80 and above are this shape, 5 of them from one
   sponsor's series. In reappearance, 9 of the 14 related rows in 0.8-0.9 are
   one issuer's numbered trust series, all closed on one day and each paired
@@ -1307,9 +1318,9 @@ Placeholders stand for the entities, and the numbers inside them are invented.
   `<ENTITY-F> -> <ENTITY-F> GROUP`,
   `<ENTITY-G> FUND -> <ENTITY-G> FUND HOLDINGS`, or a property vehicle paired
   with its sponsor's company of the same name, in the same town: 5 of the
-  related absorption rows at 0.80 and above. The other 2 of the 25 are
-  different products of one sponsor. GLEIF records no parent between any of
-  them.
+  related absorption rows at 0.80 and above. Of the other 4 of the 27, 2 are
+  different products of one sponsor and 2 are the same-stem judgement calls
+  above. GLEIF records no parent between any of them.
 - **Look-alikes.** In absorption, a common word (`Bank`, `Capital`,
   `Financial`, `Villa`) shared with an entity in another town, 18 of the 40
   below 0.70 registered outside the US. In reappearance, a candidate registered
@@ -1326,8 +1337,13 @@ Placeholders stand for the entities, and the numbers inside them are invented.
    registered outside the US. A country filter on candidates would remove them,
    but only after counting how many registered successors of US entities are
    themselves foreign, on the tune half.
-3. **Absorption retrieval.** 378 of the report half's 458 misses were never
+3. **A score-stratified sample of undated pairs.** Absorption's undated
+   sample is one stratum across every score, so the 1,856 undated undeclared
+   pairs at 0.80 and above are unreviewed. Drawing the undated pairs per
+   interval, as the dated ones are, would let them join the recommended set
+   or be ruled out.
+4. **Absorption retrieval.** 378 of the report half's 458 misses were never
    retrieved, as on the tune half ("Where the absorption links are lost").
-4. **A worldwide population**, which needs multilingual analyzers.
-5. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
+5. **A worldwide population**, which needs multilingual analyzers.
+6. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
    the spec.
