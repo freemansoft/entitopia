@@ -582,9 +582,11 @@ def prepare_entities(
 
     `no_shutdown_date` counts inactive records only: an active entity has no
     shutdown to date, and counting it would bury the figure the stop gate
-    reads. Inactive records seen without one dated among them are refused
-    when the rows run out, because that is a terminal-event vocabulary that
-    no longer matches the file, not a register with no shutdowns.
+    reads. A run in which no inactive record is dated is refused when the
+    rows run out, whether the inactive records went undated (a terminal-event
+    vocabulary that no longer matches the file) or none were seen at all (an
+    inactive_status that no longer matches, which would leave every record
+    looking active). Neither is a register with no shutdowns.
     """
     stats = PrepStats() if stats is None else stats
     parent_columns = columns.parent_columns()
@@ -614,10 +616,11 @@ def prepare_entities(
         for name in parent_columns:
             out[name] = _join(own_parents.get(name, ()))
         yield {name: out[name] for name in columns.output_columns()}
-    if inactive and not dated:
+    if not dated:
         raise RuntimeError(
-            "none of {} inactive records got a SHUTDOWN_DATE; check terminal_events "
-            "and completed_status against the file".format(inactive)
+            "no inactive record got a SHUTDOWN_DATE ({} records had ENTITY_STATUS {!r}); "
+            "check inactive_status, terminal_events and completed_status against the "
+            "file".format(inactive, columns.inactive_status)
         )
 
 

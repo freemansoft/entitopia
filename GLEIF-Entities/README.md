@@ -315,8 +315,10 @@ headquarters address, and why any legal-address signal needs a
     would leave every inactive record without a shutdown date. Both would
     load. The prepare step refuses a configured relationship type that
     matches no Level 2 row, and a run in which no inactive record gets a
-    `SHUTDOWN_DATE`. Guarded by `test_relationship_type_with_no_rows_refused`
-    and `test_no_dated_inactive_record_refused`.
+    `SHUTDOWN_DATE`, including one with no `INACTIVE` record at all (a renamed
+    status value would make every record look active). Guarded by
+    `test_relationship_type_with_no_rows_refused`,
+    `test_no_dated_inactive_record_refused` and `test_no_inactive_record_refused`.
 13. **A care-of first line is the agent, not the street.** Kept as the street,
     the `*_LOCAL` address fields derived from it would hold the filing agent's
     name, and every client of one agent would match every other on address.

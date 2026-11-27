@@ -70,14 +70,30 @@ def _entity(lei, **values):
     return row
 
 
-def _prepared(rows, parents=None, chain_ends=None):
+# Appended by _prepared so a test about something else is not refused for
+# holding no dated inactive record; it carries no successor, name or c/o line,
+# so it moves no counter a test reads except the inactive dating it exists for.
+FILLER = "TESTZ0000000000000" + "00"
+
+
+def _prepared(rows, parents=None, chain_ends=None, filler=True):
     # Runs the writing pass to completion and hands back its counters as well.
+    rows = list(rows)
+    if filler:
+        rows.append(
+            _with_events(
+                _entity(FILLER, ENTITY_STATUS="INACTIVE"),
+                ("DISSOLUTION", "COMPLETED", "2000-01-01T00:00:00Z"),
+            )
+        )
     stats = prepare_gleif.PrepStats()
     out = list(
         prepare_gleif.prepare_entities(
             rows, parents or {}, COLUMNS, chain_ends=chain_ends or {}, stats=stats
         )
     )
+    if filler:
+        assert out.pop()["LEI"] == FILLER
     return out, stats
 
 
@@ -307,7 +323,21 @@ def test_no_dated_inactive_record_refused():
         _entity(B, ENTITY_STATUS="INACTIVE"),
     ]
     with pytest.raises(RuntimeError, match="SHUTDOWN_DATE"):
-        _prepared(rows)
+        _prepared(rows, filler=False)
+
+
+def test_no_inactive_record_refused():
+    # An inactive_status that stops matching the file's values leaves every
+    # record looking active, which is as blank as no dated shutdown at all.
+    rows = [
+        _with_events(
+            _entity(A, ENTITY_STATUS="RENAMED_INACTIVE"),
+            ("DISSOLUTION", "COMPLETED", "2020-01-01T00:00:00Z"),
+        ),
+        _entity(B, ENTITY_STATUS="ACTIVE"),
+    ]
+    with pytest.raises(RuntimeError, match="SHUTDOWN_DATE"):
+        _prepared(rows, filler=False)
 
 
 def test_mixed_publish_refused(tmp_path):
