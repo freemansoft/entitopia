@@ -718,7 +718,8 @@ precision instead (see "Shared headquarters addresses").
 
 Truth links are split by a hash of the predecessor's `LEI` (`split_half`,
 `matching/declared.py`). Everything below was chosen on the `tune` half only;
-the `report` half was measured once, after tuning stopped ("Report half").
+the `report` half was measured once on the final configuration, after tuning
+stopped, and once on the starting runs for comparison ("Report half").
 GLEIF's record is incomplete
 (`complete_truth` false), so there is no precision. In its place the tuning
 reads the **truth share at 0.70 and above**: the `truth` pairs over all
@@ -1124,27 +1125,50 @@ There is no precision figure in either output, because `complete_truth` is
 false: an undeclared pair may be a succession GLEIF never recorded, so counting
 it as a false match would understate precision. The bands below stand in for it.
 
-**Tune half against report half**, final configuration. The tune-half figures
-are runs A5 and R4 of the tuning log:
+**Before and after tuning, on both halves.** To see how much of the tuning
+gain carried over, the starting runs' pair indexes (A0 and R0 of the tuning
+log) were measured on the report half as well, read-only, on 2026-11-27:
 
-| Step               | Half   | Links | Recall, any score | Recall at 0.70 | Truth share at 0.70+ |
-| ------------------ | ------ | ----- | ----------------- | -------------- | -------------------- |
-| `lei-absorption`   | tune   | 533   | 67 (0.126)        | 35 (0.0657)    | 35 / 5,961           |
-| `lei-absorption`   | report | 521   | 63 (0.121)        | 31 (0.0595)    | 31 / 5,750           |
-| `lei-reappearance` | tune   | 28    | 13                | 7              | 7 / 1,326            |
-| `lei-reappearance` | report | 25    | 14                | 6              | 6 / 1,451            |
+```bash
+.venv/bin/python scripts/measure_declared_links.py --project GLEIF-Entities \
+  --step lei-absorption --index lei-absorption-pairs-2026.11.26-000003 \
+  --half report
+.venv/bin/python scripts/measure_declared_links.py --project GLEIF-Entities \
+  --step lei-reappearance --index lei-reappearance-pairs-2026.11.26-000002 \
+  --half report
+```
 
-**The absorption gain did not fully carry over.** Report-half recall at 0.70
-is 0.0595 against the tune half's 0.0657, about three links fewer at the report
-half's size. Every kept step after A2 added one tune-half link, part of it by
-the band-edge effect under "Tuned configuration", so a three-link shortfall is
-the size of the last three steps: at least part of what they gained was fitted
-to the tune half. How much of the whole ten-link gain survived cannot be read
-from these figures, because the report half was not measured at the starting
-weights. Reappearance reads 6 of 25 against 7 of 28; at these counts the two
-halves cannot be told apart, so they show neither a carried gain nor a lost
-one. The truth share at 0.70 and above is lower on the report half in both
-sweeps. Nothing was tuned further.
+The script re-runs the candidate search under the committed configuration, not
+the one the old index was swept with, and counts a link emitted only if that
+search retrieves it. Re-measuring the tune half the same way reproduces the
+tuning log's A0 and R0 recall, at every band, and truth share exactly, so the
+committed retrieval does not move these baselines. For R0 it does move the
+miss split (the committed reappearance search, with `hq-street-seed` and a
+1,000 cap, retrieves 4 tune-half links R0's did not), so R0's report-half
+misses are not quoted. The tune-half figures are runs A0, A5, R0 and R4 of the
+tuning log.
+
+| Step               | Half   | Links | Recall at 0.70, before | after       | Gain | Recall, any score | Truth share at 0.70+     |
+| ------------------ | ------ | ----- | ---------------------- | ----------- | ---- | ----------------- | ------------------------ |
+| `lei-absorption`   | tune   | 533   | 25 (0.0469)            | 35 (0.0657) | +10  | 68 to 67          | 25 / 6,723 to 35 / 5,961 |
+| `lei-absorption`   | report | 521   | 24 (0.0461)            | 31 (0.0595) | +7   | 65 to 63          | 24 / 6,630 to 31 / 5,750 |
+| `lei-reappearance` | tune   | 28    | 3                      | 7           | +4   | 11 to 13          | 3 / 2,959 to 7 / 1,326   |
+| `lei-reappearance` | report | 25    | 6                      | 6           | 0    | 9 to 14           | 6 / 3,080 to 6 / 1,451   |
+
+**Absorption kept 7 of its 10 links.** Report-half recall at 0.70 rose from
+24 to 31 links of 521 (0.0461 to 0.0595), against 25 to 35 of 533 on the tune
+half. Three links' worth of the gain did not carry over, as many as the last
+three one-link steps added, but most of it did, and the truth share at 0.70
+and above rose on the report half as on the tune half.
+
+**Reappearance kept none of its 4 links at 0.70.** The report half reads 6 of
+25 before and after tuning, against 3 to 7 of 28 on the tune half. At these
+counts one link is 4% of the denominator, so the four-link tune gain is within
+what one half can differ from the other, and it did not reproduce. What did
+carry over is below the 0.70 line and in the denominator of the share: report
+recall at any score rose from 9 to 14 links, and the pairs at 0.70 and above
+that are not truth fell by more than half (3,074 to 1,445), so the truth share
+there doubled (it rose fivefold on the tune half). Nothing was tuned further.
 
 ## Undeclared successions by band
 
@@ -1181,7 +1205,9 @@ candidates included, as `pairs_in_band` counts them. The undated row's share
 is its truth pairs over every undated pair at 0.35 and above
 (`undated.pairs_by_band`); its 6 truth pairs were counted from the pair index
 with the sampler's own half split, since the measurement does not split
-undated pairs by tag.
+undated pairs by tag. Its whole-index count, of which the 6 are the report
+half, is a `_count` on `lei-absorption-pairs-2026.11.27-000003` filtered on
+`declared: truth` with no `successor.add_date` (12).
 
 **`lei-absorption`**, report half:
 
@@ -1218,6 +1244,8 @@ reappearance pair with an identical name registered the same day in another
 town. 6 were marked `explained-missed`: a company named after the predecessor
 in its town, the same name registered abroad, or a fund paired with a sibling
 fund of its family. Without those 4, `real` reads 2 in absorption and 5 in
+reappearance. `explained-missed` is the conservative side of those 6: read as
+`real` instead, they would raise `real` by up to 4 in absorption and 2 in
 reappearance.
 
 ### Where to start reviewing
@@ -1227,7 +1255,8 @@ of 15, against none in the 75 rows below it. The 0.8-0.9 interval is related
 pairs GLEIF did not link (14 of 15), not successions, and below 0.70 every row
 read is a look-alike (45 of 45, 42 of them a candidate registered outside the
 US near the shutdown date). The report half holds **34 undeclared pairs at or
-above 0.90**; the whole pair index holds 68 (`_count` of `declared: none` with
+above 0.90**; the whole pair index holds 68 (a `_count` on
+`lei-reappearance-pairs-2026.11.27-000001` filtered on `declared: none` and
 `total_score` at least 0.9).
 
 **Absorption: 0.8 and above.** From 0.80 up, look-alikes nearly vanish (1 of
@@ -1237,8 +1266,10 @@ reads there is a relationship GLEIF does not record rather than a succession
 (25 of 30), so the band finds Level 2 gaps more often than undeclared
 successors. The report half holds **990 undeclared pairs at or above 0.80 with
 a dated successor, and 1,856 with an undated one**; the whole pair index holds
-2,044 and 3,719. The undated band is not worth reading as a band: none of its
-15 rows was `real`.
+2,044 and 3,719 (a `_count` on `lei-absorption-pairs-2026.11.27-000003`
+filtered on `declared: none` and `total_score` at least 0.8, with and without
+a `successor.add_date`). The undated band is not worth reading as a band:
+none of its 15 rows was `real`.
 
 These are pairs, not successions: a predecessor can contribute up to 10
 (`max_pairs_per_predecessor`).
@@ -1297,9 +1328,6 @@ Placeholders stand for the entities, and the numbers inside them are invented.
    themselves foreign, on the tune half.
 3. **Absorption retrieval.** 378 of the report half's 458 misses were never
    retrieved, as on the tune half ("Where the absorption links are lost").
-4. **The report half at the starting weights**, to say how much of the tuning
-   gain carried over. Measuring A0's index needs no sweep: absorption's seeds
-   and candidate cap did not change between A0 and A5.
-5. **A worldwide population**, which needs multilingual analyzers.
-6. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
+4. **A worldwide population**, which needs multilingual analyzers.
+5. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
    the spec.
