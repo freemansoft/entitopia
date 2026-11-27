@@ -121,7 +121,11 @@
                 "additionalProperties": { "type": ["string", "number", "boolean"] }
               },
               "all": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-              "any": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              "any": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "not": {
+                "type": "string",
+                "description": "The name of another selector to exclude. Prefer this to an `any` of the allowed values, which silently drops records whose value is blank."
+              }
             }
           }
         }

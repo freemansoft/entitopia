@@ -11,10 +11,16 @@ flattening is a known defect: under an object mapping, a record with an ACTIVE
 date >= 2020 from two different orders and was swept even though no single
 order qualified. Making nesting the only available shape means no project can
 reintroduce that by writing config that looks reasonable.
+
+`not` exists because an exclusion written as `any` of the allowed values
+silently drops every record whose value is blank: listing the permitted
+categories removes the records with no category at all, and nothing reports it.
+Negating the excluded value keeps them.
 """
 
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -173,3 +179,80 @@ def test_sort_field_is_read_from_config():
     assert selector(mode="all-entities", sort_field="Facility ID").sort_field == (
         "Facility ID"
     )
+
+
+def test_not_clause_negates_named_selector():
+    query = selector(
+        mode="lifecycle",
+        selector="kept",
+        selectors={
+            "kept": {"all": ["inactive", "not-fund"]},
+            "inactive": {"term": {"STATUS": "INACTIVE"}},
+            "fund": {"term": {"CATEGORY": "FUND"}},
+            "not-fund": {"not": "fund"},
+        },
+    ).build_query()
+    assert query == {
+        "bool": {
+            "must": [
+                {"bool": {"must": [{"term": {"STATUS": "INACTIVE"}}]}},
+                {
+                    "bool": {
+                        "must_not": [{"bool": {"must": [{"term": {"CATEGORY": "FUND"}}]}}]
+                    }
+                },
+            ]
+        }
+    }
+
+
+def test_not_cycle_reported():
+    with pytest.raises(ValueError, match=re.escape("a -> b -> a")):
+        selector(
+            mode="lifecycle",
+            selector="a",
+            selectors={"a": {"not": "b"}, "b": {"all": ["a"]}},
+        ).build_query()
+
+
+def test_not_unknown_selector_raises():
+    with pytest.raises(ValueError, match="unknown selector 'missing'"):
+        selector(
+            mode="lifecycle", selector="a", selectors={"a": {"not": "missing"}}
+        ).build_query()
+
+
+# Captured from the framework before `not` was added. A change to how existing
+# clause kinds resolve would quietly change what a shipped sweep is about, and
+# the FDIC measured figures would move with it.
+_SHIPPED_QUERIES = {
+    "CMS-Providers/configuration/hospital-duplicates": None,
+    "DOT-Commercial/configuration/chameleon-detection": {
+        "nested": {
+            "path": "out_of_service_orders",
+            "query": {
+                "bool": {
+                    "must": [
+                        {"exists": {"field": "out_of_service_orders.oos_date"}},
+                        {"terms": {"out_of_service_orders.status": ["ACTIVE"]}},
+                        {"range": {"out_of_service_orders.oos_date": {"gte": "2020-01-01"}}},
+                    ]
+                }
+            },
+        }
+    },
+    "FDIC-Banks/configuration/bank-absorption": {
+        "bool": {"must": [{"term": {"INACTIVE": "1"}}]}
+    },
+    "FDIC-Banks/configuration/bank-reappearance": {
+        "bool": {"must": [{"term": {"INACTIVE": "1"}}]}
+    },
+}
+
+
+@pytest.mark.parametrize("project_config", sorted(_SHIPPED_QUERIES))
+def test_shipped_configs_build_unchanged(project_config):
+    root = Path(__file__).parent.parent
+    raw = json.loads((root / project_config / "entity-match.json").read_text())
+    built = PopulationSelector(es=None, source_index="idx", config=_ns(raw["population"]))
+    assert built.build_query() == _SHIPPED_QUERIES[project_config]
