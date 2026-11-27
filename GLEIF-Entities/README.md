@@ -530,3 +530,162 @@ that read either field would have to allow for it. A `term` query for
     errors and the count matches. Nothing guards this: changing the loader
     would change what the other projects load, so it is recorded rather than
     fixed here.
+18. **A duplicate registration read as a succession.** A `DUPLICATE` record
+    names the LEI it duplicates as its successor, so the pair is one entity
+    with one name: the easiest recall there is, and none of it real. The sweep
+    population excludes `REGISTRATION_STATUS` `DUPLICATE`, `CATEGORY` `FUND`
+    and `CATEGORY` `BRANCH` through `not` clauses ("Decisions from the
+    profile"). Guarded by `tests/test_gleif_configs.py`
+    (`test_population_excludes_what_profiling_found`, whose expected
+    exclusions are written from this README, not read from the config) and by
+    the literal query pinned in `tests/test_population.py`
+    (`test_shipped_configs_build_unchanged`).
+19. **A list-valued name field failed every candidate search it was in.**
+    `OTHER_NAMES` is a list, and the name signals passed it whole as a `match`
+    query, which Elasticsearch rejects (`[match] unknown token [START_ARRAY]`).
+    The rejection failed the predecessor's whole candidate query, address seed
+    included, so every predecessor with another name got no candidates; the
+    sweep logged one error line per predecessor and carried on. Found in the
+    first timed sample. The name signals now seed one clause per name; a
+    scalar field builds the same clause as before, so FDIC's and
+    DOT-Commercial's queries are unchanged. Guarded by `tests/test_signals.py`
+    (`test_list_valued_name_field_seeds_one_clause_per_name`).
+20. **A registered agent's address on a legal-address signal links every
+    client of the agent** (see "Shared legal addresses"). The address signal
+    reads `HQ_LOCAL`, and any signal reading a `LEGAL_*` address field must
+    carry a `max_shared_records` limit that the corpus frequency scan
+    actually enforces. Guarded by `test_legal_address_is_rarity_limited`,
+    which passes vacuously today because no signal reads a legal address.
+    Shared headquarters addresses are not limited: see "Shared headquarters
+    addresses" under "Sweeps".
+
+## Sweeps
+
+Two sweeps over `entities-000001` partition time at one overlap value
+(`-180` days, the reappearance `min_gap_days`), as FDIC-Banks' do, so each
+succession is searched by exactly one of them
+(`tests/test_succession_window_pairs.py`):
+
+| Step               | Gap window (successor `CREATION_DATE` minus predecessor `SHUTDOWN_DATE`) | Undated candidates | Temporal signal                                      |
+| ------------------ | ------------------------------------------------------------------------ | ------------------ | ---------------------------------------------------- |
+| `lei-reappearance` | -180 to +365 days                                                        | excluded           | yes, `max_gap_days` 365, `before_shutdown_scale` 1.0 |
+| `lei-absorption`   | up to -181 days, no lower bound                                          | kept               | none                                                 |
+
+The population (`us-inactive`) is `ENTITY_STATUS` `INACTIVE` and
+`LEGAL_COUNTRY` `US`, less `FUND`, `BRANCH` and `DUPLICATE`: 14,468 records.
+Predecessors with no `SHUTDOWN_DATE` are skipped. Candidates are drawn from
+the whole register.
+
+**Signals.** Starting weights are part 1's tuned `bank-absorption` weights:
+`name-phonetic` 0.3 (`phonetic`) and 0.18 (`phonetic_bm`) and `name-token`
+0.12 (`clean`), each over `LEGAL_NAME` and `OTHER_NAMES` with `cross_field`,
+and `address` 0.4 on `HQ_LOCAL` (`clean` exact, `tokens` fuzzy at 0.7, state
+`HQ_REGION`). `lei-reappearance` scales those by 0.73 and adds `temporal` at
+0.27, the split `bank-reappearance` uses. Seeds are `name-phonetic` and
+`address`, `max_candidates` 500. There is no phone, email, website or vehicle
+identifier to use. No placeholder was found on the LEI columns, so
+`ignore_values` is empty.
+
+**Declared links.** `complete_truth` is false: GLEIF records a successor only
+when the filer reports one. The one `truth` rule is the forward
+`SUCCESSOR_LEI` key (`gleif-successor`); only a forward key rule can be truth,
+because recall counts the targets a predecessor names itself
+(`test_only_truth_rule_is_the_successor`). Everything else is `explains`:
+
+| Rule                                                         | Kind                   | Field                 |
+| ------------------------------------------------------------ | ---------------------- | --------------------- |
+| `gleif-direct-parent` / `gleif-direct-child`                 | key, forward / reverse | `DIRECT_PARENT_LEI`   |
+| `gleif-ultimate-parent` / `gleif-ultimate-child`             | key, forward / reverse | `ULTIMATE_PARENT_LEI` |
+| `gleif-head-office` / `gleif-branch`                         | key, forward / reverse | `BRANCH_OF_LEI`       |
+| `gleif-fund-manager` / `gleif-managed-fund`                  | key, forward / reverse | `FUND_MANAGER_LEI`    |
+| `gleif-umbrella-fund` / `gleif-sub-fund`                     | key, forward / reverse | `UMBRELLA_FUND_LEI`   |
+| `gleif-master-fund` / `gleif-feeder-fund`                    | key, forward / reverse | `MASTER_FUND_LEI`     |
+| `gleif-shared-direct-parent`, `gleif-shared-ultimate-parent` | shared                 | the two parent fields |
+| `gleif-successor-tree`                                       | shared                 | `SUCCESSOR_CHAIN_END` |
+
+`gleif-successor-tree` is GLEIF's `fdic-merger-tree`: two entities in one
+recorded chain or tree (A paired with C when A names B and B names C, or two
+entities absorbed into one successor) are explained, not found.
+
+### Shared headquarters addresses
+
+Many headquarters addresses are shared too, though by fewer records than the
+legal ones: a filing agent's street used as the headquarters, or one asset
+manager's office on every fund and vehicle it runs. Counted 2026-11-26 on
+`HQ_LOCAL.keyword` folded to lower case (the `clean` subfield the signal
+compares is analyzed text and cannot be aggregated, so these are a lower
+bound: spellings that differ only in punctuation count apart):
+
+| Records sharing one `HQ_LOCAL` | US records (355,530 with `HQ_LOCAL`) | All records (2,566,272) |
+| ------------------------------ | ------------------------------------ | ----------------------- |
+| at least 300                   | 42 values, 37,796 records            | 132 values, 103,037     |
+| at least 1,000                 | 7 values                             | 24 values               |
+| most shared                    | 5,965                                | 6,208                   |
+
+**No limit is set, because none would take effect.** `max_shared_records`
+reaches only fields a signal reports through `exact_evidence_fields`, which
+the corpus frequency scan reads. The address signal reports none and never
+consults the ignored values, so an `HQ_LOCAL` entry would pass validation and
+change nothing. Limiting a shared address needs the address signal to report
+its exact subfield to the scan, a framework change outside this sweep. The
+cost shows in the candidate cap below.
+
+### Timed sample and the candidate filter
+
+A local, uncommitted `population.max_records: 1000` on both sweeps
+(2026-11-26), the first 1,000 predecessors by `LEI`. Both runs validated clean
+(the only warning: no metrics baseline yet).
+
+| Step               | Wall time (`entity-match`) | Pairs | `truth_links` | `truth_retrieved` | `truth_emitted` | Undated skipped | Truncated sets | Errors |
+| ------------------ | -------------------------- | ----- | ------------- | ----------------- | --------------- | --------------- | -------------- | ------ |
+| `lei-absorption`   | 153 s                      | 8,715 | 73            | 19                | 17              | 2               | 957            | 0      |
+| `lei-reappearance` | 127 s                      | 9,700 | 73            | 6                 | 5               | 2               | 689            | 0      |
+
+Extrapolated to 14,468 predecessors: about 37 minutes for absorption and 31 for
+reappearance, far inside the 6-hour stop gate.
+
+**Successor category of emitted pairs:**
+
+| Step               | `GENERAL` | `FUND` | `BRANCH` | Other | `FUND` + `BRANCH` |
+| ------------------ | --------- | ------ | -------- | ----- | ----------------- |
+| `lei-absorption`   | 8,017     | 629    | 7        | 62    | 636 (7.3%)        |
+| `lei-reappearance` | 8,272     | 1,158  | 5        | 265   | 1,163 (12.0%)     |
+
+**Decision: no candidate filter (plan Task 7 skipped).** The rule is set on the
+absorption sample, where funds and branches are 7.3% of emitted pairs, under
+the 10% at which they were judged to cost recall through the candidate cap.
+The capped candidate sets were re-run with their categories read back: funds
+and branches fill 10.1% of the absorption sets' slots (16.5% for
+reappearance), and are the majority of a set in 49 of 959 capped absorption
+sets (44 of 691 for reappearance), so funds are not what fills the cap.
+The re-run also searched the 2 predecessors the sweeps skip as undated, which
+is why it counts 959 and 691 capped sets and 74 truth links against the
+sweeps' 957, 689 and 73.
+
+Reappearance is above 10% (12.0%). Its funds are noise in the findings rather
+than a recall cost: of the 74 truth links its sample names, none was matched by
+the seeds and the window but cut by the cap. In absorption, 9 of 74 were. Those
+9 are a cap cost of general entities, which a fund filter would not recover.
+
+### Full sweeps
+
+Run 2026-11-26 with `max_records` back to `null`, starting weights, before
+any tuning. Pair indexes `lei-absorption-pairs-2026.11.26-000003` and
+`lei-reappearance-pairs-2026.11.26-000002` (earlier same-day generations
+were the samples, since deleted):
+
+| Step               | Wall time   | Pairs   | `truth_links` | `truth_retrieved` | `truth_emitted` | Undated predecessors skipped | Truncated candidate sets | Errors |
+| ------------------ | ----------- | ------- | ------------- | ----------------- | --------------- | ---------------------------- | ------------------------ | ------ |
+| `lei-reappearance` | 31 min 53 s | 140,596 | 1,119         | 30                | 20              | 19                           | 10,046                   | 0      |
+| `lei-absorption`   | 37 min 14 s | 126,177 | 1,119         | 289               | 133             | 19                           | 13,895                   | 0      |
+
+As for FDIC, `truth_links` counts every successor a searched predecessor
+names, in both sweeps, and each sweep can retrieve only those inside its own
+window, so these are not recall figures. Neither run reported a lookup,
+scoring or index error. Funds and branches are 8.7% of absorption's emitted
+pairs (11,029) and 11.4% of reappearance's (15,986), the sample's picture.
+
+The candidate cap binds on 96% of absorption's 14,449 searched predecessors
+and 70% of reappearance's, far more than FDIC's 1,056 of 23,634. Raising
+`max_candidates` or narrowing the seeds is the first tuning question; the
+shared headquarters addresses above are one source of the flood.

@@ -222,6 +222,27 @@ def test_not_unknown_selector_raises():
         ).build_query()
 
 
+# The GLEIF sweeps are the first shipped use of `not`, so their query is pinned
+# as a literal: a change to how `not` nests would move the population of both
+# GLEIF sweeps while every clause-kind unit test above still passed.
+_GLEIF_US_INACTIVE = {
+    "bool": {
+        "must": [
+            {"bool": {"must": [{"term": {"ENTITY_STATUS": "INACTIVE"}}]}},
+            {"bool": {"must": [{"term": {"LEGAL_COUNTRY": "US"}}]}},
+            {"bool": {"must_not": [{"bool": {"must": [{"term": {"CATEGORY": "FUND"}}]}}]}},
+            {"bool": {"must_not": [{"bool": {"must": [{"term": {"CATEGORY": "BRANCH"}}]}}]}},
+            {
+                "bool": {
+                    "must_not": [
+                        {"bool": {"must": [{"term": {"REGISTRATION_STATUS": "DUPLICATE"}}]}}
+                    ]
+                }
+            },
+        ]
+    }
+}
+
 # Captured from the framework before `not` was added. A change to how existing
 # clause kinds resolve would quietly change what a shipped sweep is about, and
 # the FDIC measured figures would move with it.
@@ -247,6 +268,8 @@ _SHIPPED_QUERIES = {
     "FDIC-Banks/configuration/bank-reappearance": {
         "bool": {"must": [{"term": {"INACTIVE": "1"}}]}
     },
+    "GLEIF-Entities/configuration/lei-absorption": _GLEIF_US_INACTIVE,
+    "GLEIF-Entities/configuration/lei-reappearance": _GLEIF_US_INACTIVE,
 }
 
 

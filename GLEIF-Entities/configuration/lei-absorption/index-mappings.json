@@ -1,0 +1,130 @@
+{
+  "index": "lei-absorption-pairs-{now/d}-000001",
+  "mappings": {
+    "properties": {
+      "total_score": {
+        "type": "float"
+      },
+      "gap_days": {
+        "type": "integer"
+      },
+      "signals_present": {
+        "type": "integer"
+      },
+      "matched_on": {
+        "type": "keyword"
+      },
+      "generated_at": {
+        "type": "date"
+      },
+      "run_id": {
+        "type": "keyword"
+      },
+      "source_index": {
+        "type": "keyword"
+      },
+      "source_alias": {
+        "type": "keyword"
+      },
+      "analysis_fingerprint": {
+        "type": "keyword"
+      },
+      "declared": {
+        "type": "keyword"
+      },
+      "declared_by": {
+        "type": "keyword"
+      },
+      "predecessor": {
+        "properties": {
+          "entity_key": {
+            "type": "keyword"
+          },
+          "LEGAL_NAME": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword"
+              }
+            }
+          },
+          "HQ_CITY": {
+            "type": "keyword"
+          },
+          "HQ_REGION": {
+            "type": "keyword"
+          },
+          "LEGAL_COUNTRY": {
+            "type": "keyword"
+          },
+          "CATEGORY": {
+            "type": "keyword"
+          },
+          "ULTIMATE_PARENT_LEI": {
+            "type": "keyword"
+          },
+          "shutdown_date": {
+            "type": "date",
+            "format": "strict_date_optional_time||yyyy-MM-dd"
+          }
+        }
+      },
+      "successor": {
+        "properties": {
+          "entity_key": {
+            "type": "keyword"
+          },
+          "LEGAL_NAME": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword"
+              }
+            }
+          },
+          "HQ_CITY": {
+            "type": "keyword"
+          },
+          "HQ_REGION": {
+            "type": "keyword"
+          },
+          "LEGAL_COUNTRY": {
+            "type": "keyword"
+          },
+          "CATEGORY": {
+            "type": "keyword"
+          },
+          "ULTIMATE_PARENT_LEI": {
+            "type": "keyword"
+          },
+          "add_date": {
+            "type": "date",
+            "format": "strict_date_optional_time||yyyy-MM-dd"
+          }
+        }
+      },
+      "signals": {
+        "properties": {
+          "signal_type": {
+            "type": "keyword"
+          },
+          "signal_name": {
+            "type": "keyword"
+          },
+          "subfield": {
+            "type": "keyword"
+          },
+          "weight": {
+            "type": "float"
+          },
+          "score": {
+            "type": "float"
+          },
+          "contribution": {
+            "type": "float"
+          }
+        }
+      }
+    }
+  }
+}

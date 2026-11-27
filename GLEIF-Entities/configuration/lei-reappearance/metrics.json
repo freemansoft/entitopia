@@ -1,0 +1,37 @@
+{
+  "baseline": "data/precision/baseline-lei-reappearance.json",
+  "metrics": [
+    {
+      "name": "pairs"
+    },
+    {
+      "name": "pairs_ge_070",
+      "filter": {
+        "score_gte": 0.7
+      }
+    },
+    {
+      "name": "pairs_ge_090",
+      "filter": {
+        "score_gte": 0.9
+      }
+    },
+    {
+      "name": "identical_name_ge_070",
+      "filter": {
+        "all": [
+          {
+            "score_gte": 0.7
+          },
+          {
+            "fields_equal": "LEGAL_NAME"
+          }
+        ]
+      }
+    },
+    {
+      "name": "predecessors_with_pairs",
+      "distinct": "predecessor.entity_key"
+    }
+  ]
+}

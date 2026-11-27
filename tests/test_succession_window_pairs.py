@@ -16,7 +16,10 @@ import pytest
 
 from utils import file_utils
 
-PAIRS = [("FDIC-Banks", "bank-reappearance", "bank-absorption")]
+PAIRS = [
+    ("FDIC-Banks", "bank-reappearance", "bank-absorption"),
+    ("GLEIF-Entities", "lei-reappearance", "lei-absorption"),
+]
 
 
 def _load(project, step):
