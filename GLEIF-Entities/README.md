@@ -584,7 +584,8 @@ and `address` 0.4 on `HQ_LOCAL` (`clean` exact, `tokens` fuzzy at 0.7, state
 0.27, the split `bank-reappearance` uses. Seeds are `name-phonetic` and
 `address`, `max_candidates` 500. There is no phone, email, website or vehicle
 identifier to use. No placeholder was found on the LEI columns, so
-`ignore_values` is empty.
+`ignore_values` is empty. These were the starting values; the committed ones
+are under "Tuned configuration".
 
 **Declared links.** `complete_truth` is false: GLEIF records a successor only
 when the filer reports one. The one `truth` rule is the forward
@@ -630,11 +631,16 @@ change nothing. Limiting a shared address needs the address signal to report
 its exact subfield to the scan, a framework change outside this sweep.
 
 The cost is precision, not retrieval. The address signal scores an exact
-`HQ_LOCAL` match 1.0. In `lei-absorption` its weight of 0.4 alone clears
-`min_total_score` 0.35, so two unrelated entities at one shared office need
-only a second contributing signal (`min_signals` 2), such as a shared name
-token, to be emitted; in `lei-reappearance` it carries 0.292 of the 0.35. The
-shared addresses do not fill the candidate cap: see "Full sweeps".
+`HQ_LOCAL` match 1.0. With the starting weights its 0.4 in `lei-absorption`
+alone cleared `min_total_score` 0.35, so two unrelated entities at one shared
+office needed only a second contributing signal (`min_signals` 2), such as a
+shared name token, to be emitted; in `lei-reappearance` it carried 0.292 of
+the 0.35. Tuning lowered it to 0.25 of 1.03 and 0.22 of 1.02 (see "Tuned
+configuration"), so a shared office alone no longer clears the floor, but it
+still dominates the top of the absorption list: 4,459 of the 5,745 tune-half
+`none` pairs at 0.70 and above in the final run (77.6%) share an exact
+headquarters address, against 95% before tuning. The shared addresses do not
+fill the candidate cap: see "Full sweeps".
 
 ### Timed sample and the candidate filter
 
@@ -707,3 +713,205 @@ The address seed never reached the cap where the name seed did not. Tuning
 the cap is therefore a question about the name seed (phonetic codes shared
 across 3.5 million names), not about shared addresses, which matter for
 precision instead (see "Shared headquarters addresses").
+
+## Measured against GLEIF's registered successors
+
+Truth links are split by a hash of the predecessor's `LEI` (`split_half`,
+`matching/declared.py`). Everything below was chosen on the `tune` half only;
+the `report` half has not been measured. GLEIF's record is incomplete
+(`complete_truth` false), so there is no precision. In its place the tuning
+reads the **truth share at 0.70 and above**: the `truth` pairs over all
+`truth`, `explains` and `none` pairs in the 0.7-0.8, 0.8-0.9 and 0.9+ intervals
+of `pairs_in_band`.
+
+**Final pair indexes, both swept on the committed configuration:**
+
+- `lei-absorption-pairs-2026.11.27-000003`
+- `lei-reappearance-pairs-2026.11.27-000001`
+
+Both aliases (`lei-absorption-pairs-000001`, `lei-reappearance-pairs-000001`)
+point at them. The earlier generations listed in the tuning log are kept for
+comparison.
+
+### Choosing `overlap_days`: kept at 180
+
+The valley rule wants a gap between a reappearance spike near the shutdown and
+the absorption mass years before it. Tune-half `SUCCESSOR_LEI` links with both
+dates (520 of the half's 569; 49 successors have no `CREATION_DATE`), binned by
+successor `CREATION_DATE` minus predecessor `SHUTDOWN_DATE`, from the
+`gap_histogram` of `measure_declared_links.py --gaps fine` on
+`lei-absorption-pairs-2026.11.26-000003` (the reappearance index prints the
+same histogram, because it bins every link of the half). Each bin includes
+both of its bounds, in whole days.
+
+| Gap (days)     | Links | Per 30 days |
+| -------------- | ----- | ----------- |
+| before -3650   | 434   |             |
+| -3650 to -1096 | 32    | 0.4         |
+| -1095 to -366  | 12    | 0.5         |
+| -365 to -181   | 7     | 1.1         |
+| -180 to -91    | 5     | 1.7         |
+| -90 to -61     | 2     | 2.0         |
+| -60 to -31     | 4     | 4.0         |
+| -30 to -8      | 11    | 14.3        |
+| -7 to -1       | 2     | 8.6         |
+| 0              | 4     |             |
+| 1 to 6         | 0     | 0           |
+| 7 to 365       | 0     | 0           |
+| after 365      | 7     |             |
+
+GLEIF has too few reappearance-shaped links to show a valley. 17 links (3.3% of 520) fall in the 30 days before the shutdown or on the day itself, a third of
+the research sample's 10%, and only 4 are same-day, against FDIC's 651. 434
+(83%) were registered more than ten years before the shutdown. From -3650 to
+the shutdown the density only rises, from 0.4 to 14 links per 30 days, so there
+is no minimum between the spike and the mass to aim at. 180 sits on that slope
+with 5 links within 90 days on its reappearance side and 7 within 185 days on
+the other, so `overlap_days` stays 180 in both configs and
+`tests/test_succession_window_pairs.py` is unchanged.
+
+### Where the absorption links are lost
+
+Retrieval, not scoring, loses most absorption links, and no retrieval change
+reached the 0.70 band. Of the 533 tune-half links in the absorption window, the
+seeds match 198 at any depth and return 146 within the 500-candidate cap (154
+within 1,000, 176 within 2,000, 188 within 5,000). The other 335 successors
+share no phonetic name code and no exact headquarters address with their
+predecessor at all, so no cap can reach them. What those 335 do share (a link
+can share more than one):
+
+| Evidence shared with the predecessor                        | Links |
+| ----------------------------------------------------------- | ----- |
+| any unstopped name word (`clean`), mostly stop-listed words | 265   |
+| any headquarters street word (`HQ_LOCAL.tokens`)            | 93    |
+| the same headquarters city                                  | 39    |
+| a phonetic name code, but only across fields (see below)    | 22    |
+| the same legal address (`LEGAL_LOCAL.clean`)                | 10    |
+| the successor is the predecessor's parent                   | 4     |
+| the successor shares a parent with the predecessor          | 4     |
+| none of the above                                           | 48    |
+
+Seeds that would reach some of them were replayed (next section) and moved
+links into retrieval but none to 0.70 or above: an absorbed entity whose
+successor shares only a generic word or a street name scores low on every
+signal. The 22 cross-field links are successors that carry the predecessor's
+name among their other names, which the scorer compares (`cross_field`) but the
+seed does not query. Querying every name against every name field was replayed
+too, by patching the seed in the replay only, and retrieved fewer links (400
+not retrieved instead of 387 at the A1 weights), because the extra clauses
+fill the cap. Funds and branches cost no truth retrieval: excluding them from
+the candidates retrieves 139 links instead of 146 in absorption, because 9 of
+the seed-matched successors are themselves funds, and 16 of 28 either way in
+reappearance (at R3). So the candidate filter (plan Task 7) would not recover
+anything.
+
+38 retrieved truth links were cut by `max_pairs_per_predecessor` 10 before
+tuning, 14 of them scoring 0.70 or above. All 14 belong to one issuer's
+numbered trust series at one headquarters address, whose names differ only in
+the series number: each ranks 87th to 124th among its predecessor's scored
+candidates, tied at its own score with 17 to 133 others from the series. No per-predecessor limit up to 50 recovers them.
+
+### Tuned configuration
+
+| Setting                                                       | `lei-absorption`           | `lei-reappearance`                           |
+| ------------------------------------------------------------- | -------------------------- | -------------------------------------------- |
+| Weights: phonetic dm / bm / name-token / address              | 0.30 / 0.24 / 0.24 / 0.25  | 0.219 / 0.1314 / 0.1752 / 0.22               |
+| `temporal`                                                    | none                       | 0.27, `max_gap_days` 365 (unchanged)         |
+| Address `fuzzy_scale`                                         | 0.85 (was 0.7)             | 0.7 (unchanged)                              |
+| Seeds                                                         | `name-phonetic`, `address` | `name-phonetic`, `address`, `hq-street-seed` |
+| `max_candidates`                                              | 500 (unchanged)            | 1,000 (was 500)                              |
+| `min_total_score`, `min_signals`, `max_pairs_per_predecessor` | 0.35, 2, 10 (unchanged)    | 0.35, 2, 10 (unchanged)                      |
+
+Starting values were dm 0.3, bm 0.18, name-token 0.12, address 0.4 in
+absorption, and those times 0.73 in reappearance. The weights are not
+renormalized (they sum to 1.03 and 1.0156); the scorer divides by the summed
+weight of the signals present, so the sum matters only where a band edge sits
+on it. One does: in absorption, a pair whose names agree fully and whose
+address does not now scores 0.78 / 1.03 = 0.757, inside the 0.70 band, where
+the starting weights gave it 0.60. Part of the recall gained at 0.70 is pairs
+crossing that edge.
+
+**`hq-street-seed` is a seed, not a signal.** It is a second `address` signal
+on `HQ_LOCAL` with `weight` 0.0 and `exact_subfield` `tokens`, so it retrieves
+candidates sharing street words (`HQ_LOCAL.tokens`, the street without the
+town) and changes no score: at weight 0 it adds nothing to a pair's total or
+to the weight it is divided by, and it reads the same field as `address`, so
+`min_signals` counts it as the same evidence. A seed on the fuzzy subfield is
+not otherwise expressible: `address` seeds on its exact subfield only.
+Removing it as an unused weight would quietly undo R3. It does appear in each
+pair's `signals` list and `signals_present` count.
+
+### Tuning log (tune half)
+
+Each run was compared by pair id with `scripts/compare_pair_ids.py` against the
+run it changed, and measured with `measure_declared_links.py --half tune`. The
+rule: keep a change only if it raises recall at 0.70 without lowering the
+truth share at 0.70 and above. Before each sweep, candidates were screened with
+an exact replay of the sweep's own components over just the tune-half
+predecessors that name a successor (it reproduced A0's and R0's
+`recall_by_band` exactly), and weights with a rescoring of the stored signal
+scores; only the best candidate was swept.
+
+| Run | Change                            | Pair index                                 | Pairs   | Pair ids lost / gained | Recall at 0.70 | Truth share at 0.70+ | Kept       |
+| --- | --------------------------------- | ------------------------------------------ | ------- | ---------------------- | -------------- | -------------------- | ---------- |
+| A0  | starting weights (Task 6)         | `lei-absorption-pairs-2026.11.26-000003`   | 126,177 |                        | 0.0469 (25)    | 0.00372 (25 / 6,723) |            |
+| A1  | `name-token` 0.12 to 0.24         | `lei-absorption-pairs-2026.11.26-000004`   | 124,390 | 14,115 / 12,328 vs A0  | 0.0507 (27)    | 0.00439 (27 / 6,154) | yes        |
+| A2  | `address` 0.4 to 0.3              | `lei-absorption-pairs-2026.11.26-000005`   | 132,779 | 7,080 / 15,469 vs A1   | 0.0563 (30)    | 0.00516 (30 / 5,809) | yes        |
+| A3  | `address` 0.3 to 0.25             | `lei-absorption-pairs-2026.11.27-000001`   | 134,368 | 4,849 / 6,438 vs A2    | 0.0619 (33)    | 0.00567 (33 / 5,821) | yes        |
+| A4  | address `fuzzy_scale` 0.7 to 0.85 | `lei-absorption-pairs-2026.11.27-000002`   | 134,612 | 2,868 / 3,112 vs A3    | 0.0638 (34)    | 0.00573 (34 / 5,933) | yes        |
+| A5  | `phonetic_bm` 0.18 to 0.24        | `lei-absorption-pairs-2026.11.27-000003`   | 134,746 | 6,819 / 6,953 vs A4    | 0.0657 (35)    | 0.00587 (35 / 5,961) | yes: final |
+| R0  | starting weights (Task 6)         | `lei-reappearance-pairs-2026.11.26-000002` | 140,596 |                        | 0.107 (3)      | 0.00101 (3 / 2,959)  |            |
+| R1  | `name-token` 0.0876 to 0.1752     | `lei-reappearance-pairs-2026.11.26-000003` | 139,517 | 15,554 / 14,475 vs R0  | 0.143 (4)      | 0.00292 (4 / 1,370)  | yes        |
+| R2  | `address` 0.292 to 0.22           | `lei-reappearance-pairs-2026.11.26-000004` | 140,159 | 11,136 / 11,778 vs R1  | 0.179 (5)      | 0.00381 (5 / 1,311)  | yes        |
+| R3  | `hq-street-seed` added            | `lei-reappearance-pairs-2026.11.26-000005` | 141,686 | 8,109 / 9,636 vs R2    | 0.214 (6)      | 0.00455 (6 / 1,320)  | yes        |
+| R4  | `max_candidates` 500 to 1,000     | `lei-reappearance-pairs-2026.11.27-000001` | 141,923 | 11,075 / 11,312 vs R3  | 0.250 (7)      | 0.00528 (7 / 1,326)  | yes: final |
+
+Recall at 0.70 counts links out of 533 (absorption) and 28 (reappearance), so
+every kept step after A2 is one link. Overall tune-half recall (every emitted
+pair) went from 0.128 to 0.126 in absorption and from 0.393 to 0.464 in
+reappearance.
+
+**Changes replayed but not swept**, because the replay left recall at 0.70
+where it was and the rule cannot keep such a change:
+
+| Change                                                                                 | Replayed at          | Recall at 0.70 | Links not retrieved |
+| -------------------------------------------------------------------------------------- | -------------------- | -------------- | ------------------- |
+| `name-token` added to the seeds (part 1's R6)                                          | A0, A2, A4           | 25, 30, 34     | 387 to 365          |
+| `hq-street-seed` in absorption                                                         | A0, A2, A4           | 25, 30, 34     | 387 to 372          |
+| absorption `max_candidates` 1,000                                                      | A0, A2, A4           | 25, 30, 34     | 387 to 379          |
+| absorption `max_pairs_per_predecessor` 20 / 50                                         | A0 (20, 50), A4 (20) | 25, 25, 34     | unchanged           |
+| reappearance `name-token` seed, `max_candidates` 2,000, `max_pairs_per_predecessor` 20 | R4                   | 7, 7, 7        | 11 to 10, 11, 11    |
+
+Recall at 0.70 is given as a link count; each equals the count of the measured
+run it was replayed against. `min_total_score` was not tried: the floor is
+below 0.70 and the per-predecessor cut keeps the highest-scoring pairs, so no
+floor at or under 0.70 can change which pairs land there. A `LEGAL_LOCAL`
+address signal was not built: only 19 of the 387 missed absorption links share
+a legal address, and an `address` signal cannot carry an enforced
+`max_shared_records` (hazard 20), so `test_legal_address_is_rarity_limited`
+would refuse it.
+
+**Why tuning stopped.** Absorption: after A5 every single-step weight
+neighbour screened (`phonetic` down, `phonetic_bm` and `name-token` up,
+`address` up and down, `fuzzy_scale` 0.8 and 1.0) lowered recall at 0.70 or
+the truth share, and every retrieval change
+had left recall at 0.70 unchanged at three different weightings. Reappearance:
+after R4 every weight neighbour screened (`name-token` up, `address` down,
+`temporal` up and down, `fuzzy_scale` 0.85) left recall at 0.70 at 7 links or
+lowered it, and the three retrieval changes replayed left recall unchanged. That is not the
+brief's literal stopping rule (two consecutive sweeps moving neither figure):
+no candidate remained that could be kept, so no further sweep was spent. Five
+and four of the eight-sweep budget were used.
+
+### Tuned full sweeps
+
+| Step               | Wall time   | Pairs   | `truth_links` | `truth_retrieved` | `truth_emitted` | Truncated candidate sets | Errors |
+| ------------------ | ----------- | ------- | ------------- | ----------------- | --------------- | ------------------------ | ------ |
+| `lei-reappearance` | 76 min 29 s | 141,923 | 1,119         | 36                | 27              | 13,504                   | 0      |
+| `lei-absorption`   | 37 min 15 s | 134,746 | 1,119         | 289               | 130             | 13,895                   | 0      |
+
+Doubling the reappearance cap doubled its time (14.0 million candidates
+examined, against 7.1 million at R3) and made the cap bind on 13,504
+predecessors, against 14,070 at R3 and 10,046 before `hq-street-seed`, which
+adds candidates to almost every search. Funds and branches are 8.3% of the final
+absorption pairs (11,239) and 11.3% of reappearance's (16,050), about the
+starting runs' 8.7% and 11.4%.

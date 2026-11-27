@@ -184,25 +184,25 @@
     },
     {
       "type": "name-phonetic",
-      "weight": 0.18,
+      "weight": 0.24,
       "fields": ["LEGAL_NAME", "OTHER_NAMES"],
       "subfield": "phonetic_bm",
       "cross_field": true
     },
     {
       "type": "name-token",
-      "weight": 0.12,
+      "weight": 0.24,
       "fields": ["LEGAL_NAME", "OTHER_NAMES"],
       "subfield": "clean",
       "cross_field": true
     },
     {
       "type": "address",
-      "weight": 0.4,
+      "weight": 0.25,
       "fields": ["HQ_LOCAL"],
       "exact_subfield": "clean",
       "fuzzy_subfield": "tokens",
-      "fuzzy_scale": 0.7,
+      "fuzzy_scale": 0.85,
       "state_field": "HQ_REGION"
     }
   ],

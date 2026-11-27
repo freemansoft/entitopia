@@ -63,7 +63,7 @@
     }
   },
   "candidates": {
-    "max_candidates": 500,
+    "max_candidates": 1000,
     "seed_signals": ["name-phonetic", "address"]
   },
   "declared_links": {
@@ -191,16 +191,26 @@
     },
     {
       "type": "name-token",
-      "weight": 0.0876,
+      "weight": 0.1752,
       "fields": ["LEGAL_NAME", "OTHER_NAMES"],
       "subfield": "clean",
       "cross_field": true
     },
     {
       "type": "address",
-      "weight": 0.292,
+      "weight": 0.22,
       "fields": ["HQ_LOCAL"],
       "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.7,
+      "state_field": "HQ_REGION"
+    },
+    {
+      "type": "address",
+      "name": "hq-street-seed",
+      "weight": 0.0,
+      "fields": ["HQ_LOCAL"],
+      "exact_subfield": "tokens",
       "fuzzy_subfield": "tokens",
       "fuzzy_scale": 0.7,
       "state_field": "HQ_REGION"
