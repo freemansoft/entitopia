@@ -19,6 +19,7 @@ from utils import file_utils
 PAIRS = [
     ("FDIC-Banks", "bank-reappearance", "bank-absorption"),
     ("GLEIF-Entities", "lei-reappearance", "lei-absorption"),
+    ("GLEIF-Entities", "lei-reappearance-de", "lei-absorption-de"),
 ]
 
 
