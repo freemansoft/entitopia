@@ -627,8 +627,14 @@ reaches only fields a signal reports through `exact_evidence_fields`, which
 the corpus frequency scan reads. The address signal reports none and never
 consults the ignored values, so an `HQ_LOCAL` entry would pass validation and
 change nothing. Limiting a shared address needs the address signal to report
-its exact subfield to the scan, a framework change outside this sweep. The
-cost shows in the candidate cap below.
+its exact subfield to the scan, a framework change outside this sweep.
+
+The cost is precision, not retrieval. The address signal scores an exact
+`HQ_LOCAL` match 1.0. In `lei-absorption` its weight of 0.4 alone clears
+`min_total_score` 0.35, so two unrelated entities at one shared office need
+only a second contributing signal (`min_signals` 2), such as a shared name
+token, to be emitted; in `lei-reappearance` it carries 0.292 of the 0.35. The
+shared addresses do not fill the candidate cap: see "Full sweeps".
 
 ### Timed sample and the candidate filter
 
@@ -686,6 +692,18 @@ scoring or index error. Funds and branches are 8.7% of absorption's emitted
 pairs (11,029) and 11.4% of reappearance's (15,986), the sample's picture.
 
 The candidate cap binds on 96% of absorption's 14,449 searched predecessors
-and 70% of reappearance's, far more than FDIC's 1,056 of 23,634. Raising
-`max_candidates` or narrowing the seeds is the first tuning question; the
-shared headquarters addresses above are one source of the flood.
+and 70% of reappearance's, far more than FDIC's 1,056 of 23,634. The
+`name-phonetic` seed fills it. Counted on 200 predecessors drawn at random
+from the population (seed 20261126), each seed's own clauses under the
+sweep's window filter and own-id exclusion, read-only `_count`:
+
+| Seed alone reaching 500 | `lei-absorption` | `lei-reappearance` |
+| ----------------------- | ---------------- | ------------------ |
+| `name-phonetic`         | 190 (95.0%)      | 144 (72.0%)        |
+| `address`               | 8 (4.0%)         | 2 (1.0%)           |
+| both seeds together     | 190 (95.0%)      | 145 (72.5%)        |
+
+The address seed never reached the cap where the name seed did not. Tuning
+the cap is therefore a question about the name seed (phonetic codes shared
+across 3.5 million names), not about shared addresses, which matter for
+precision instead (see "Shared headquarters addresses").
