@@ -21,6 +21,7 @@ counts only.
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import scan
 
+from matching.declared import split_half
 from phase_providers.phase_entity_match import pair_side_names_for
 from utils import file_utils
 from utils.declared_measure import (
@@ -39,6 +41,7 @@ from utils.declared_measure import (
     step_is_dated,
 )
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 SCAN_SIZE = 2000
 CONFIGURATION_DIR = "configuration"
 # The per-signal array is most of a pair's bytes and the reviewer reads the
@@ -46,16 +49,40 @@ CONFIGURATION_DIR = "configuration"
 _EXCLUDED_SOURCE = ["signals"]
 
 
-def check_out_path(path):
-    """Refuse an output path with no data/ directory above it.
+def check_out_path(path, repo_root=REPO_ROOT):
+    """Refuse an output path git would offer to commit.
 
-    `*/data/` is what .gitignore excludes. A sample written anywhere else is a
-    file git offers to commit, and its rows name entities the matcher flagged.
+    The rows name entities the matcher flagged. A data/ directory is required,
+    and inside the repository git must also ignore the path: `*/data/` only
+    matches a data/ one level below the root, so a nested data/ directory
+    passes the first test and is still committable. Git's own matcher decides
+    rather than a re-implementation of it. A path outside the repository is
+    accepted, since no commit can reach it.
     """
-    if "data" not in Path(path).resolve().parent.parts:
+    resolved = Path(path).resolve()
+    if "data" not in resolved.parent.parts:
         raise SystemExit(
             "--out {} is not under a data/ directory; the sample names real "
             "entities and must stay where git ignores it".format(path)
+        )
+    root = Path(repo_root).resolve()
+    if not resolved.is_relative_to(root):
+        return
+    check = subprocess.run(
+        ["git", "-C", str(root), "check-ignore", "-q", "--", str(resolved.relative_to(root))],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if check.returncode == 1:
+        raise SystemExit(
+            "--out {}: git does not ignore this path, so the sample's real "
+            "names could be committed; write it under <project>/data/".format(path)
+        )
+    if check.returncode != 0:
+        # Neither "ignored" nor "not ignored": an unanswered check is not a pass.
+        raise SystemExit(
+            "--out {}: git check-ignore failed: {}".format(path, check.stderr.strip())
         )
 
 
@@ -126,6 +153,25 @@ def read_pair_sources(es, index, cand_side, dated):
     return pairs
 
 
+def select_half(pairs, side, half):
+    """The pairs whose predecessor key split_half files under `half`; all for None.
+
+    The measurement counts pairs_in_band per half by the same split of the
+    predecessor key, and verdicts set against the report half's counts must
+    be drawn from the pairs those counts include. A pair with no key is
+    refused by split_half rather than hashed as the text "None", which would
+    file every such pair under one fixed half.
+    """
+    if half is None:
+        return pairs
+    kept = []
+    for pair in pairs:
+        key = (pair.get(side) or {}).get("entity_key")
+        if split_half(None if key is None else str(key)) == half:
+            kept.append(pair)
+    return kept
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project")
@@ -134,6 +180,11 @@ def main():
     parser.add_argument("--per-band", type=int, default=15)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--declared", default="none", choices=("none", "explains", "truth"))
+    parser.add_argument(
+        "--half",
+        choices=("tune", "report"),
+        help="Draw only from this half of predecessors; default both",
+    )
     parser.add_argument("--out", help="Default: <project>/data/review/<step>-sample.jsonl")
     parser.add_argument("--count", help="Print verdict counts per band from this file")
     parser.add_argument("--host", default="http://localhost:9200")
@@ -154,10 +205,11 @@ def main():
     )
     if config is None:
         raise SystemExit("No entity-match.json for {}/{}".format(args.project, args.step))
-    _, cand_side = pair_side_names_for(getattr(config.population, "mode", "lifecycle"))
+    side, cand_side = pair_side_names_for(getattr(config.population, "mode", "lifecycle"))
 
     es = Elasticsearch(args.host)
-    pairs = read_pair_sources(es, args.index, cand_side, step_is_dated(config))
+    scanned = read_pair_sources(es, args.index, cand_side, step_is_dated(config))
+    pairs = select_half(scanned, side, args.half)
     rows = sample_bands(pairs, DEFAULT_BANDS, args.per_band, args.seed, args.declared)
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -167,7 +219,11 @@ def main():
     drawn = {}
     for row in rows:
         drawn[row["band"]] = drawn.get(row["band"], 0) + 1
-    print("scanned {} pairs from {}".format(len(pairs), args.index))
+    print(
+        "scanned {} pairs from {}, {} in half {}".format(
+            len(scanned), args.index, len(pairs), args.half or "both"
+        )
+    )
     print("wrote {} {} pairs to {}: {}".format(len(rows), args.declared, out, drawn))
     return 0
 

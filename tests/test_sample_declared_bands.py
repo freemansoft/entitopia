@@ -12,10 +12,12 @@ draw, and the refusal of any other output path.
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from matching.declared import split_half
 from utils.declared_measure import DEFAULT_BANDS, sample_bands
 
 _SCRIPT = Path(__file__).parent.parent / "scripts" / "sample_declared_bands.py"
@@ -147,3 +149,49 @@ def test_redraw_over_reviewed_file_refused(tmp_path):
     with pytest.raises(SystemExit, match="1 verdict"):
         script.refuse_overwriting_verdicts(path)
     script.refuse_overwriting_verdicts(tmp_path / "data" / "absent.jsonl")
+
+
+def _git_repo(root):
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    (root / ".gitignore").write_text("*/data/\n", encoding="utf-8")
+    return root
+
+
+def test_out_must_be_ignored_by_git(tmp_path):
+    """A data/ directory git does not ignore is refused; the repo's own rule decides.
+
+    Run against a real temporary repository carrying the repo's `*/data/`
+    rule, not a fake of the ignore check. The hole this closes is a nested
+    data/ directory that pattern does not match, and only git's own matcher
+    can say which paths it misses; a fake would merely restate this test's
+    belief about gitignore semantics, and pass even if that belief were wrong.
+    """
+    repo = _git_repo(tmp_path / "repo")
+    script.check_out_path(repo / "PROJ" / "data" / "review" / "s.jsonl", repo)
+    with pytest.raises(SystemExit, match="does not ignore"):
+        script.check_out_path(repo / "PROJ" / "sub" / "data" / "s.jsonl", repo)
+    with pytest.raises(SystemExit, match="data/"):
+        script.check_out_path(repo / "PROJ" / "s.jsonl", repo)
+    # Outside the repository git can never offer the file for a commit.
+    script.check_out_path(tmp_path / "elsewhere" / "data" / "s.jsonl", repo)
+
+
+def test_half_selects_only_that_half():
+    """--half keeps only pairs whose predecessor key split_half files there.
+
+    Task 9 sets the verdicts against the report half's pairs_in_band, which
+    the measurement counts by split_half of the predecessor key. A sample
+    drawn from both halves would judge pairs those counts never include.
+    """
+    pairs = [_pair("k-{}".format(i), 0.95) for i in range(40)]
+    for half in ("tune", "report"):
+        kept = script.select_half(pairs, "predecessor", half)
+        assert kept
+        assert all(split_half(p["predecessor"]["entity_key"]) == half for p in kept)
+    tune = script.select_half(pairs, "predecessor", "tune")
+    report = script.select_half(pairs, "predecessor", "report")
+    assert len(tune) + len(report) == len(pairs)
+    assert script.select_half(pairs, "predecessor", None) == pairs
+    keyless = [{**_pair("x", 0.95), "predecessor": {}}]
+    with pytest.raises(ValueError):
+        script.select_half(keyless, "predecessor", "report")
