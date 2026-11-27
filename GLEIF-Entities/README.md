@@ -46,26 +46,26 @@ Source names were read from the 2026-11-26 headers (LEI-CDF 3.1, RR-CDF 2.1)
 and are pinned in `EntityColumns` and `RelationshipColumns`. The prepare step
 refuses a header missing any of them.
 
-| Column                       | Source                                                                                                                                  |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `LEI`                        | `LEI`                                                                                                                                   |
-| `LEGAL_NAME`                 | `Entity.LegalName`                                                                                                                      |
-| `OTHER_NAMES` (list)         | `Entity.OtherEntityNames.OtherEntityName.1-5` and the five transliterated names                                                         |
-| `LEGAL_*`, `HQ_*`            | `Entity.LegalAddress.*` and `Entity.HeadquartersAddress.*`: `FirstAddressLine` as the street, `City`, `Region`, `Country`, `PostalCode` |
-| `CATEGORY`                   | `Entity.EntityCategory`                                                                                                                 |
-| `LEGAL_FORM`                 | `Entity.LegalForm.EntityLegalFormCode` (an entity legal form, or ELF, code)                                                             |
-| `ENTITY_STATUS`              | `Entity.EntityStatus`                                                                                                                   |
-| `REGISTRATION_STATUS`        | `Registration.RegistrationStatus`                                                                                                       |
-| `CREATION_DATE`              | `Entity.EntityCreationDate`, truncated to the calendar day                                                                              |
-| `SHUTDOWN_DATE`              | `Entity.EntityExpirationDate`, else the latest completed terminal event (see "Shutdown date")                                           |
-| `SUCCESSOR_LEI` (list)       | `Entity.SuccessorEntity.1-5.SuccessorLEI`, cleaned                                                                                      |
-| `SUCCESSOR_CHAIN_END` (list) | computed: the LEIs reached by following `SUCCESSOR_LEI` to its end                                                                      |
-| `DIRECT_PARENT_LEI` (list)   | Level 2 `IS_DIRECTLY_CONSOLIDATED_BY`                                                                                                   |
-| `ULTIMATE_PARENT_LEI` (list) | Level 2 `IS_ULTIMATELY_CONSOLIDATED_BY`                                                                                                 |
-| `BRANCH_OF_LEI` (list)       | Level 2 `IS_INTERNATIONAL_BRANCH_OF`                                                                                                    |
-| `FUND_MANAGER_LEI` (list)    | Level 2 `IS_FUND-MANAGED_BY`                                                                                                            |
-| `UMBRELLA_FUND_LEI` (list)   | Level 2 `IS_SUBFUND_OF`                                                                                                                 |
-| `MASTER_FUND_LEI` (list)     | Level 2 `IS_FEEDER_TO`                                                                                                                  |
+| Column                       | Source                                                                                                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LEI`                        | `LEI`                                                                                                                                                                                    |
+| `LEGAL_NAME`                 | `Entity.LegalName`                                                                                                                                                                       |
+| `OTHER_NAMES` (list)         | `Entity.OtherEntityNames.OtherEntityName.1-5` and the five transliterated names                                                                                                          |
+| `LEGAL_*`, `HQ_*`            | `Entity.LegalAddress.*` and `Entity.HeadquartersAddress.*`: `FirstAddressLine` as the street (`AdditionalAddressLine.1` after a care-of line), `City`, `Region`, `Country`, `PostalCode` |
+| `CATEGORY`                   | `Entity.EntityCategory`                                                                                                                                                                  |
+| `LEGAL_FORM`                 | `Entity.LegalForm.EntityLegalFormCode` (an entity legal form, or ELF, code)                                                                                                              |
+| `ENTITY_STATUS`              | `Entity.EntityStatus`                                                                                                                                                                    |
+| `REGISTRATION_STATUS`        | `Registration.RegistrationStatus`                                                                                                                                                        |
+| `CREATION_DATE`              | `Entity.EntityCreationDate`, truncated to the calendar day                                                                                                                               |
+| `SHUTDOWN_DATE`              | `Entity.EntityExpirationDate`, else the latest completed terminal event (see "Shutdown date")                                                                                            |
+| `SUCCESSOR_LEI` (list)       | `Entity.SuccessorEntity.1-5.SuccessorLEI`, cleaned                                                                                                                                       |
+| `SUCCESSOR_CHAIN_END` (list) | computed: the LEIs reached by following `SUCCESSOR_LEI` to its end                                                                                                                       |
+| `DIRECT_PARENT_LEI` (list)   | Level 2 `IS_DIRECTLY_CONSOLIDATED_BY`                                                                                                                                                    |
+| `ULTIMATE_PARENT_LEI` (list) | Level 2 `IS_ULTIMATELY_CONSOLIDATED_BY`                                                                                                                                                  |
+| `BRANCH_OF_LEI` (list)       | Level 2 `IS_INTERNATIONAL_BRANCH_OF`                                                                                                                                                     |
+| `FUND_MANAGER_LEI` (list)    | Level 2 `IS_FUND-MANAGED_BY`                                                                                                                                                             |
+| `UMBRELLA_FUND_LEI` (list)   | Level 2 `IS_SUBFUND_OF`                                                                                                                                                                  |
+| `MASTER_FUND_LEI` (list)     | Level 2 `IS_FEEDER_TO`                                                                                                                                                                   |
 
 List columns are joined with `|`; `EntityColumns.list_valued()` names them for
 the ingest pipeline. In Level 2 the start node is the child and the end node
@@ -129,14 +129,16 @@ match the count the GLEIF API reported the same day.
 
 ### Prepare counters
 
-| Counter                 | Count   | Meaning                                                             |
-| ----------------------- | ------- | ------------------------------------------------------------------- |
-| `self_successor`        | 0       | successor equal to the record's own LEI, dropped                    |
-| `successor_without_lei` | 18,373  | successor named with no LEI, not written; no truth link can hold it |
-| `successor_bad_format`  | 0       | successor LEI of the wrong shape, dropped                           |
-| `separator_replaced`    | 416     | a `\|` inside a value, replaced by a space                          |
-| `undated_creation`      | 599,199 | no parseable `Entity.EntityCreationDate` (all records)              |
-| `no_shutdown_date`      | 2,107   | inactive records with no end date and no completed terminal event   |
+| Counter                   | Count   | Meaning                                                               |
+| ------------------------- | ------- | --------------------------------------------------------------------- |
+| `self_successor`          | 0       | successor equal to the record's own LEI, dropped                      |
+| `successor_without_lei`   | 18,373  | successor named with no LEI, not written; no truth link can hold it   |
+| `successor_bad_format`    | 0       | successor LEI of the wrong shape, dropped                             |
+| `separator_replaced`      | 418     | a `\|` inside a value, replaced by a space                            |
+| `undated_creation`        | 599,199 | no parseable `Entity.EntityCreationDate` (all records)                |
+| `no_shutdown_date`        | 2,107   | inactive records with no end date and no completed terminal event     |
+| `care_of_street_replaced` | 695,803 | a care-of first line replaced by the next address line (legal and HQ) |
+| `care_of_no_street`       | 100,730 | a care-of first line with no next line; street left blank             |
 
 ### Successor chains
 
@@ -219,28 +221,41 @@ dissolution or liquidation dates its end. `DEMERGER`, `SPINOFF` and the
 
 ## Shared legal addresses
 
-The 10 most shared US legal `FirstAddressLine` plus city values are
-registered-agent and filing-service addresses, carried by entities that have
-nothing else in common. They are named here because they are values to be
-excluded, not matches:
+Most US legal addresses are a registered agent's. 287,464 of the 366,339 US
+legal addresses (78.5%) have a care-of first line (`C/O ...` or `CARE OF ...`),
+against 62,631 headquarters addresses (17.1%). The prepare step reads the
+street from the next address line for those (276,015 legal and 54,038
+headquarters addresses in the US) and leaves it blank when there is none
+(11,449 legal and 8,593 headquarters). Worldwide the counts are 695,803
+replaced and 100,730 blanked, legal and headquarters together.
 
-| Street / city                                              | Entities |
-| ---------------------------------------------------------- | -------- |
-| C/O THE CORPORATION TRUST COMPANY / WILMINGTON             | 45,922   |
-| C/O CORPORATION SERVICE COMPANY / WILMINGTON               | 44,099   |
-| C/O COGENCY GLOBAL INC. / DOVER                            | 7,770    |
-| 251 LITTLE FALLS DRIVE / WILMINGTON                        | 5,107    |
-| C/O NATIONAL REGISTERED AGENTS, INC. / WILMINGTON          | 4,786    |
-| C/O CAPITOL SERVICES, INC. / DOVER                         | 3,573    |
-| C/O MAPLES FIDUCIARY SERVICES (DELAWARE) INC. / WILMINGTON | 2,503    |
-| CORPORATION TRUST CENTER 1209 ORANGE ST / WILMINGTON       | 2,406    |
-| C/O REGISTERED AGENT SOLUTIONS, INC. / DOVER               | 2,313    |
-| C/O C T CORPORATION SYSTEM / BOSTON                        | 2,029    |
+After that, the 10 most shared US legal street plus city values are
+registered-agent and filing-service street addresses, carried by entities
+that have nothing else in common. They are named here because they are
+values to be excluded, not matches:
 
-287,559 of the 366,339 US legal addresses (78.5%) have a first line starting
-`C/O`, against 62,635 headquarters addresses (17.1%). That is why the address
-signal reads the headquarters address, and why any legal-address signal needs
-a `max_shared_records` limit.
+| Street / city                                        | Entities |
+| ---------------------------------------------------- | -------- |
+| 251 LITTLE FALLS DRIVE / WILMINGTON                  | 46,424   |
+| CORPORATION TRUST CENTER / WILMINGTON                | 36,878   |
+| CORPORATION TRUST CENTER 1209 ORANGE ST / WILMINGTON | 10,795   |
+| 850 NEW BURTON ROAD / DOVER                          | 6,395    |
+| 1209 ORANGE STREET / WILMINGTON                      | 5,261    |
+| 2711 CENTERVILLE ROAD / WILMINGTON                   | 3,410    |
+| `<AGENT-STREET-A>` / DOVER                           | 2,747    |
+| 850 NEW BURTON ROAD SUITE 201 / DOVER                | 2,248    |
+| `<AGENT-STREET-B>` / WILMINGTON                      | 2,141    |
+| `<AGENT-STREET-C>` / WILMINGTON                      | 1,948    |
+
+Three streets are shown as placeholders. Each is a filing agent's address
+here, but in another project's index one carrier or bank at the same street
+was matched by an accusatory sweep, so naming the street would name it too.
+
+One agent's address appears under several spellings (with and without the
+building name, the suite, or `STREET` abbreviated), so an exact-value ignore
+list would need every spelling. That is why the address signal reads the
+headquarters address, and why any legal-address signal needs a
+`max_shared_records` limit rather than an ignore list.
 
 ## Hazards
 
@@ -264,13 +279,16 @@ a `max_shared_records` limit.
 5. **Two files from different publishes.** The prepare step joins Level 2 onto
    Level 1, so an old `rr.zip` kept beside a new `lei2.zip` would attach stale
    parents and report success. A failed download removes any earlier copy of
-   its file as well as the partial one, so the prepare step cannot run on a
-   mixed pair. Guarded by `test_failed_download_leaves_nothing`.
+   its file as well as the partial one (`test_failed_download_leaves_nothing`),
+   but a run killed between the two downloads still leaves a mixed pair. So the
+   prepare step reads the publish stamp that starts each zip's member name
+   (`<yyyymmdd>-<hhmm>-gleif-goldencopy-...`) and refuses two that differ, or a
+   member with no stamp. Guarded by `test_mixed_publish_refused`.
 6. **A delta file mistaken for the full file.** The publish JSON lists
    last-day and last-week deltas whose zips are valid and well above the
    floors. Only `full_file.csv` is read. Guarded by
    `test_resolves_full_file_urls`.
-7. **A `|` inside a value would split it in the ingest pipeline.** 416 values
+7. **A `|` inside a value would split it in the ingest pipeline.** 418 values
    carried one; each became a space. Guarded by
    `test_separator_in_value_replaced_and_counted`.
 8. **The surviving side of a merger carries the merger event too**: 3,574
@@ -278,9 +296,11 @@ a `max_shared_records` limit.
    shutdown date taken from it would mark a live acquirer as ended, so events
    date only inactive records. Guarded by
    `test_shutdown_prefers_own_end_date_then_latest_terminal_event`.
-9. **Successor cycles.** None in this publish (0). A cycle would loop forever;
-   it is cut and its members take its smallest LEI as their chain end. Guarded
-   by `test_chain_end_survives_a_cycle`.
+9. **Successor cycles.** None in this publish (0). A cycle would loop forever,
+   so each is collapsed into one node. A cycle with an exit resolves to the
+   ends its exit reaches; only a closed cycle gives its members its smallest
+   LEI as their chain end. Guarded by `test_chain_end_survives_a_cycle` and
+   `test_chain_end_of_a_cycle_with_an_exit`.
 10. **The CSV keeps only five of each repeated element.** Successors, names
     and events past the fifth are not in the file at all. 14 records fill the
     fifth successor slot and 21,620 the fifth event slot, so a terminal event
@@ -289,3 +309,18 @@ a `max_shared_records` limit.
     would carry the rest.
 11. **Successors named without an LEI** (18,373) cannot be truth links. They
     are counted, not guessed at.
+12. **A vocabulary that stops matching leaves a column blank everywhere.** A
+    relationship type renamed in a new RR-CDF release would leave its parent
+    column empty on every entity, and a renamed terminal event type or status
+    would leave every inactive record without a shutdown date. Both would
+    load. The prepare step refuses a configured relationship type that
+    matches no Level 2 row, and a run in which no inactive record gets a
+    `SHUTDOWN_DATE`. Guarded by `test_relationship_type_with_no_rows_refused`
+    and `test_no_dated_inactive_record_refused`.
+13. **A care-of first line is the agent, not the street.** Kept as the street,
+    the `*_LOCAL` address fields derived from it would hold the filing agent's
+    name, and every client of one agent would match every other on address.
+    When the first line starts `C/O` or `CARE OF` (any case), the street is
+    read from the first additional line, or left blank when there is none (see
+    "Shared legal addresses" for the counts). Guarded by
+    `test_care_of_street_read_from_next_line`.

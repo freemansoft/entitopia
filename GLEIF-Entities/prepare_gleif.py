@@ -60,10 +60,18 @@ _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # the file at all.
 _SLOTS = range(1, 6)
 
-# Headroom over csv's 128 KB default. Every one of the 338 raw columns is
-# parsed, not only those written, and one oversized free-text field anywhere
-# would abort the run part-way.
-csv.field_size_limit(10_000_000)
+# Headroom over csv's 128 KB default, set by read_zip_csv rather than at
+# import so loading this module (as the tests do) changes no global state.
+# Every one of the 338 raw columns is parsed, not only those written, and one
+# oversized free-text field anywhere would abort the run part-way.
+_FIELD_SIZE_LIMIT = 10_000_000
+
+# A care-of first line names the filing agent or manager, not a street.
+_CARE_OF = re.compile(r"^(?:C/O|CARE\s+OF)(?![A-Z])", re.IGNORECASE)
+
+# Golden-copy member names start with the publish they belong to, as in
+# 20261126-1600-gleif-goldencopy-lei2-golden-copy.csv.
+_PUBLISH_STAMP = re.compile(r"^(\d{8}-\d{4})-gleif-goldencopy-")
 
 # Field metadata saying where an output column's value comes from, so callers
 # (the ingest pipeline's test, the header check) read it from the dataclass
@@ -127,12 +135,9 @@ class EntityColumns:
         ),
         metadata=_LIST,
     )
-    # The first address line only, which holds the street on most records.
-    # On a c/o address it holds the agent's name and the street moves to
-    # AdditionalAddressLine.1, which is not read: on 2026-11-26, 78.5% of US
-    # legal and 17.1% of US headquarters first lines started C/O. Those are
-    # shared agent values that any address signal has to rarity-limit anyway
-    # (README, "Shared legal addresses").
+    # The first address line, which holds the street on most records. A
+    # care-of first line holds the agent's name instead, and the street moves
+    # to the first additional line (see care_of_streets).
     LEGAL_STREET: str = _address("LegalAddress", "FirstAddressLine")
     LEGAL_CITY: str = _address("LegalAddress", "City")
     LEGAL_REGION: str = _address("LegalAddress", "Region")
@@ -177,6 +182,18 @@ class EntityColumns:
     UMBRELLA_FUND_LEI: tuple[str, ...] = field(default=("IS_SUBFUND_OF",), metadata=_PARENT)
     MASTER_FUND_LEI: tuple[str, ...] = field(default=("IS_FEEDER_TO",), metadata=_PARENT)
 
+    # Where the street is when the first line is a care-of line. On
+    # 2026-11-26, 78.5% of US legal and 17.1% of US headquarters first lines
+    # started C/O. Left in place, the *_LOCAL fields derived from the street
+    # would hold the filing agent's name, and every client of one agent
+    # would match every other on address.
+    care_of_streets: tuple[tuple[str, str], ...] = field(
+        default=(
+            ("LEGAL_STREET", _address("LegalAddress", "AdditionalAddressLine.1")),
+            ("HQ_STREET", _address("HeadquartersAddress", "AdditionalAddressLine.1")),
+        ),
+        metadata=_INPUT,
+    )
     # A successor named with no LEI is counted, so the README can say how many
     # successions the truth set cannot hold.
     successor_names: tuple[str, ...] = field(
@@ -240,6 +257,8 @@ class EntityColumns:
             if f.name == "events":
                 for slot in value:
                     columns += [slot.event_type, slot.effective_date, slot.status]
+            elif f.name == "care_of_streets":
+                columns += [source for _, source in value]
             elif isinstance(value, str) and not f.metadata.get("input_only"):
                 columns.append(value)
             elif isinstance(value, tuple):
@@ -283,6 +302,8 @@ class PrepStats(Counter):
         "separator_replaced",
         "undated_creation",
         "no_shutdown_date",
+        "care_of_street_replaced",
+        "care_of_no_street",
     )
 
     def __init__(self):
@@ -422,10 +443,12 @@ def successor_chain_ends(
     a blank.
 
     A successor absent from the file is still an end: its LEI is known. A
-    cycle, which only bad data produces, would otherwise loop forever; it is
-    cut and its members take the cycle's smallest LEI as their end, so the
-    result is reproducible and the pairs stay explained. Strongly connected
-    components find cycles of any length.
+    cycle, which only bad data produces, would otherwise loop forever, so
+    each cycle is collapsed into one node. A cycle with an exit (A->B, B->A,
+    B->C) resolves to the ends that exit reaches, like any other link. Only a
+    closed cycle, which leads nowhere, takes its smallest LEI as the end of
+    all its members, so the result is reproducible and the pairs stay
+    explained. Strongly connected components find cycles of any length.
 
     chain_length_<n> counts members whose farthest end is n links away.
     """
@@ -475,6 +498,11 @@ def pivot_relationships(
     usually lapsed with it, and a lapsed parent still explains a pair formed
     while the parent held it. The counter records every row by (type, status),
     kept or not, so the README totals can be checked against the raw file.
+
+    A configured type that matches no row is refused. A renamed type in a new
+    RR-CDF release would otherwise leave its parent column blank on every
+    entity, and the explains rules reading it would go quiet while the load
+    reported success.
     """
     collected = defaultdict(lambda: defaultdict(set))
     counts = Counter()
@@ -484,6 +512,12 @@ def pivot_relationships(
         column = columns.parent_columns.get(kind)
         if column:
             collected[row[columns.child].strip()][column].add(row[columns.parent].strip())
+    seen = {kind for kind, _ in counts}
+    unmatched = sorted(kind for kind in columns.parent_columns if kind not in seen)
+    if unmatched:
+        raise RuntimeError(
+            "configured relationship types match no Level 2 row: {}".format(unmatched)
+        )
     parents = {
         child: {column: sorted(leis) for column, leis in by_column.items()}
         for child, by_column in collected.items()
@@ -501,8 +535,8 @@ def shutdown_day(row: dict, columns: EntityColumns) -> str | None:
 
     Events date only an inactive entity. The surviving side of a merger
     carries the same completed MERGERS_AND_ACQUISITIONS event (3,574 such
-    events sat on active records on 2026-11-26), and a shutdown date on a live acquirer would read
-    as its end.
+    events sat on active records on 2026-11-26), and a shutdown date on a
+    live acquirer would read as its end.
     """
     own = iso_day(row[columns.SHUTDOWN_DATE])
     if own:
@@ -519,22 +553,42 @@ def shutdown_day(row: dict, columns: EntityColumns) -> str | None:
     return max(days) if days else None
 
 
+def _move_past_care_of(out, row, columns, stats):
+    """Replace a care-of street with the next address line, or blank it.
+
+    Blank rather than kept when there is no next line: an agent's name in a
+    street field matches every other client of that agent.
+    """
+    for name, additional in columns.care_of_streets:
+        if not _CARE_OF.match(out[name]):
+            continue
+        street = _clean(row[additional], stats)
+        out[name] = street
+        stats["care_of_street_replaced" if street else "care_of_no_street"] += 1
+
+
 def prepare_entities(
     rows: Iterable[dict],
     parents: dict[str, dict[str, list[str]]],
     columns: EntityColumns,
-    chain_ends: dict[str, list[str]] | None = None,
+    chain_ends: dict[str, list[str]],
     stats: Counter | None = None,
 ) -> Iterator[dict]:
     """Yield one entities.csv row per Level 1 row, the second of the two passes.
 
+    `chain_ends` has no default: a caller that forgot it would write every
+    row without SUCCESSOR_CHAIN_END, and the chain rule would report each
+    two-step pair as a finding.
+
     `no_shutdown_date` counts inactive records only: an active entity has no
     shutdown to date, and counting it would bury the figure the stop gate
-    reads.
+    reads. Inactive records seen without one dated among them are refused
+    when the rows run out, because that is a terminal-event vocabulary that
+    no longer matches the file, not a register with no shutdowns.
     """
     stats = PrepStats() if stats is None else stats
-    chain_ends = chain_ends or {}
     parent_columns = columns.parent_columns()
+    inactive = dated = 0
     for row in rows:
         out = {}
         lei = row[columns.LEI].strip()
@@ -544,9 +598,14 @@ def prepare_entities(
         created = iso_day(row[columns.CREATION_DATE])
         if not created:
             stats["undated_creation"] += 1
+        _move_past_care_of(out, row, columns, stats)
         ended = shutdown_day(row, columns)
-        if not ended and out["ENTITY_STATUS"] == columns.inactive_status:
-            stats["no_shutdown_date"] += 1
+        if out["ENTITY_STATUS"] == columns.inactive_status:
+            inactive += 1
+            if ended:
+                dated += 1
+            else:
+                stats["no_shutdown_date"] += 1
         out["CREATION_DATE"] = created or ""
         out["SHUTDOWN_DATE"] = ended or ""
         out["SUCCESSOR_LEI"] = _join(clean_successors(row, columns, stats))
@@ -555,6 +614,11 @@ def prepare_entities(
         for name in parent_columns:
             out[name] = _join(own_parents.get(name, ()))
         yield {name: out[name] for name in columns.output_columns()}
+    if inactive and not dated:
+        raise RuntimeError(
+            "none of {} inactive records got a SHUTDOWN_DATE; check terminal_events "
+            "and completed_status against the file".format(inactive)
+        )
 
 
 def _open_single_csv(path):
@@ -572,14 +636,16 @@ def _open_single_csv(path):
     return archive, handle
 
 
-def read_zip_csv(path: Path, required: Iterable[str] = ()) -> Iterator[dict]:
+def read_zip_csv(path: Path, required: Iterable[str]) -> Iterator[dict]:
     """Stream the rows of the one CSV inside a golden-copy zip.
 
     Both checks run before the first row is returned. A zip holding something
     else is not the file the column map was written for. A header missing a
     configured column would read as blank on every row and load as millions
     of entities with no successor or no date, which is FDIC hazard 3 again.
+    `required` has no default for that reason: an empty list checks nothing.
     """
+    csv.field_size_limit(_FIELD_SIZE_LIMIT)
     archive, handle = _open_single_csv(path)
     reader = csv.DictReader(handle)
     header = reader.fieldnames or []
@@ -597,6 +663,34 @@ def read_zip_csv(path: Path, required: Iterable[str] = ()) -> Iterator[dict]:
             archive.close()
 
     return rows()
+
+
+def _publish_stamp(path):
+    """The publish a golden-copy zip belongs to, read from its member's name."""
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+    match = _PUBLISH_STAMP.match(names[0]) if len(names) == 1 else None
+    if not match:
+        raise RuntimeError("{} has no publish stamp in its member names {}".format(path, names))
+    return match.group(1)
+
+
+def require_same_publish(lei2: Path, rr: Path) -> str:
+    """Refuse a Level 1 and Level 2 file from different publishes.
+
+    fetch_gleif.py removes a file whose download failed, but a run killed
+    between the two downloads leaves a new lei2.zip beside the previous
+    rr.zip. Joined, that pair would attach stale parents to every entity and
+    report success.
+    """
+    stamps = _publish_stamp(lei2), _publish_stamp(rr)
+    if stamps[0] != stamps[1]:
+        raise RuntimeError(
+            "{} ({}) and {} ({}) come from different publishes; re-run fetch_gleif.py".format(
+                lei2, stamps[0], rr, stamps[1]
+            )
+        )
+    return stamps[0]
 
 
 def _print_header(path):
@@ -621,6 +715,7 @@ def main():
         _print_header(args.rr)
         return 0
 
+    publish = require_same_publish(args.lei2, args.rr)
     entity_columns = EntityColumns()
     relationship_columns = RelationshipColumns()
     required = entity_columns.required()
@@ -654,6 +749,7 @@ def main():
         part.unlink(missing_ok=True)
 
     report = {
+        "publish": publish,
         "rows": written,
         "prep": dict(stats),
         "chains": dict(sorted(chain_stats.items())),

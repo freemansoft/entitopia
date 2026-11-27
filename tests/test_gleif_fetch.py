@@ -32,6 +32,7 @@ _SCRIPT = Path(__file__).parent.parent / "GLEIF-Entities" / "fetch_gleif.py"
 
 
 def _load():
+    # By path: GLEIF-Entities is a project directory, not an importable package.
     spec = importlib.util.spec_from_file_location("fetch_gleif", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

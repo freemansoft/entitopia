@@ -35,6 +35,7 @@ _SCRIPT = Path(__file__).parent.parent / "GLEIF-Entities" / "prepare_gleif.py"
 
 
 def _load():
+    # By path: GLEIF-Entities is a project directory, not an importable package.
     spec = importlib.util.spec_from_file_location("prepare_gleif", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -70,10 +71,11 @@ def _entity(lei, **values):
 
 
 def _prepared(rows, parents=None, chain_ends=None):
+    # Runs the writing pass to completion and hands back its counters as well.
     stats = prepare_gleif.PrepStats()
     out = list(
         prepare_gleif.prepare_entities(
-            rows, parents or {}, COLUMNS, chain_ends=chain_ends, stats=stats
+            rows, parents or {}, COLUMNS, chain_ends=chain_ends or {}, stats=stats
         )
     )
     return out, stats
@@ -149,6 +151,7 @@ def test_successor_without_lei_counted():
 
 
 def _relationship(child, parent, kind, status):
+    # A Level 2 row holding only the four columns the pivot reads.
     return {
         RELATIONSHIPS.child: child,
         RELATIONSHIPS.parent: parent,
@@ -157,13 +160,23 @@ def _relationship(child, parent, kind, status):
     }
 
 
+# Only the two types the pivot tests feed; the full map would refuse them as
+# a vocabulary with types that match no row.
+TWO_TYPES = prepare_gleif.RelationshipColumns(
+    parent_columns={
+        "IS_DIRECTLY_CONSOLIDATED_BY": "DIRECT_PARENT_LEI",
+        "IS_ULTIMATELY_CONSOLIDATED_BY": "ULTIMATE_PARENT_LEI",
+    }
+)
+
+
 def test_relationships_pivot_keeps_every_status():
     rows = [
         _relationship(A, B, "IS_DIRECTLY_CONSOLIDATED_BY", "ACTIVE"),
         _relationship(A, D, "IS_DIRECTLY_CONSOLIDATED_BY", "INACTIVE"),
         _relationship(A, C, "IS_ULTIMATELY_CONSOLIDATED_BY", "ACTIVE"),
     ]
-    parents, counts = prepare_gleif.pivot_relationships(rows, RELATIONSHIPS)
+    parents, counts = prepare_gleif.pivot_relationships(rows, TWO_TYPES)
     assert parents == {A: {"DIRECT_PARENT_LEI": [B, D], "ULTIMATE_PARENT_LEI": [C]}}
     assert counts == {
         ("IS_DIRECTLY_CONSOLIDATED_BY", "ACTIVE"): 1,
@@ -198,11 +211,12 @@ def test_list_columns_are_discoverable():
     assert "LEGAL_NAME" not in prepare_gleif.EntityColumns.list_valued()
 
 
-def _zip(tmp_path, members):
-    path = tmp_path / "file.zip"
+def _zip(tmp_path, members, name="file.zip"):
+    # A zip built in the test, so member names and counts are under its control.
+    path = tmp_path / name
     with zipfile.ZipFile(path, "w") as archive:
-        for name, text in members.items():
-            archive.writestr(name, text)
+        for member, text in members.items():
+            archive.writestr(member, text)
     return path
 
 
@@ -266,3 +280,56 @@ def test_shutdown_prefers_own_end_date_then_latest_terminal_event():
     out, stats = _prepared([own, events, undatable, survivor])
     assert [row["SHUTDOWN_DATE"] for row in out] == ["2019-05-01", "2021-07-15", "", ""]
     assert stats["no_shutdown_date"] == 1
+
+
+def test_chain_end_of_a_cycle_with_an_exit():
+    # Only a closed cycle falls back to its smallest LEI; one with an exit
+    # leads somewhere, and its members share where it leads.
+    ends, stats = prepare_gleif.successor_chain_ends({A: [B], B: [A, C]})
+    assert ends[A] == [C]
+    assert ends[B] == [C]
+    assert ends[C] == [C]
+    assert stats["successor_cycle"] == 1
+
+
+def test_relationship_type_with_no_rows_refused():
+    rows = [_relationship(A, B, "IS_DIRECTLY_CONSOLIDATED_BY", "ACTIVE")]
+    with pytest.raises(RuntimeError, match="IS_FEEDER_TO"):
+        prepare_gleif.pivot_relationships(rows, RELATIONSHIPS)
+
+
+def test_no_dated_inactive_record_refused():
+    rows = [
+        _with_events(
+            _entity(A, ENTITY_STATUS="INACTIVE"),
+            ("RENAMED_TERMINAL_TYPE", "COMPLETED", "2020-01-01T00:00:00Z"),
+        ),
+        _entity(B, ENTITY_STATUS="INACTIVE"),
+    ]
+    with pytest.raises(RuntimeError, match="SHUTDOWN_DATE"):
+        _prepared(rows)
+
+
+def test_mixed_publish_refused(tmp_path):
+    lei2 = _zip(tmp_path, {"20261126-1600-gleif-goldencopy-lei2-golden-copy.csv": "LEI\n"}, "l.zip")
+    old_rr = _zip(tmp_path, {"20261126-0800-gleif-goldencopy-rr-golden-copy.csv": "x\n"}, "r.zip")
+    with pytest.raises(RuntimeError, match="different publishes"):
+        prepare_gleif.require_same_publish(lei2, old_rr)
+    same_rr = _zip(tmp_path, {"20261126-1600-gleif-goldencopy-rr-golden-copy.csv": "x\n"}, "s.zip")
+    assert prepare_gleif.require_same_publish(lei2, same_rr) == "20261126-1600"
+    unstamped = _zip(tmp_path, {"rr.csv": "x\n"}, "u.zip")
+    with pytest.raises(RuntimeError, match="publish stamp"):
+        prepare_gleif.require_same_publish(lei2, unstamped)
+
+
+def test_care_of_street_read_from_next_line():
+    additional = dict(COLUMNS.care_of_streets)
+    agent = _entity(A, LEGAL_STREET="C/O SOME FILING AGENT INC", HQ_STREET="care of a manager")
+    agent[additional["LEGAL_STREET"]] = "100 EXAMPLE ROAD"
+    plain = _entity(B, LEGAL_STREET="200 SAMPLE AVENUE", HQ_STREET="CARE OF ANOTHER AGENT")
+    plain[additional["HQ_STREET"]] = "SUITE 5, 300 PLACEHOLDER LANE"
+    out, stats = _prepared([agent, plain])
+    assert [row["LEGAL_STREET"] for row in out] == ["100 EXAMPLE ROAD", "200 SAMPLE AVENUE"]
+    assert [row["HQ_STREET"] for row in out] == ["", "SUITE 5, 300 PLACEHOLDER LANE"]
+    assert stats["care_of_street_replaced"] == 2
+    assert stats["care_of_no_street"] == 1
