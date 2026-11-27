@@ -718,7 +718,8 @@ precision instead (see "Shared headquarters addresses").
 
 Truth links are split by a hash of the predecessor's `LEI` (`split_half`,
 `matching/declared.py`). Everything below was chosen on the `tune` half only;
-the `report` half has not been measured. GLEIF's record is incomplete
+the `report` half was measured once, after tuning stopped ("Report half").
+GLEIF's record is incomplete
 (`complete_truth` false), so there is no precision. In its place the tuning
 reads the **truth share at 0.70 and above**: the `truth` pairs over all
 `truth`, `explains` and `none` pairs in the 0.7-0.8, 0.8-0.9 and 0.9+ intervals
@@ -915,3 +916,390 @@ predecessors, against 14,070 at R3 and 10,046 before `hq-street-seed`, which
 adds candidates to almost every search. Funds and branches are 8.3% of the final
 absorption pairs (11,239) and 11.3% of reappearance's (16,050), about the
 starting runs' 8.7% and 11.4%.
+
+### Report half
+
+Measured once on 2026-11-27, after tuning stopped, on the final pair indexes.
+No setting changed after it. `lei-absorption`:
+
+```bash
+.venv/bin/python scripts/measure_declared_links.py --project GLEIF-Entities \
+  --step lei-absorption --index lei-absorption-pairs-2026.11.27-000003 \
+  --half report
+```
+
+```json
+{
+  "half": "report",
+  "pair_index": "lei-absorption-pairs-2026.11.27-000003",
+  "denominator": 521,
+  "exclusions": {
+    "target_missing_from_index": 0,
+    "target_outside_window": 29,
+    "target_undated": 0,
+    "predecessor_undated": 1,
+    "predecessor_not_searched": 0
+  },
+  "recall": 0.12092130518234165,
+  "recall_by_band": {
+    "0.35": 0.12092130518234165,
+    "0.5": 0.10940499040307101,
+    "0.6": 0.08253358925143954,
+    "0.7": 0.05950095969289827,
+    "0.8": 0.030710172744721688,
+    "0.9": 0.02111324376199616
+  },
+  "misses": {
+    "not_retrieved": 378,
+    "retrieved_not_emitted": 80
+  },
+  "explains_by_band": {
+    "0.35": 266,
+    "0.5": 256,
+    "0.6": 220,
+    "0.7": 172,
+    "0.8": 81,
+    "0.9": 13
+  },
+  "undated": {
+    "target_links_measured": 52,
+    "target_links_excluded": 1,
+    "pairs_by_band": {
+      "0.35": 17403,
+      "0.5": 10529,
+      "0.6": 5507,
+      "0.7": 2998,
+      "0.8": 1921,
+      "0.9": 191
+    }
+  },
+  "pairs_in_band": {
+    "0.35-0.5": {
+      "truth": 6,
+      "explains": 10,
+      "none": 31774,
+      "none_undated": 6868
+    },
+    "0.5-0.6": {
+      "truth": 14,
+      "explains": 36,
+      "none": 21223,
+      "none_undated": 5013
+    },
+    "0.6-0.7": {
+      "truth": 12,
+      "explains": 48,
+      "none": 8035,
+      "none_undated": 2496
+    },
+    "0.7-0.8": {
+      "truth": 15,
+      "explains": 91,
+      "none": 2701,
+      "none_undated": 1007
+    },
+    "0.8-0.9": {
+      "truth": 5,
+      "explains": 68,
+      "none": 2438,
+      "none_undated": 1676
+    },
+    "0.9+": {
+      "truth": 11,
+      "explains": 13,
+      "none": 408,
+      "none_undated": 180
+    }
+  }
+}
+```
+
+`lei-reappearance`, the same command with `--step lei-reappearance --index
+lei-reappearance-pairs-2026.11.27-000001`:
+
+```json
+{
+  "half": "report",
+  "pair_index": "lei-reappearance-pairs-2026.11.27-000001",
+  "denominator": 25,
+  "exclusions": {
+    "target_missing_from_index": 0,
+    "target_outside_window": 472,
+    "target_undated": 53,
+    "predecessor_undated": 1,
+    "predecessor_not_searched": 0
+  },
+  "recall": 0.56,
+  "recall_by_band": {
+    "0.35": 0.56,
+    "0.5": 0.52,
+    "0.6": 0.4,
+    "0.7": 0.24,
+    "0.8": 0.16,
+    "0.9": 0.04
+  },
+  "misses": {
+    "not_retrieved": 6,
+    "retrieved_not_emitted": 5
+  },
+  "explains_by_band": {
+    "0.35": 4,
+    "0.5": 4,
+    "0.6": 2,
+    "0.7": 1,
+    "0.8": 1,
+    "0.9": 0
+  },
+  "undated": {
+    "target_links_measured": 0,
+    "target_links_excluded": 53,
+    "pairs_by_band": {
+      "0.35": 0,
+      "0.5": 0,
+      "0.6": 0,
+      "0.7": 0,
+      "0.8": 0,
+      "0.9": 0
+    }
+  },
+  "pairs_in_band": {
+    "0.35-0.5": {
+      "truth": 1,
+      "explains": 0,
+      "none": 28725,
+      "none_undated": 0
+    },
+    "0.5-0.6": {
+      "truth": 3,
+      "explains": 2,
+      "none": 34396,
+      "none_undated": 0
+    },
+    "0.6-0.7": {
+      "truth": 4,
+      "explains": 1,
+      "none": 6235,
+      "none_undated": 0
+    },
+    "0.7-0.8": {
+      "truth": 2,
+      "explains": 0,
+      "none": 990,
+      "none_undated": 0
+    },
+    "0.8-0.9": {
+      "truth": 3,
+      "explains": 1,
+      "none": 420,
+      "none_undated": 0
+    },
+    "0.9+": {
+      "truth": 1,
+      "explains": 0,
+      "none": 34,
+      "none_undated": 0
+    }
+  }
+}
+```
+
+**Absorption: 63 of 521 links at any score (0.121), 31 of 521 at 0.70 and
+above (0.0595).** The report half's predecessors name 551 successor links. The
+denominator keeps 521, including 52 whose successor has no `CREATION_DATE`
+(`undated.target_links_measured`), because the absorption sweep keeps undated
+candidates. It excludes 29 whose successor the window refuses
+(`target_outside_window`: registered fewer than 181 days before the shutdown,
+or after it, or ended before it) and 1 whose predecessor has no
+`SHUTDOWN_DATE` (`predecessor_undated`). Of the 458 misses, 378 were never
+retrieved and 80 were retrieved but not emitted.
+
+**Reappearance: 14 of 25 links at any score, 6 of 25 at 0.70 and above.** The
+denominator keeps 25 of the same 551. It excludes 472 outside the window
+(mostly the absorption-shaped links registered long before the shutdown), 53
+whose successor has no `CREATION_DATE` (`target_undated`; this sweep excludes
+undated candidates) and the same undated predecessor. Of the 11 misses, 6 were
+never retrieved and 5 were retrieved but not emitted.
+
+There is no precision figure in either output, because `complete_truth` is
+false: an undeclared pair may be a succession GLEIF never recorded, so counting
+it as a false match would understate precision. The bands below stand in for it.
+
+**Tune half against report half**, final configuration. The tune-half figures
+are runs A5 and R4 of the tuning log:
+
+| Step               | Half   | Links | Recall, any score | Recall at 0.70 | Truth share at 0.70+ |
+| ------------------ | ------ | ----- | ----------------- | -------------- | -------------------- |
+| `lei-absorption`   | tune   | 533   | 67 (0.126)        | 35 (0.0657)    | 35 / 5,961           |
+| `lei-absorption`   | report | 521   | 63 (0.121)        | 31 (0.0595)    | 31 / 5,750           |
+| `lei-reappearance` | tune   | 28    | 13                | 7              | 7 / 1,326            |
+| `lei-reappearance` | report | 25    | 14                | 6              | 6 / 1,451            |
+
+**The absorption gain did not fully carry over.** Report-half recall at 0.70
+is 0.0595 against the tune half's 0.0657, about three links fewer at the report
+half's size. Every kept step after A2 added one tune-half link, part of it by
+the band-edge effect under "Tuned configuration", so a three-link shortfall is
+the size of the last three steps: at least part of what they gained was fitted
+to the tune half. How much of the whole ten-link gain survived cannot be read
+from these figures, because the report half was not measured at the starting
+weights. Reappearance reads 6 of 25 against 7 of 28; at these counts the two
+halves cannot be told apart, so they show neither a carried gain nor a lost
+one. The truth share at 0.70 and above is lower on the report half in both
+sweeps. Nothing was tuned further.
+
+## Undeclared successions by band
+
+Without precision, each score interval is reported with its count of
+undeclared (`none`) pairs, its share of truth, and a hand-read sample. The
+samples were drawn on 2026-11-27 from the report half of each final pair index
+and read locally:
+
+```bash
+.venv/bin/python scripts/sample_declared_bands.py --project GLEIF-Entities \
+  --step lei-absorption --index lei-absorption-pairs-2026.11.27-000003 \
+  --per-band 15 --seed 42 --declared none --half report \
+  --out GLEIF-Entities/data/review/lei-absorption-report.jsonl
+.venv/bin/python scripts/sample_declared_bands.py \
+  --count GLEIF-Entities/data/review/lei-absorption-report.jsonl
+```
+
+and the same for `lei-reappearance`. The review files carry the paired
+entities' real names, so they stay under `data/review/`, which git ignores.
+Each row was given one verdict:
+
+- `real`: the candidate carries on the same business. The signs are the same
+  or a clearly renamed name, the same headquarters town, and dates consistent
+  with a takeover.
+- `explained-missed`: a parent, sibling or affiliate the `explains` rules did
+  not catch, because GLEIF records no relationship between the two.
+- `look-alike`: anything else.
+
+In the tables, **undeclared pairs** is an interval's `none` less its
+`none_undated`, the dated pairs its sample is drawn from; the undated row is
+the sum of `none_undated` over every interval. **Truth share** is the
+interval's `truth` over its `truth`, `explains` and `none` pairs, undated
+candidates included, as `pairs_in_band` counts them. The undated row's share
+is its truth pairs over every undated pair at 0.35 and above
+(`undated.pairs_by_band`); its 6 truth pairs were counted from the pair index
+with the sampler's own half split, since the measurement does not split
+undated pairs by tag.
+
+**`lei-absorption`**, report half:
+
+| Interval | Undeclared pairs | Truth share  | Sample | `real` | `explained-missed` | `look-alike` |
+| -------- | ---------------- | ------------ | ------ | ------ | ------------------ | ------------ |
+| 0.35-0.5 | 24,906           | 6 of 31,790  | 15     | 0      | 0                  | 15           |
+| 0.5-0.6  | 16,210           | 14 of 21,273 | 15     | 0      | 2                  | 13           |
+| 0.6-0.7  | 5,539            | 12 of 8,095  | 15     | 0      | 3                  | 12           |
+| 0.7-0.8  | 1,694            | 15 of 2,807  | 15     | 1      | 7                  | 7            |
+| 0.8-0.9  | 762              | 5 of 2,511   | 15     | 2      | 13                 | 0            |
+| 0.9+     | 228              | 11 of 432    | 15     | 2      | 12                 | 1            |
+| undated  | 17,240           | 6 of 17,403  | 15     | 0      | 8                  | 7            |
+
+**`lei-reappearance`**, report half. The sweep excludes undated candidates, so
+it has no undated band:
+
+| Interval | Undeclared pairs | Truth share | Sample | `real` | `explained-missed` | `look-alike` |
+| -------- | ---------------- | ----------- | ------ | ------ | ------------------ | ------------ |
+| 0.35-0.5 | 28,725           | 1 of 28,726 | 15     | 0      | 0                  | 15           |
+| 0.5-0.6  | 34,396           | 3 of 34,401 | 15     | 0      | 0                  | 15           |
+| 0.6-0.7  | 6,235            | 4 of 6,240  | 15     | 0      | 0                  | 15           |
+| 0.7-0.8  | 990              | 2 of 992    | 15     | 0      | 5                  | 10           |
+| 0.8-0.9  | 420              | 3 of 424    | 15     | 0      | 14                 | 1            |
+| 0.9+     | 34               | 1 of 35     | 15     | 6      | 8                  | 1            |
+
+**Judgement calls.** 19 of the 195 rows (13 absorption, 6 reappearance) were
+not clear from the record. In 9 it was unclear whether the two entities were
+related at all (a shared sponsor-like word, neighbouring street numbers, the
+same town), and each was marked `look-alike`, the conservative verdict. The
+other 10 were plainly related, and the call was which kind. 4 were marked
+`real`: 2 absorption pairs with the same name stem under another legal form in
+the same town, 1 absorption pair of a fund's two registrations, and 1
+reappearance pair with an identical name registered the same day in another
+town. 6 were marked `explained-missed`: a company named after the predecessor
+in its town, the same name registered abroad, or a fund paired with a sibling
+fund of its family. Without those 4, `real` reads 2 in absorption and 5 in
+reappearance.
+
+### Where to start reviewing
+
+**Reappearance: 0.9 and above.** It is the only interval with a `real` row: 6
+of 15, against none in the 75 rows below it. The 0.8-0.9 interval is related
+pairs GLEIF did not link (14 of 15), not successions, and below 0.70 every row
+read is a look-alike (45 of 45, 42 of them a candidate registered outside the
+US near the shutdown date). The report half holds **34 undeclared pairs at or
+above 0.90**; the whole pair index holds 68 (`_count` of `declared: none` with
+`total_score` at least 0.9).
+
+**Absorption: 0.8 and above.** From 0.80 up, look-alikes nearly vanish (1 of
+30, against 7 of 15 in 0.7-0.8 and 40 of 45 below 0.70) and `real` rows appear
+at 4 of 30, against 1 of 15 in 0.7-0.8 and none below. Most of what a reviewer
+reads there is a relationship GLEIF does not record rather than a succession
+(25 of 30), so the band finds Level 2 gaps more often than undeclared
+successors. The report half holds **990 undeclared pairs at or above 0.80 with
+a dated successor, and 1,856 with an undated one**; the whole pair index holds
+2,044 and 3,719. The undated band is not worth reading as a band: none of its
+15 rows was `real`.
+
+These are pairs, not successions: a predecessor can contribute up to 10
+(`max_pairs_per_predecessor`).
+
+### Patterns in the sample
+
+Placeholders stand for the entities, and the numbers inside them are invented.
+
+- **Legal-form change, reappearance (3 `real`).**
+  `<ENTITY-A>, Inc. -> <ENTITY-A>, LLC` (or `Corp.` to `LLC`), same
+  headquarters town, the successor registered 2 to 13 days before the
+  shutdown.
+- **Identical name, reappearance (2 `real`).** `<ENTITY-B> -> <ENTITY-B>`,
+  same name, form and town, registered 7 and 9 days before the shutdown. These
+  read as much like one entity registered twice, the older LEI lapsing, as like
+  a succession.
+- **Same day, new form, new town (1 `real`, a judgement call).**
+  `<ENTITY-C> LLC -> <ENTITY-C> LP`, the successor registered the day the
+  predecessor closed.
+- **Absorption by an older registration of the same business (5 `real`).**
+  `<ENTITY-D>, Inc. -> <ENTITY-D>, INC.` in one town, the successor registered
+  2.5 years before the shutdown (score 1.00); three where the same name stem in
+  the same town carries another legal form, registered 3 to 19 years before;
+  and `<TRUST> - <FUND-E> -> <FUND-E>`, a fund's series registration closing
+  while the fund's own registration, in the same city, carries on.
+- **Numbered siblings (`explained-missed`).**
+  `<SPONSOR> FUND 2-C -> <SPONSOR> FUND 2-A` and
+  `<SPONSOR> TRUST 4 -> <SPONSOR> TRUST 7`: vehicles of one sponsor at one
+  headquarters whose names differ only in a number or letter. 18 of the 25
+  related absorption rows at 0.80 and above are this shape, 5 of them from one
+  sponsor's series. In reappearance, 9 of the 14 related rows in 0.8-0.9 are
+  one issuer's numbered trust series, all closed on one day and each paired
+  with a series registered on one day 41 days before.
+- **Companies named after the predecessor (`explained-missed`).**
+  `<ENTITY-F> -> <ENTITY-F> GROUP`,
+  `<ENTITY-G> FUND -> <ENTITY-G> FUND HOLDINGS`, or a property vehicle paired
+  with its sponsor's company of the same name, in the same town: 5 of the
+  related absorption rows at 0.80 and above. The other 2 of the 25 are
+  different products of one sponsor. GLEIF records no parent between any of
+  them.
+- **Look-alikes.** In absorption, a common word (`Bank`, `Capital`,
+  `Financial`, `Villa`) shared with an entity in another town, 18 of the 40
+  below 0.70 registered outside the US. In reappearance, a candidate registered
+  anywhere in the world within days of the shutdown.
+
+## Follow-ups
+
+1. **Unrecorded siblings.** Numbered vehicles of one sponsor fill the top
+   intervals of both sweeps and carry no GLEIF relationship. No `explains` rule
+   can catch them, because `DeclaredLinks` compares recorded fields; a name
+   stem shared at one headquarters would need a new rule kind. Measure it on
+   the tune half first, since it changes the truth share.
+2. **Foreign candidates in reappearance.** 42 of 45 look-alikes below 0.70 are
+   registered outside the US. A country filter on candidates would remove them,
+   but only after counting how many registered successors of US entities are
+   themselves foreign, on the tune half.
+3. **Absorption retrieval.** 378 of the report half's 458 misses were never
+   retrieved, as on the tune half ("Where the absorption links are lost").
+4. **The report half at the starting weights**, to say how much of the tuning
+   gain carried over. Measuring A0's index needs no sweep: absorption's seeds
+   and candidate cap did not change between A0 and A5.
+5. **A worldwide population**, which needs multilingual analyzers.
+6. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
+   the spec.
