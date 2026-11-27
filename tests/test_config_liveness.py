@@ -284,3 +284,34 @@ def test_an_identifier_field_with_a_keyword_subfield_passes():
     for key in ("text_fields", "phone_fields"):
         raw = _config(signals=[_identifier_signal(key, "telephone")])
         assert config_liveness.check(_FakeES(), raw, "t") == []
+
+
+def test_a_term_named_through_not_is_still_checked():
+    # `not` points at another selector rather than carrying a term itself, so
+    # the check has to reach the term by walking every selector. A term on an
+    # analyzed field is just as silent when it only appears under an exclusion.
+    mapping = {
+        "idx": {
+            "mappings": {
+                "properties": {
+                    "dot_number": {"type": "keyword"},
+                    "legal_name": {"type": "text"},
+                    "category": {"type": "text"},
+                }
+            }
+        }
+    }
+    config = _config(
+        population={
+            "mode": "lifecycle",
+            "sort_field": "dot_number",
+            "selector": "kept",
+            "selectors": {
+                "fund": {"term": {"category": "FUND"}},
+                "kept": {"not": "fund"},
+            },
+        }
+    )
+    problems = config_liveness.check(_FakeES(mapping), config, "cfg")
+    assert any("selector 'fund' uses a `term` clause on 'category'" in p for p in problems)
+    assert not any("selector 'kept'" in p for p in problems)

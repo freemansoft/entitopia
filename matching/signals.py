@@ -242,11 +242,21 @@ class NameOverlapSignal(Signal):
         return best
 
     def seed_clauses(self, source, ctx=None):
-        """match on the phonetic/token subfield of each configured name field."""
+        """match on the phonetic/token subfield of each configured name field.
+
+        A list-valued name field (GLEIF's OTHER_NAMES) gets one clause per
+        name, because Elasticsearch rejects a list as a match query and that
+        rejection fails the predecessor's whole candidate query, every other
+        seed included. A scalar field builds the same single clause as before.
+        """
         clauses = []
         for field_name in self.config.fields:
-            text = read_path(source, field_name)
-            if text:
+            raw = read_path(source, field_name)
+            if not raw:
+                continue
+            for text in raw if isinstance(raw, list) else [raw]:
+                if not str(text).strip():
+                    continue
                 clauses.append(
                     {
                         "match": {

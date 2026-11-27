@@ -15,8 +15,12 @@ Selector definitions live in project configuration rather than here. They used
 to be four hardcoded FMCSA queries, which meant using `entity-match` on another
 dataset required editing framework code rather than writing configuration. The
 clause vocabulary stays closed and code-backed — `nested-exists`, `term`,
-`all`, `any`, and nothing else — so this is a fixed menu rather than an
+`all`, `any`, `not`, and nothing else — so this is a fixed menu rather than an
 Elasticsearch query DSL smuggled into JSON.
+
+`not` exists because an exclusion written as `any` of the allowed values
+silently drops every record whose value is blank. Negating the excluded value
+keeps those records, which is what "everything except funds" means.
 """
 
 import logging
@@ -25,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 MODES = frozenset({"lifecycle", "all-entities"})
 
-CLAUSE_KINDS = ("nested-exists", "term", "all", "any")
+CLAUSE_KINDS = ("nested-exists", "term", "all", "any", "not")
 
 PAGE_SIZE = 500
 
@@ -82,7 +86,7 @@ class PopulationSelector:
         return self._resolve(self.selector, seen=())
 
     def _resolve(self, name, seen):
-        """Build one named selector, following `all` and `any` references.
+        """Build one named selector, following `all`, `any` and `not` references.
 
         `seen` is a tuple rather than a set so a cycle can be reported as the
         path that closed it. Without the check a cycle recurses until the
@@ -120,6 +124,8 @@ class PopulationSelector:
                     "minimum_should_match": 1,
                 }
             }
+        if kind == "not":
+            return {"bool": {"must_not": [self._resolve(body, (*seen, name))]}}
         raise ValueError(
             "unknown clause kind {!r} in selector {!r}; known kinds are {}".format(
                 kind, name, ", ".join(CLAUSE_KINDS)

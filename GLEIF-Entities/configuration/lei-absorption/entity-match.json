@@ -1,0 +1,218 @@
+{
+  "source_index": "entities-000001",
+  "source_settings_step": "entities",
+  "entity": {
+    "key": "LEI",
+    "summary_fields": [
+      "LEGAL_NAME",
+      "HQ_CITY",
+      "HQ_REGION",
+      "LEGAL_COUNTRY",
+      "CATEGORY",
+      "ULTIMATE_PARENT_LEI"
+    ]
+  },
+  "lifecycle": {
+    "shutdown_date": "SHUTDOWN_DATE",
+    "registration_date": "CREATION_DATE",
+    "end_date": "SHUTDOWN_DATE"
+  },
+  "population": {
+    "mode": "lifecycle",
+    "sort_field": "LEI",
+    "max_records": null,
+    "selector": "us-inactive",
+    "selectors": {
+      "us-inactive": {
+        "all": ["inactive", "us", "not-fund", "not-branch", "not-duplicate"]
+      },
+      "inactive": {
+        "term": {
+          "ENTITY_STATUS": "INACTIVE"
+        }
+      },
+      "us": {
+        "term": {
+          "LEGAL_COUNTRY": "US"
+        }
+      },
+      "fund": {
+        "term": {
+          "CATEGORY": "FUND"
+        }
+      },
+      "branch": {
+        "term": {
+          "CATEGORY": "BRANCH"
+        }
+      },
+      "duplicate": {
+        "term": {
+          "REGISTRATION_STATUS": "DUPLICATE"
+        }
+      },
+      "not-fund": {
+        "not": "fund"
+      },
+      "not-branch": {
+        "not": "branch"
+      },
+      "not-duplicate": {
+        "not": "duplicate"
+      }
+    }
+  },
+  "candidates": {
+    "max_candidates": 500,
+    "seed_signals": ["name-phonetic", "address"]
+  },
+  "declared_links": {
+    "complete_truth": false,
+    "rules": [
+      {
+        "name": "gleif-successor",
+        "role": "truth",
+        "kind": "key",
+        "field": "SUCCESSOR_LEI"
+      },
+      {
+        "name": "gleif-direct-parent",
+        "role": "explains",
+        "kind": "key",
+        "field": "DIRECT_PARENT_LEI"
+      },
+      {
+        "name": "gleif-ultimate-parent",
+        "role": "explains",
+        "kind": "key",
+        "field": "ULTIMATE_PARENT_LEI"
+      },
+      {
+        "name": "gleif-direct-child",
+        "role": "explains",
+        "kind": "key",
+        "field": "DIRECT_PARENT_LEI",
+        "reverse": true
+      },
+      {
+        "name": "gleif-ultimate-child",
+        "role": "explains",
+        "kind": "key",
+        "field": "ULTIMATE_PARENT_LEI",
+        "reverse": true
+      },
+      {
+        "name": "gleif-shared-direct-parent",
+        "role": "explains",
+        "kind": "shared",
+        "field": "DIRECT_PARENT_LEI"
+      },
+      {
+        "name": "gleif-shared-ultimate-parent",
+        "role": "explains",
+        "kind": "shared",
+        "field": "ULTIMATE_PARENT_LEI"
+      },
+      {
+        "name": "gleif-successor-tree",
+        "role": "explains",
+        "kind": "shared",
+        "field": "SUCCESSOR_CHAIN_END"
+      },
+      {
+        "name": "gleif-head-office",
+        "role": "explains",
+        "kind": "key",
+        "field": "BRANCH_OF_LEI"
+      },
+      {
+        "name": "gleif-branch",
+        "role": "explains",
+        "kind": "key",
+        "field": "BRANCH_OF_LEI",
+        "reverse": true
+      },
+      {
+        "name": "gleif-fund-manager",
+        "role": "explains",
+        "kind": "key",
+        "field": "FUND_MANAGER_LEI"
+      },
+      {
+        "name": "gleif-managed-fund",
+        "role": "explains",
+        "kind": "key",
+        "field": "FUND_MANAGER_LEI",
+        "reverse": true
+      },
+      {
+        "name": "gleif-umbrella-fund",
+        "role": "explains",
+        "kind": "key",
+        "field": "UMBRELLA_FUND_LEI"
+      },
+      {
+        "name": "gleif-sub-fund",
+        "role": "explains",
+        "kind": "key",
+        "field": "UMBRELLA_FUND_LEI",
+        "reverse": true
+      },
+      {
+        "name": "gleif-master-fund",
+        "role": "explains",
+        "kind": "key",
+        "field": "MASTER_FUND_LEI"
+      },
+      {
+        "name": "gleif-feeder-fund",
+        "role": "explains",
+        "kind": "key",
+        "field": "MASTER_FUND_LEI",
+        "reverse": true
+      }
+    ]
+  },
+  "ignore_values": {},
+  "signals": [
+    {
+      "type": "name-phonetic",
+      "weight": 0.3,
+      "fields": ["LEGAL_NAME", "OTHER_NAMES"],
+      "subfield": "phonetic",
+      "cross_field": true
+    },
+    {
+      "type": "name-phonetic",
+      "weight": 0.24,
+      "fields": ["LEGAL_NAME", "OTHER_NAMES"],
+      "subfield": "phonetic_bm",
+      "cross_field": true
+    },
+    {
+      "type": "name-token",
+      "weight": 0.24,
+      "fields": ["LEGAL_NAME", "OTHER_NAMES"],
+      "subfield": "clean",
+      "cross_field": true
+    },
+    {
+      "type": "address",
+      "weight": 0.25,
+      "fields": ["HQ_LOCAL"],
+      "exact_subfield": "clean",
+      "fuzzy_subfield": "tokens",
+      "fuzzy_scale": 0.85,
+      "state_field": "HQ_REGION"
+    }
+  ],
+  "scoring": {
+    "min_total_score": 0.35,
+    "min_signals": 2,
+    "require_identity_signal": true,
+    "max_pairs_per_predecessor": 10,
+    "undated_predecessors": "skip",
+    "max_gap_days": -181,
+    "undated_candidates": "keep"
+  }
+}

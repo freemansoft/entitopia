@@ -108,6 +108,15 @@ kept, since the town is often all that tells one bank from its namesakes.
 `tests/test_scan_identifiers_banks.py` guards all of this; before it, a branch
 naming real CERTs scanned clean because none of them reached the lookup.
 
+**What the scanner extracts for GLEIF.** A bare 20-character run is looked up as
+an LEI only when its ISO 7064 MOD 97-10 check digits hold, so an uppercase hash
+is not mistaken for one, and only in projects keyed by LEI. Legal names ending
+in Holdings, Partners, Group, LP, L.P., PLC, GmbH and similar are extracted. An
+`explains` pair (parent, child, sibling, or two entities in one successor chain)
+counts as flagged, exactly as for FDIC, so only a `truth` pair, GLEIF's
+registered successor, may be named. `tests/test_scan_identifiers_leis.py`
+guards this.
+
 ALLOWED (placeholders and ignore-list junk such as `(000) 000-0000`) and
 NOT_FOUND are only counted, because neither identifies anyone.
 

@@ -638,6 +638,27 @@ def test_name_signal_seeds_and_declares_its_token_subfields():
     assert signal.token_subfields() == {"legal_name.phonetic", "dba_name.phonetic"}
 
 
+def test_list_valued_name_field_seeds_one_clause_per_name():
+    # Regression: GLEIF's OTHER_NAMES is a list, and a list passed as a match
+    # query is rejected by Elasticsearch (400, START_ARRAY). The rejection
+    # fails the whole candidate query, so a predecessor with other names got
+    # no candidates from any seed -- a per-record error line, not a failed run.
+    signal = build_signal(
+        SimpleNamespace(
+            type="name-phonetic",
+            weight=0.3,
+            fields=["other_names"],
+            subfield="phonetic",
+            cross_field=True,
+        )
+    )
+    clauses = signal.seed_clauses({"other_names": ["<ENTITY-A>", " ", "<ENTITY-B>"]})
+    assert clauses == [
+        {"match": {"other_names.phonetic": {"query": "<ENTITY-A>"}}},
+        {"match": {"other_names.phonetic": {"query": "<ENTITY-B>"}}},
+    ]
+
+
 def test_address_signal_seeds_on_exact_subfield_only():
     # Seeding on the fuzzy subfield would drag in every street with a shared
     # token; the fuzzy comparison still happens later during scoring.

@@ -78,11 +78,20 @@ _LOWER = "a-z" + "".join(c for c in map(chr, range(0x80, 0x10000)) if c.islower(
 _ORG_SUFFIX = (
     r"LLC|L\.L\.C\.?|INC\.?|INCORPORATED|CORP\.?|CORPORATION|CO\.|COMPANY|LTD\.?|"
     r"LLP|PLLC|TRUCKING|TRANSPORT|TRANSPORTATION|LOGISTICS|FREIGHT|EXPRESS|"
-    r"CARRIERS?|HAULING|LINES|ENTERPRISES|HOSPITAL|CLINIC|MEDICAL CENTER|HEALTH SYSTEM"
+    r"CARRIERS?|HAULING|LINES|ENTERPRISES|HOSPITAL|CLINIC|MEDICAL CENTER|HEALTH SYSTEM|"
+    r"LP|L\.P\.|LLLP|L\.L\.L\.P\.|HOLDINGS|PARTNERS|GROUP|PLC|N\.V\.|S\.A\.|GMBH|AG|"
+    # The legal forms in GLEIF's measured name stop list (GLEIF-Entities
+    # README, "Name stop list"), each in at least 1% of legal names or a
+    # spelling of one that is. Most GLEIF names end in a European form rather
+    # than a US one, and a name no pattern extracts is never looked up, so a
+    # real entity's name would pass as clean.
+    r"LIMITED|HOLDING|PARTNERSHIP|B\.V\.|BV|S\.R\.L\.|SRL|S\.L\.|SL|SA|AB|APS|AS|OY|KG"
 )
 _TITLE_SUFFIX = (
     r"Hospital|Medical Center|Clinic|Health System|Healthcare|Trucking|Transport|"
-    r"Logistics|Freight|Hauling|LLC|Inc\.?|Corp\.?|Company"
+    r"Logistics|Freight|Hauling|LLC|Inc\.?|Corp\.?|Company|"
+    r"Holdings|Partners|Group|L\.P\.|LP|"
+    r"Limited|Ltd\.?|Holding|Partnership|GmbH|B\.V\.|S\.r\.l\.|S\.L\.|S\.A\.|AB|ApS|AS|Oy|KG"
 )
 # Bank names end differently from carriers and hospitals ("State Bank",
 # "Savings and Loan Association"), and the town after "Bank of" is often the only
@@ -150,6 +159,11 @@ PATTERNS = {
             r"[\s\"'`*:=#]{0,6}(\d{1,6})(?![\w\-%]|\.\d)"
         )
     ],
+    # A Legal Entity Identifier, GLEIF's key: 20 characters, the last two a
+    # check pair. Shape alone matches any uppercase hash or token, so `extract`
+    # also requires `lei_checksum_ok`. The look-arounds keep it from being
+    # carved out of a longer run or a <LEI-A> placeholder.
+    "lei": [re.compile(r"(?<![0-9A-Za-z<])[0-9A-Z]{18}[0-9]{2}(?![0-9A-Za-z<])")],
     # A bare 5-8 digit number. DOT numbers and CMS facility IDs are both this
     # shape, and so is any uncomma'd count, which is why these are reported
     # separately from labelled keys: a hit here needs the reader to rule out a
@@ -280,6 +294,15 @@ def ignore_values(match: dict) -> set[str]:
     return found
 
 
+def lei_checksum_ok(value: str) -> bool:
+    """ISO 7064 MOD 97-10, the check the LEI standard defines.
+
+    Without it every 20-character uppercase token (a hash, a build id) would be
+    looked up as an LEI and come back NOT_FOUND, which buries real hits.
+    """
+    return int("".join(str(int(c, 36)) for c in value)) % 97 == 1
+
+
 def extract(text: str) -> Iterator[Candidate]:
     """Every distinct candidate on one line of text.
 
@@ -292,9 +315,9 @@ def extract(text: str) -> Iterator[Candidate]:
         for pattern in patterns:
             for match in pattern.finditer(text):
                 value = (match.group(1) if pattern.groups else match.group(0)).strip(" .,;:")
-                if value:
+                if value and (kind != "lei" or lei_checksum_ok(value)):
                     found[Candidate(kind, value)] = None
-    labelled = {c.value for c in found if c.kind in ("key", "cert")}
+    labelled = {c.value for c in found if c.kind in ("key", "cert", "lei")}
     yield from (c for c in found if not (c.kind == "number" and c.value in labelled))
 
 
@@ -428,12 +451,14 @@ def field_clause(properties: dict, path: str, value: str) -> dict | None:
 def source_lookup(es: Elasticsearch, project: Project, properties: dict, candidate: Candidate) -> tuple[str, list[str]]:
     """How many source records carry the value (capped at the shared threshold), and their keys.
 
-    A labelled CERT is looked up only in a project keyed by CERT. Searching it
-    as a DOT number or CMS facility ID too would attach an unrelated carrier's
-    pair count to a bank certificate and report a coincidence as a leak.
+    A labelled CERT is looked up only in a project keyed by CERT, and an LEI
+    only in one keyed by LEI. Searching either as a DOT number or CMS facility ID
+    too would attach an unrelated carrier's pair count to it and report a
+    coincidence as a leak.
     """
-    if candidate.kind == "cert":
-        clauses = [{"term": {project.entity_key: candidate.value}}] if project.entity_key == "CERT" else []
+    if candidate.kind in ("cert", "lei"):
+        own_key = "CERT" if candidate.kind == "cert" else "LEI"
+        clauses = [{"term": {project.entity_key: candidate.value}}] if project.entity_key == own_key else []
     elif candidate.kind in ("key", "number"):
         clauses = [{"term": {project.entity_key: candidate.value}}]
     else:

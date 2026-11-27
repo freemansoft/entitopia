@@ -1,0 +1,260 @@
+{
+  "index": "entities-{now/d}-000001",
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1,
+      "analysis": {
+        "char_filter": {
+          "po_box_canon": {
+            "type": "pattern_replace",
+            "pattern": "(?i)\\bp[.\\s]*o[.\\s]*(box|b\\b)",
+            "replacement": "pobox"
+          },
+          "drop_locality": {
+            "type": "pattern_replace",
+            "pattern": "\\s*\\|.*$",
+            "replacement": ""
+          }
+        },
+        "filter": {
+          "phonetic_dm": {
+            "type": "phonetic",
+            "encoder": "double_metaphone"
+          },
+          "phonetic_bm": {
+            "type": "phonetic",
+            "encoder": "beider_morse",
+            "rule_type": "approx",
+            "name_type": "generic",
+            "languageset": ["english", "spanish"]
+          },
+          "street_suffix_canon": {
+            "type": "synonym",
+            "lenient": true,
+            "synonyms": [
+              "st, str, strt => street",
+              "ave, av, aven, avenu, avn => avenue",
+              "rd => road",
+              "blvd, boul, boulv => boulevard",
+              "dr, drv, driv => drive",
+              "ln => lane",
+              "hwy, hiway, highwy, hway => highway",
+              "pkwy, pky, parkwy, pkway => parkway",
+              "ct, crt => court",
+              "cir, circ, circl, crcl => circle",
+              "pl => place",
+              "ter, terr => terrace",
+              "sq, sqr, squ => square",
+              "trl, tr => trail",
+              "expy, expwy, expr => expressway",
+              "tpke, trnpk, turnpk => turnpike",
+              "frwy, fwy, freewy => freeway",
+              "rte, rt => route",
+              "byp, bypa, bypas => bypass",
+              "ext, extn => extension",
+              "lk => lake",
+              "mt, mnt => mount",
+              "pt => point",
+              "rdg, rdge => ridge",
+              "spg, spng, sprng => spring",
+              "vly, vlly => valley",
+              "xing, crssng => crossing",
+              "plz, plza => plaza",
+              "ctr, cen, cent, centre => center",
+              "n, no, nth => north",
+              "s, so, sth => south",
+              "e, ea => east",
+              "w, we => west",
+              "ne => northeast",
+              "nw => northwest",
+              "se => southeast",
+              "sw => southwest"
+            ]
+          },
+          "unit_designator_stop": {
+            "type": "stop",
+            "ignore_case": true,
+            "stopwords": [
+              "ste",
+              "suite",
+              "apt",
+              "apartment",
+              "unit",
+              "rm",
+              "room",
+              "bldg",
+              "fl",
+              "floor",
+              "trlr",
+              "lot",
+              "sp",
+              "spc",
+              "pmb",
+              "dept",
+              "department",
+              "hngr",
+              "ofc"
+            ]
+          },
+          "punct_white": {
+            "pattern": "\\p{Punct}",
+            "type": "pattern_replace",
+            "replacement": " "
+          },
+          "collapse_whitespace": {
+            "pattern": "\\s+",
+            "type": "pattern_replace",
+            "replacement": " "
+          },
+          "remove_non_digits": {
+            "pattern": "[^\\d]",
+            "type": "pattern_replace",
+            "replacement": ""
+          },
+          "entity_word_stop": {
+            "type": "stop",
+            "ignore_case": true,
+            "stopwords": [
+              "llc",
+              "inc",
+              "limited",
+              "fund",
+              "gmbh",
+              "trust",
+              "lp",
+              "b v",
+              "private",
+              "l p",
+              "holdings",
+              "s r l",
+              "ltd",
+              "holding",
+              "限",
+              "有",
+              "公",
+              "司",
+              "owner",
+              "ab",
+              "partners",
+              "etf",
+              "ii",
+              "company",
+              "l l c",
+              "capital",
+              "of",
+              "aps",
+              "properties",
+              "the",
+              "sl",
+              "i",
+              "as",
+              "street",
+              "group",
+              "de",
+              "co",
+              "management",
+              "equity",
+              "s l",
+              "investment",
+              "corporation",
+              "a",
+              "realty",
+              "associates",
+              "oy",
+              "invest",
+              "investments",
+              "global",
+              "series",
+              "s a",
+              "s",
+              "property",
+              "iii",
+              "international",
+              "bank",
+              "income",
+              "apartments",
+              "portfolio",
+              "and",
+              "credit",
+              "partnership",
+              "real",
+              "kg",
+              "park",
+              "energy",
+              "estate",
+              "di",
+              "cap",
+              "corp",
+              "srl",
+              "sa"
+            ]
+          }
+        },
+        "analyzer": {
+          "name_clean": {
+            "filter": ["icu_normalizer", "icu_folding", "punct_white"],
+            "tokenizer": "standard"
+          },
+          "name_phonetic": {
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "entity_word_stop",
+              "phonetic_dm"
+            ],
+            "tokenizer": "standard"
+          },
+          "name_phonetic_bm": {
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "entity_word_stop",
+              "phonetic_bm"
+            ],
+            "tokenizer": "standard"
+          },
+          "street_clean": {
+            "char_filter": ["po_box_canon"],
+            "tokenizer": "keyword",
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "collapse_whitespace",
+              "trim"
+            ]
+          },
+          "street_tokens": {
+            "char_filter": ["po_box_canon"],
+            "tokenizer": "standard",
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "unit_designator_stop",
+              "street_suffix_canon"
+            ]
+          },
+          "phone_clean": {
+            "filter": ["remove_non_digits"],
+            "tokenizer": "keyword"
+          },
+          "street_local_tokens": {
+            "char_filter": ["drop_locality", "po_box_canon"],
+            "tokenizer": "standard",
+            "filter": [
+              "icu_normalizer",
+              "icu_folding",
+              "punct_white",
+              "unit_designator_stop",
+              "street_suffix_canon"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

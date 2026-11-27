@@ -1,0 +1,24 @@
+{
+  "steps": [
+    {
+      "name": "entities-ingestion-setup",
+      "phases": ["pipelines"]
+    },
+    {
+      "name": "entities",
+      "phases": ["index-create", "index-map", "index-populate"]
+    },
+    {
+      "name": "lei-reappearance",
+      "phases": ["index-create", "index-map", "validate", "entity-match"]
+    },
+    {
+      "name": "lei-absorption",
+      "phases": ["index-create", "index-map", "validate", "entity-match"]
+    }
+  ],
+  "all_phases": ["index-create", "index-map", "pipelines", "index-populate"],
+  "configurationDir": "configuration",
+  "dataDir": "data",
+  "logLevel": "INFO"
+}

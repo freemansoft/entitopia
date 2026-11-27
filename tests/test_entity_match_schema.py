@@ -236,3 +236,17 @@ def test_an_address_signal_may_declare_no_state_field():
     raw = copy.deepcopy(_SHIPPED)
     _signal(raw, "address")["state_field"] = None
     assert not config_schema.validate_mapping("entity-match", raw, "mutated")
+
+
+def test_a_not_clause_naming_a_selector_validates():
+    raw = copy.deepcopy(_SHIPPED)
+    raw["population"]["selectors"]["not-out-of-service"] = {"not": "out-of-service"}
+    assert config_schema.validate_mapping("entity-match", raw, "mutated") == []
+
+
+def test_a_not_clause_with_a_non_string_is_rejected():
+    # `not: ["a", "b"]` reads as "none of these" but the resolver takes one
+    # selector name; the schema must refuse it before a sweep runs.
+    raw = copy.deepcopy(_SHIPPED)
+    raw["population"]["selectors"]["bad"] = {"not": ["out-of-service"]}
+    assert config_schema.validate_mapping("entity-match", raw, "mutated")

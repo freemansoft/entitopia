@@ -1,0 +1,183 @@
+{
+  "name": "entities-pipeline-000001",
+  "processors": [
+    {
+      "split": {
+        "description": "prepare_gleif.py joins up to ten other and transliterated names with |; left whole, seeding would send one run-on name as a single query. Splitting governs seeding only (one clause per name); scoring still reads one merged token set for the field, so tokens from different names can jointly satisfy containment",
+        "field": "OTHER_NAMES",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "OTHER_NAMES",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "SUCCESSOR_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "SUCCESSOR_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "SUCCESSOR_CHAIN_END",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "SUCCESSOR_CHAIN_END",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "DIRECT_PARENT_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "DIRECT_PARENT_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "ULTIMATE_PARENT_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "ULTIMATE_PARENT_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "BRANCH_OF_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "BRANCH_OF_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "FUND_MANAGER_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "FUND_MANAGER_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "UMBRELLA_FUND_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "UMBRELLA_FUND_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "split": {
+        "description": "prepare_gleif.py joins this list with |; left whole, a parent or successor LEI would be one long keyword that never equals the other record's LEI, and every declared link through it would read as missing",
+        "field": "MASTER_FUND_LEI",
+        "separator": "\\|",
+        "ignore_missing": true
+      }
+    },
+    {
+      "trim": {
+        "field": "MASTER_FUND_LEI",
+        "ignore_missing": true
+      }
+    },
+    {
+      "date": {
+        "description": "the successor's creation date is what the lifecycle window reads; prepare_gleif.py already truncated it to the calendar day, so this only refuses a malformed value",
+        "field": "CREATION_DATE",
+        "target_field": "CREATION_DATE",
+        "formats": ["yyyy-MM-dd"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the entity: CREATION_DATE is a strict date, so a raw value would fail the entire document on index",
+              "field": "CREATION_DATE",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "date": {
+        "description": "the predecessor's shutdown date is what the lifecycle window reads; a missing one makes the predecessor undated",
+        "field": "SHUTDOWN_DATE",
+        "target_field": "SHUTDOWN_DATE",
+        "formats": ["yyyy-MM-dd"],
+        "output_format": "yyyy-MM-dd",
+        "on_failure": [
+          {
+            "remove": {
+              "description": "a bad date must drop the value, not the entity: SHUTDOWN_DATE is a strict date, so a raw value would fail the entire document on index",
+              "field": "SHUTDOWN_DATE",
+              "ignore_missing": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "set": {
+        "description": "HQ_LOCAL is the street qualified by its town, FDIC's STREET_LOCAL shape (FDIC hazard 5): compared on the street alone, every bare 'Main Street' matched every other across regions at 1.0. A missing city or region leaves it absent rather than town-less, because '<street> | ' would again match every namesake street with no town",
+        "field": "HQ_LOCAL",
+        "value": "{{{HQ_STREET}}} | {{{HQ_CITY}}} {{{HQ_REGION}}}",
+        "if": "ctx.HQ_STREET != null && ctx.HQ_STREET.toString().trim() != '' && ctx.HQ_CITY != null && ctx.HQ_CITY.toString().trim() != '' && ctx.HQ_REGION != null && ctx.HQ_REGION.toString().trim() != ''"
+      }
+    },
+    {
+      "set": {
+        "description": "LEGAL_LOCAL is the street qualified by its town, FDIC's STREET_LOCAL shape (FDIC hazard 5): compared on the street alone, every bare 'Main Street' matched every other across regions at 1.0. A missing city or region leaves it absent rather than town-less, because '<street> | ' would again match every namesake street with no town",
+        "field": "LEGAL_LOCAL",
+        "value": "{{{LEGAL_STREET}}} | {{{LEGAL_CITY}}} {{{LEGAL_REGION}}}",
+        "if": "ctx.LEGAL_STREET != null && ctx.LEGAL_STREET.toString().trim() != '' && ctx.LEGAL_CITY != null && ctx.LEGAL_CITY.toString().trim() != '' && ctx.LEGAL_REGION != null && ctx.LEGAL_REGION.toString().trim() != ''"
+      }
+    }
+  ]
+}

@@ -58,6 +58,12 @@ These keys of `entity-match.schema.json` are the framework's measurement vocabul
 
 The overlap itself is not a key. It is `scoring.min_gap_days` and `scoring.max_gap_days`, read by the scorer gate, the candidate filter and the `temporal` signal alike.
 
+## The population's `not` clause
+
+`population.selectors` builds the swept population from a closed menu of clause kinds: `nested-exists`, `term`, `all`, `any` and `not`. A `not` takes the name of one other selector and excludes what that selector matches (`{"not": "fund"}` becomes a `bool.must_not`). It exists because the only way to exclude before it, listing the values to keep with `any`, silently drops every record whose value is blank, and nothing reports it.
+
+The schema accepts a single name and rejects a list, which would read as "none of these" when the resolver negates one selector. A `not` naming an unknown selector, or closing a cycle, fails when the query is built, as `all` and `any` do. `validate` still checks a `term` reached only through a `not` against the live mapping, since a term on an analyzed field fails silently whether it selects or excludes: an exclusion that matches nothing excludes nothing. GLEIF-Entities is the first use: its population excludes funds, branches and duplicate registrations this way. `tests/test_population.py`, `tests/test_entity_match_schema.py` and `tests/test_config_liveness.py` pin each of these.
+
 ## How they are used
 
 Automatically, by the `validate` phase, as its first of three tiers:
