@@ -21,12 +21,34 @@
 
 These were left open by the spec or by part 1's "After this plan" list.
 
-- **No `relationships` index and no enrich policy.** The spec's table has both. Instead, `prepare_gleif.py` pivots Level 2 to one row per child and joins the parents onto each entity row.
-  - An enrich policy snapshots its source when it is executed. Reloading the relationships without re-executing the policy would carry stale parents quietly.
-  - The join is a dictionary lookup over about 494,000 rows, and it is unit-testable, which an enrich processor is not.
-- **Shared and reverse `truth` rules stay refused.** GLEIF records the successor on the predecessor (`SuccessorEntity` on the inactive record), so its only truth rule is a forward key rule. Neither dataset needs anything else.
-  - Supporting the other kinds would mean `truth_targets` searching the index for every candidate that names the predecessor, an extra query per predecessor that no project needs.
+- **Each entity's parent LEIs are copied onto its own record (denormalized). There is no separate `relationships` index and no enrich policy.** The spec's data table lists both.
+  - **What the parents are for.** They serve one purpose: tagging a pair `explains` when the two entities are parent and child, or share a parent.
+  - **Why they must sit on the entity record.** `DeclaredLinks.classify` (`matching/declared.py`) decides a pair's tag by comparing field values on the two documents it is handed, the predecessor and the candidate, and it never queries anything else. It answers questions such as "is the candidate's `LEI` in the predecessor's `DIRECT_PARENT_LEI`?" and "do the two share an `ULTIMATE_PARENT_LEI`?". `scripts/measure_declared_links.py` re-tags the same way.
+    - FDIC needed no copying, because each bank record already carries `NEWCERT`, `ULTCERT` and `RSSDHCR`.
+    - GLEIF publishes parents in a separate Level 2 file, one row per relationship, so they must be brought onto each Level 1 row for that code to see them.
+  - **The alternative considered: keep the relationships normalized.** That means a `relationships` index the sweep queries when it tags a pair. It was rejected for three reasons:
+    - It adds one or two lookups for every emitted pair, or a batched lookup for every predecessor, across the whole sweep.
+    - `DeclaredLinks` would need a new kind of rule that reads another index rather than the two documents. Part 1's framework is meant to be reused unchanged.
+    - The measurement script would need the same lookup, or its tags would disagree with the sweep's.
+  - **Why the copy is made in Python, not with an Elasticsearch enrich policy.** The spec's route loads Level 2 into a `relationships` index and copies the parents across at ingest through an enrich policy, as DOT-Commercial does.
+    - An enrich policy works from a frozen snapshot taken each time the policy is executed. Reloading `relationships` from a newer download without re-executing it would load entities with the old parents. The load would still report success: the quiet, wrong output this repo keeps guarding against.
+    - Instead, `prepare_gleif.py` reads both files of one download, pivots Level 2 to one row per child, and writes each child's parent LEIs into `entities.csv`. Parents and entities therefore always come from the same publish.
+    - The join is a dictionary lookup over about 494,000 relationship rows, and it is unit-tested (`test_relationships_pivot_keeps_every_status`, `test_parents_joined_onto_entity`), which an enrich processor cannot be.
+  - **What this gives up.** The raw relationship rows cannot be browsed as their own index. Only each entity's parent LEIs are kept, as list fields. The prepare step records relationship counts by type and status in the README, so the totals stay checkable.
+- **Shared and reverse `truth` rules stay refused.** A declared-link rule recognizes a related pair in one of three ways:
+
+  - **Forward key:** the closed entity's record names its successor. FDIC's `NEWCERT` is one.
+  - **Reverse key:** the candidate's record names the closed entity, such as a child naming its parent.
+  - **Shared:** both records carry the same value, such as one ultimate parent.
+
+  Recall needs a fixed list of right answers per predecessor. A forward rule gives that list by reading the predecessor's own field. The other two kinds put the answer on other records, so `truth_targets` would have to search the whole index for each predecessor. Part 1 therefore lets only forward key rules be `truth`. Without that, pairs could be tagged truth that recall never counts.
+
+  GLEIF records the successor on the inactive record itself (`SuccessorEntity`), which is the forward case, so the restriction costs it nothing. Neither dataset needs more.
+
+  Reverse and shared rules are still used here, as `explains` rules: parent, child, shared ultimate parent and shared successor. Those mark a pair as related, so it is not reported as a finding. They never count toward recall, and that role was always allowed.
+
   - `DeclaredLinks.from_config` and its error message stay as they are. The GLEIF README records the decision.
+
 - **The spec's `registration_date: unknown` tag is the absence of the successor side's `add_date`.** `_to_action` already omits `add_date` when the candidate has no parseable registration date, the same reading `LifecycleWindow.admits` uses.
   - A second field could disagree with it.
   - Reading the absence also lets the measurement run unchanged on part 1's existing FDIC pair indexes.
@@ -35,6 +57,19 @@ These were left open by the spec or by part 1's "After this plan" list.
   - The closed menu (`nested-exists`, `term`, `all`, `any`) cannot express an exclusion. Listing the allowed categories with `any` instead would silently drop every record whose category is blank.
   - `not` is code-backed like the others, so the menu stays closed.
 - **Dates are truncated to the calendar day, not converted to UTC.** GLEIF writes dates with an offset (`…T00:00:00+01:00`). Converting to UTC moves such a date to the previous day, and a one-day shift is enough to move a same-day successor between the two sweeps.
+- **Successor chains are followed to their end at prepare time, and a pair inside one chain is `explains`.** This is GLEIF's version of FDIC's `ULTCERT` and `fdic-merger-tree`.
+  - **The case.** Entity A was absorbed into B, and B was later absorbed into C. GLEIF records two links: A names B as its successor, and B names C. Both A and B are inactive, so both are predecessors in the population.
+  - **What already works.** A→B and B→C are each a truth pair, because each predecessor names its own direct successor. Recall is counted one step at a time, as for FDIC.
+  - **What does not.** The matcher may also pair A with C, since C now carries A's business. No GLEIF record links A to C directly, so without a chain rule that pair is tagged `none` and reported as an undeclared succession, a finding. It is the registrar's own recorded chain, so calling it a finding is a false positive, and it would be anonymized and hand-reviewed for nothing.
+  - **FDIC already solves this.** Every bank in a merger chain carries the chain's last bank as `ULTCERT`, and an active bank carries its own `CERT`. The shared-`ULTCERT` rule then explains every pair inside one tree: A–C, B–C, and two banks absorbed into the same tree by different routes. GLEIF publishes no such field, so the prepare step computes one.
+  - **The computed field.** `SUCCESSOR_CHAIN_END` lists, for every entity that is part of a chain, the LEIs reached by following `SUCCESSOR_LEI` until an entity names no successor. The end entity carries its own LEI, as an active FDIC bank carries its own `CERT`, so A–C is explained as well as A–B. An entity in no chain, which is most of the register, gets no value, and a shared rule never fires on a blank.
+  - **The rule.** One `shared` `explains` rule on `SUCCESSOR_CHAIN_END` (`gleif-successor-tree`) covers the whole tree, including two entities absorbed into one successor. It replaces the narrower shared-`SUCCESSOR_LEI` rule. Truth outranks explains in `DeclaredLinks.classify`, so A→B and B→C keep their `truth` tag and still count toward recall.
+  - **Why at prepare time, not in the sweep.** The sweep tags a pair by comparing fields on the two documents, so the chain end must already sit on both records. Following chains needs the whole successor map at once, which the prepare step has and a per-pair tagger does not. The prepare step therefore reads the Level 1 file twice: once to collect every LEI's successors, once to write rows.
+  - **Odd shapes in the data.**
+    - A successor list naming two LEIs (a split) gives two chain ends. The field is a list, and either one shared explains the pair.
+    - A successor LEI absent from the file still counts as a chain end, since its LEI is known.
+    - A cycle (A names B and B names A, which only bad data produces) would loop forever. It is cut at the first revisit and counted as `successor_cycle`. Its members take the cycle's smallest LEI as their chain end, so the result is reproducible and the pairs stay explained rather than read as findings.
+  - **What it does not change.** It adds no truth link, so the recall denominator is untouched. It only moves chain pairs out of the findings.
 
 ## Global Constraints
 
@@ -48,7 +83,7 @@ These were left open by the spec or by part 1's "After this plan" list.
 - Comments and docstrings explain why, never what (`CLAUDE.md`).
 - Every new guard gets a test whose module docstring names the silent failure it prevents, plus an entry in the README hazard or re-run table.
 - **DOT-Commercial's, CMS-Providers' and FDIC-Banks' sweeps and measured figures must not change.** Every new setting defaults to today's behaviour. FDIC's measurement output may gain keys, but no existing key may change its value.
-- **Naming.** A GLEIF pair tagged `truth` (a registered successor) may be named. Every `explains` pair (parent, child, sibling, shared successor) and every `none` pair is anonymized, whatever its score. Tests use invented LEIs and names only.
+- **Naming.** A GLEIF pair tagged `truth` (a registered successor) may be named. Every `explains` pair (parent, child, sibling, or two entities in one successor chain) and every `none` pair is anonymized, whatever its score. Tests use invented LEIs and names only.
 - Data lands in `GLEIF-Entities/data/<step>/`, which `.gitignore` already excludes (`*/data/`). Downloaded zips are untrusted input: they are read with `zipfile` and `csv`, never extracted into the repo or executed.
 - Before any re-run against the loaded cluster, read the `run-entitopia` skill's re-run table. Local cluster writes are pre-authorized. Run commands likely to exceed about 2 minutes (the download, the load, full sweeps) in the background.
 - **Stacking.** Before starting each task, run `git log -1 worktree-third-dataset-fdic`. If it has moved past the commit last merged, merge it in (`git merge worktree-third-dataset-fdic`) and re-run the suite. Never push that branch, and never retarget a PR to `main`. Ask the user before any push or PR.
@@ -135,8 +170,9 @@ git commit -m "feat(anonymization-check): extract and look up LEIs and legal-for
   - `prepare_entities(rows: Iterable[dict], parents, columns: EntityColumns) -> Iterator[dict]`, with a `PrepStats` counter for: `self_successor`, `successor_without_lei`, `successor_bad_format`, `separator_replaced`, `undated_creation` and `no_shutdown_date`.
   - `read_zip_csv(path: Path) -> Iterator[dict]` refuses a zip that does not hold exactly one `.csv` member, and refuses a header missing any configured column (FDIC hazard 3).
   - `EntityColumns` and `RelationshipColumns` are module-level dataclass constants mapping each output column to its source column. Step 3 fills the source names from the real header.
-  - Output columns: `LEI, LEGAL_NAME, OTHER_NAMES, LEGAL_STREET, LEGAL_CITY, LEGAL_REGION, LEGAL_COUNTRY, LEGAL_POSTAL, HQ_STREET, HQ_CITY, HQ_REGION, HQ_COUNTRY, HQ_POSTAL, CATEGORY, LEGAL_FORM, ENTITY_STATUS, REGISTRATION_STATUS, CREATION_DATE, SHUTDOWN_DATE, SUCCESSOR_LEI, DIRECT_PARENT_LEI, ULTIMATE_PARENT_LEI`. Add one parent column per further relationship type Step 3 keeps (`BRANCH_OF_LEI`, `FUND_MANAGER_LEI` and the like).
-  - List-valued columns (`OTHER_NAMES`, including transliterated names, `SUCCESSOR_LEI` and the parent columns) are joined with `|`. A `|` inside a source value becomes a space, counted as `separator_replaced`.
+  - Output columns: `LEI, LEGAL_NAME, OTHER_NAMES, LEGAL_STREET, LEGAL_CITY, LEGAL_REGION, LEGAL_COUNTRY, LEGAL_POSTAL, HQ_STREET, HQ_CITY, HQ_REGION, HQ_COUNTRY, HQ_POSTAL, CATEGORY, LEGAL_FORM, ENTITY_STATUS, REGISTRATION_STATUS, CREATION_DATE, SHUTDOWN_DATE, SUCCESSOR_LEI, SUCCESSOR_CHAIN_END, DIRECT_PARENT_LEI, ULTIMATE_PARENT_LEI`. Add one parent column per further relationship type Step 3 keeps (`BRANCH_OF_LEI`, `FUND_MANAGER_LEI` and the like).
+  - `successor_chain_ends(successors: dict[str, list[str]]) -> tuple[dict[str, list[str]], Counter]` maps every LEI that names a successor or is named as one to its sorted chain ends, as the decision "Successor chains are followed to their end" describes. The counter records `chain_members`, `chain_length` (a histogram of steps to the end), `split_successor` and `successor_cycle`. It runs on the cleaned successor map, after self-successors and malformed LEIs are dropped, so a dropped link cannot extend a chain. `prepare_entities` writes its result as `SUCCESSOR_CHAIN_END`.
+  - List-valued columns (`OTHER_NAMES`, including transliterated names, `SUCCESSOR_LEI`, `SUCCESSOR_CHAIN_END` and the parent columns) are joined with `|`. A `|` inside a source value becomes a space, counted as `separator_replaced`.
   - `SUCCESSOR_LEI` keeps only values matching the LEI shape. A successor named with no LEI is counted as `successor_without_lei`, and one equal to the record's own LEI as `self_successor`; neither is written.
   - `SHUTDOWN_DATE` takes the entity's own expiration or end date when the header has one. Otherwise it takes the effective date of the latest completed legal-entity event whose type is terminal. The terminal types are listed from the Step 3 profile (expected: dissolution, liquidation, merger and acquisition). Both pass through `iso_day`.
   - Output path: `GLEIF-Entities/data/entities/entities.csv`. CLI: `--lei2`, `--rr`, `--out` (defaults to the paths above), `--print-header` (prints both raw headers and exits).
@@ -155,6 +191,11 @@ git commit -m "feat(anonymization-check): extract and look up LEIs and legal-for
 
   - `test_offset_date_keeps_calendar_day`: `iso_day("1996-01-01T00:00:00+01:00") == "1996-01-01"`, `iso_day("2012-06-06T15:53:00Z") == "2012-06-06"`, and `None` for `""`, `"garbage"` and `"2021-02-29"`.
   - `test_self_successor_dropped_and_counted`.
+  - `test_chain_end_reaches_the_last_entity`: A→B→C gives `["C"]` for A, B and C alike, so A–C, A–B and B–C share a value.
+  - `test_chain_end_of_a_split`: A naming B and D, each with no successor, gives `["B", "D"]` for A.
+  - `test_chain_end_survives_a_cycle`: A→B→A terminates, counts one `successor_cycle`, and gives both members the smaller LEI.
+  - `test_unchained_entity_has_no_chain_end`.
+  - `test_successor_absent_from_file_is_an_end`.
   - `test_successor_without_lei_counted`.
   - `test_relationships_pivot_keeps_every_status`: child A with direct parents B (active) and D (inactive) and ultimate parent C gives `{"DIRECT_PARENT_LEI": ["B", "D"], "ULTIMATE_PARENT_LEI": ["C"]}`, with counts by status.
   - `test_parents_joined_onto_entity`.
@@ -186,6 +227,7 @@ Record these in the README. For the gate figures, a one-off count over `entities
 
 - The row count (expect about 3.5 million) and that `LEI` is unique.
 - Every `PrepStats` counter and the relationship counts by type and status.
+- The chain figures from `successor_chain_ends`: members, the chain-length histogram, splits and cycles. Any cycle at all is listed by count in the README hazards, because only bad data produces one.
 - The distributions of `CATEGORY`, `ENTITY_STATUS` and `REGISTRATION_STATUS`, overall and among US inactive records (`LEGAL_COUNTRY` `US`, `ENTITY_STATUS` `INACTIVE`; the API reported 19,413 on 2026-11-26).
 - Among US inactive records: blank rates of `CREATION_DATE` and `SHUTDOWN_DATE`, and how many name a `SUCCESSOR_LEI`.
 - Among those successors: how many are in the file, and how many of those have a `CREATION_DATE`.
@@ -232,7 +274,7 @@ The stop list is measured before the first load. Reloading 3.5 million documents
   - Derives `HQ_LOCAL` and `LEGAL_LOCAL` as `<street> | <city> <region>`. This is FDIC's `STREET_LOCAL` shape and lesson (FDIC hazard 5). Copy its processor from `FDIC-Banks/configuration/institutions-ingestion-setup/pipelines.json` and change only the field names. A record missing its city or region gets no `*_LOCAL` field.
   - Parses `CREATION_DATE` and `SHUTDOWN_DATE` as `yyyy-MM-dd`, with an `on_failure` that removes the field, so a bad date drops a value, not an entity.
 - Mappings:
-  - `keyword`: `LEI`, `SUCCESSOR_LEI`, every parent column, `CATEGORY`, `LEGAL_FORM`, `ENTITY_STATUS`, `REGISTRATION_STATUS`, `LEGAL_COUNTRY`, `HQ_COUNTRY`, `LEGAL_REGION`, `HQ_REGION` and both postal codes.
+  - `keyword`: `LEI`, `SUCCESSOR_LEI`, `SUCCESSOR_CHAIN_END`, every parent column, `CATEGORY`, `LEGAL_FORM`, `ENTITY_STATUS`, `REGISTRATION_STATUS`, `LEGAL_COUNTRY`, `HQ_COUNTRY`, `LEGAL_REGION`, `HQ_REGION` and both postal codes.
   - `date`, ISO format only: `CREATION_DATE` and `SHUTDOWN_DATE`.
   - `text` with `phonetic`, `phonetic_bm` and `clean` subfields: `LEGAL_NAME` and `OTHER_NAMES`.
   - `text` with `clean` and `tokens` subfields: `HQ_LOCAL` and `LEGAL_LOCAL`.
@@ -403,11 +445,11 @@ git commit -m "feat(scripts): per-band and undated counts, fine gap bins, and a 
   {"name": "gleif-ultimate-child", "role": "explains", "kind": "key", "field": "ULTIMATE_PARENT_LEI", "reverse": true},
   {"name": "gleif-shared-direct-parent", "role": "explains", "kind": "shared", "field": "DIRECT_PARENT_LEI"},
   {"name": "gleif-shared-ultimate-parent", "role": "explains", "kind": "shared", "field": "ULTIMATE_PARENT_LEI"},
-  {"name": "gleif-shared-successor", "role": "explains", "kind": "shared", "field": "SUCCESSOR_LEI"}
+  {"name": "gleif-successor-tree", "role": "explains", "kind": "shared", "field": "SUCCESSOR_CHAIN_END"}
 ]
 ```
 
-Add a forward and a reverse `explains` key rule for each further parent column Task 2 kept. The shared-successor rule is GLEIF's version of FDIC's `fdic-merger-tree`: two entities absorbed into one successor are siblings in a merger, not a finding.
+Add a forward and a reverse `explains` key rule for each further parent column Task 2 kept. The successor-tree rule is GLEIF's version of FDIC's `fdic-merger-tree`. Two entities in one recorded chain or tree are explained, not found: A paired with C when A→B→C, and two entities absorbed into one successor (see "Successor chains are followed to their end").
 
 - Signals, with starting weights copied from part 1's tuned `bank-absorption` config:
   - `name-phonetic` on `LEGAL_NAME` and `OTHER_NAMES` with `cross_field`, both `phonetic` and `phonetic_bm`.
@@ -461,6 +503,15 @@ git commit -m "feat(GLEIF-Entities): reappearance and absorption sweeps with dec
 ```
 
 ### Task 7: The candidate filter (spec framework change 2), if Task 6 calls for it
+
+**Why this task exists, and why it is conditional:**
+
+- **The population and the candidates are filtered separately.** The population is US inactive entities, with funds and branches excluded. Candidates are drawn from the whole register of about 3.5 million LEIs, and nothing stops a fund or a branch from being one.
+- **Funds crowd out real successors.** Investment funds carry their own LEIs, often in families with near-identical numbered names (`<MANAGER> Growth Fund I`, `… Fund II`). A predecessor whose name shares a word such as "Capital" or "Partners" with such a family can have dozens of its `max_candidates` slots taken by funds. The real successor is then never retrieved, which is a recall loss.
+- **Funds add noise to the findings.** Those that are retrieved and scored add undeclared pairs that are almost never real successions, and they crowd the bands that are reviewed by hand.
+- **Branches behave the same way.** A foreign company's US branch has its own LEI and often the parent's name.
+- **The problem is inferred, not measured.** The spec says so and says to drop this change if profiling shows funds are no problem. The filter costs framework code, a schema key and a new measurement exclusion, so Task 6 measures first.
+- **The 10% threshold is a judgement, not a calibration.** Below it, funds are a nuisance the hand-review bands absorb. Above it, they plausibly cost recall through the candidate cap, as part 1's address flood did (FDIC hazard 5). If the sample shows a different shape, such as capped candidate sets made up mostly of funds while emitted pairs stay low, record it and ask before deciding either way.
 
 **Files:**
 
