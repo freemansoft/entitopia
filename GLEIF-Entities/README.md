@@ -6,7 +6,8 @@ against the successions GLEIF itself records: an inactive entity's
 `SuccessorEntity` names the LEI that took over its business.
 
 Everything below is an aggregate. No entity, LEI or address is named, except
-the registered-agent addresses in "Shared legal addresses", which are named
+the registered-agent addresses in "Shared legal addresses" and the words of
+the name stop list, one of them a sponsor's series word, which are named
 because they are shared values to be filtered out, not matches.
 
 ## Fetching
@@ -336,6 +337,64 @@ and their spellings), so a GLEIF name ending in one is extracted and looked up
 (`tests/test_scan_identifiers_leis.py`,
 `test_gleif_stop_list_legal_forms_are_extracted`).
 
+### German stop words
+
+The list above was cut on US names and on the whole register, where no single
+country outside the US weighs much, so German legal forms below 1% worldwide
+were not on it. Measured 2026-11-27 the same way, on `LEGAL_NAME.clean` of
+`entities-2026.11.26-000001`, in the 13,184 records of the German population
+(`LEGAL_COUNTRY` `DE`, the US population's other filters) and a sample of
+10,000 of the 260,978 German records drawn with `random_score` (seed
+20261127). `gmbh` (69.49% of the population), `co` (28.85%), `kg` (28.30%),
+`holding`, `management`, `invest` and `capital` were already stopped. These 33
+were not, and were added:
+
+| Word                 | DE population | All DE | Word                       | DE population | All DE |
+| -------------------- | ------------- | ------ | -------------------------- | ------------- | ------ |
+| `mbh`                | 8.08%         | 4.07%  | `mit`                      | 1.68%         | 1.66%  |
+| `und`                | 5.29%         | 6.65%  | `beschrankter`             | 1.62%         | 1.47%  |
+| `stiftung`           | 0.82%         | 5.64%  | `haftung`                  | 1.62%         | 1.48%  |
+| `ms`                 | 4.92%         | 0.57%  | `volksbank`                | 1.44%         | 0.22%  |
+| `eg`                 | 3.31%         | 0.74%  | `vermogensverwaltung`      | 1.23%         | 1.41%  |
+| `haftungsbeschrankt` | 2.81%         | 3.19%  | `consulting`               | 1.18%         | 1.41%  |
+| `ug`                 | 2.85%         | 3.13%  | `objekt`                   | 1.38%         | 0.35%  |
+| `e v`                | 0.52%         | 2.72%  | `der`                      | 0.74%         | 1.37%  |
+| `gbr`                | 2.30%         | 2.59%  | `raiffeisenbank`           | 1.37%         | 0.11%  |
+| `gesellschaft`       | 2.51%         | 2.10%  | `1`                        | 1.24%         | 0.49%  |
+| `ag`                 | 2.47%         | 1.51%  | `deutschland`              | 1.15%         | 0.72%  |
+| `schiffahrts`        | 2.29%         | 0.19%  | `vermogensverwaltungs`     | 1.14%         | 0.85%  |
+| `fur`                | 1.93%         | 2.19%  | `service`                  | 1.14%         | 0.81%  |
+| `verwaltungs`        | 2.11%         | 1.89%  | `schiffahrtsgesellschaft`  | 1.04%         | 0.16%  |
+| `immobilien`         | 1.84%         | 1.95%  | `beteiligungsgesellschaft` | 1.03%         | 0.71%  |
+| `beteiligungs`       | 1.87%         | 1.26%  | `zedora`                   | 1.02%         | 0.08%  |
+| `fonds`              | 0.63%         | 1.77%  |                            |               |        |
+
+The cut is the same 1% in either population. `icu_folding` has already turned
+`ä`, `ö` and `ü` into plain vowels, which is why `beschränkter` is stopped as
+`beschrankter`, and `ß` into `ss`. `ms` is the motor-ship prefix that
+single-ship partnerships put before the ship's name, and `schiffahrts` and
+`schiffahrtsgesellschaft` the shipping words beside it; together they are why
+the population, closed companies, has more shipping words than German names at
+large. `zedora` is one sponsor's vehicle-series word, on 1.02% of the German
+population and 0.08% of German records, stopped by the same rule: like `owner`
+or `iii` above it says which family of vehicles a name belongs to, not which
+entity, and left in it would make every vehicle of the series score alike.
+
+What the additions reach, counted on `entities-2026.11.27-000001` after the
+reload: 5,425 of the German population's 13,184 names carry at least one of
+the 33, against 230 of the US population's 14,468, and 36 German names (12
+US) are left with no phonetic code at all, which the phonetic signals read as
+not evaluable and `name-token` still scores. The US sweeps' recall did not
+move (under "German sweeps").
+
+`tests/test_gleif_analysis.py` pins the additions on the analyzers
+themselves: each German form and filler (`mbH`, `UG (haftungsbeschränkt)`,
+`e.V.`, `GbR`, `eG`, `AG`, `Gesellschaft mit beschränkter Haftung`,
+`und für der`) leaves no token in `name_phonetic` or `name_phonetic_bm`, and
+one name under four legal forms keeps identical codes. The anonymization
+scanner's suffix list gained `mbH`, `UG`, `GbR`, `eG` and `e.V.` in the same
+change (`test_german_stop_list_legal_forms_are_extracted`).
+
 ## Phonetic encoders
 
 `name_phonetic` uses `double_metaphone` at its default code length of 4, and
@@ -410,6 +469,11 @@ split: the indexed values equal the CSV's `|`-separated values
 `SHUTDOWN_DATE`, the profile's figure; those are the predecessors
 `undated_predecessors: "skip"` will skip. 6,320 have no `CREATION_DATE`, also
 as profiled.
+
+Reloaded 2026-11-27 into `entities-2026.11.27-000001` (184 seconds, the same
+3,508,047 documents), after the German stop words and street fold changed the
+index settings ("German sweeps"). The alias moved to it; the 2026-11-26
+generation is kept for the earlier measurements.
 
 `HQ_LOCAL` is on 2,566,272 documents and `LEGAL_LOCAL` on 2,563,963; the rest
 lack a street, a city or a region (`LEGAL_REGION` is blank on 26.0% of
@@ -565,6 +629,17 @@ that read either field would have to allow for it. A `term` query for
     which passes vacuously today because no signal reads a legal address.
     Shared headquarters addresses are not limited: see "Shared headquarters
     addresses" under "Sweeps".
+21. **An analyzer edit that breaks German names or streets logs success.**
+    The German stop words and the `Straße` / `Str.` fold live in the index
+    settings, so the signals compare whatever tokens they get and a sweep on
+    a broken analyzer finishes cleanly with lower recall. Guarded by
+    `tests/test_gleif_analysis.py`, which builds a scratch index from the
+    committed settings and checks the German forms leave no phonetic token,
+    the three street spellings fold together and US streets are unchanged
+    (skipped without Elasticsearch). A German sweep tuned apart from the US
+    one would make the comparison under "German sweeps" measure two
+    configurations; `test_german_sweep_is_the_us_sweep_with_another_country`
+    fails if anything but the country differs.
 
 ## Sweeps
 
@@ -727,6 +802,10 @@ Truth links are split by a hash of the predecessor's `LEI` (`split_half`,
 `matching/declared.py`). Everything below was chosen on the `tune` half only;
 the `report` half was measured once on the final configuration, after tuning
 stopped, and once on the starting runs for comparison ("Report half").
+Everything in this section and the next was measured on pair indexes swept
+from `entities-2026.11.26-000001`, before the German additions; re-swept and
+re-measured on `entities-2026.11.27-000001`, every US band on both halves holds
+the same links (under "German sweeps").
 GLEIF's record is incomplete
 (`complete_truth` false), so there is no precision. In its place the tuning
 reads the **truth share at 0.70 and above**: the `truth` pairs over all
@@ -1337,6 +1416,166 @@ Placeholders stand for the entities, and the numbers inside them are invented.
   below 0.70 registered outside the US. In reappearance, a candidate registered
   anywhere in the world within days of the shutdown.
 
+## German sweeps
+
+The US population is 14,468 of the register's 212,502 inactive records left
+after the same exclusions, and 1,120 of the 22,746 that name a successor. The
+question was what widening the population beyond the US buys, measured on one
+country before deciding on the rest. Successions naming a successor, by legal
+country, on 2026-11-27:
+
+| Country | Population | Naming a successor |
+| ------- | ---------- | ------------------ |
+| NL      | 23,336     | 1,533              |
+| GB      | 20,131     | 68                 |
+| IT      | 19,859     | 5,254              |
+| US      | 14,468     | 1,120              |
+| FR      | 14,177     | 172                |
+| DE      | 13,184     | 2,905              |
+| SE      | 12,646     | 1,174              |
+
+**Germany was chosen** for its successions per predecessor (2,905 of 13,184,
+2.6 times the US count from a smaller population), because its names and
+streets differ from US ones in ways the analyzers could be checked against,
+and because its population is close to the US one in size, so runtimes
+compare directly. Italy has more successions and is the next candidate.
+
+`lei-reappearance-de` and `lei-absorption-de` are the US sweeps with the
+population's `LEGAL_COUNTRY` set to `DE`. Nothing was tuned for Germany:
+`tests/test_gleif_configs.py`
+(`test_german_sweep_is_the_us_sweep_with_another_country`) fails if anything
+but the country differs, so the comparison below is between two countries, not
+two configurations. Their pair indexes are `lei-*-de-pairs-*`.
+
+### What the analyzers missed
+
+**Legal forms and fillers.** German forms below 1% worldwide were not on the
+stop list: 33 words, `mbh` (8.08% of the population) and `und` (5.29%) first.
+They are listed, with the rule for adding them, under "German stop words".
+
+**Street suffixes.** A German street name carries its suffix inside the word,
+spelled `Straße`, `Strasse` or `Str.`. `icu_folding` turns `ß` into `ss`, so
+`Hauptstraße` and `Hauptstrasse` already compared equal, but
+`Hauptstr. 5` did not, and the US suffix rules only see a standalone `st` or
+`str`. Of the 218,112 German records with an `HQ_LOCAL`, a wildcard count on
+the keyword finds 76,358 containing `straße`, 50,299 `str.` and 8,395
+`strasse`. Counted on the registered successions of the German population
+(read-only, folding case and accents the way the `clean` subfield does):
+
+| Population | Links with both streets | Identical street | Identical only after folding the suffix | Same city |
+| ---------- | ----------------------- | ---------------- | --------------------------------------- | --------- |
+| DE         | 2,527                   | 798              | 190                                     | 1,384     |
+| US         | 1,086                   | 121              | none                                    | 284       |
+
+`german_street_fold`, a `pattern_replace` of `strasse\b` with `str` placed
+after `punct_white`, now folds all three spellings in `street_clean`,
+`street_tokens` and `street_local_tokens`, so the address signal can match
+those 190 links exactly. A standalone `Straße` becomes `str`, which the
+existing synonym rule maps to `street`; US streets are unchanged.
+`tests/test_gleif_analysis.py` pins both against the real analyzers.
+
+**Shared addresses are not a German problem.** Counted on `HQ_LOCAL.keyword`
+of German records, unfolded, as "Shared headquarters addresses" does for the
+US: one headquarters value is on 300 records or more (686 records), against
+42 values in the US. On legal addresses, 12 values reach 300 and the most
+shared is on 816. No limit was set, for the same reason as in the US: none
+would take effect.
+
+### Before and after the additions
+
+The baseline sweeps ran on `entities-2026.11.26-000001` with the US analyzers
+(pair indexes `lei-*-de-pairs-2026.11.27-000001`). The stop words and street
+fold need a reload, since analysis is one setting for the whole index: the
+`entities` step then took `entities-2026.11.27-000001` (184 s, 3,508,047
+documents) and moved `entities-000001` to it. `measure_declared_links.py`
+refuses a pair index swept from a superseded source, so all four sweeps were
+re-run on it (`-000002` for both German sweeps and US reappearance, `-000004` for US
+absorption) and measured on both halves. The two changes went in together,
+so their effects are not separated below.
+
+| Run                           | Wall time   | Pairs   | `truth_links` | `truth_retrieved` | `truth_emitted` | Truncated candidate sets | Errors |
+| ----------------------------- | ----------- | ------- | ------------- | ----------------- | --------------- | ------------------------ | ------ |
+| `lei-absorption-de`, before   | 40 min 37 s | 109,971 | 2,895         | 1,472             | 783             | 12,742                   | 0      |
+| `lei-absorption-de`, after    | 32 min 38 s | 105,937 | 2,895         | 1,422             | 856             | 12,307                   | 0      |
+| `lei-reappearance-de`, before | 70 min 1 s  | 129,961 | 2,895         | 103               | 75              | 11,521                   | 0      |
+| `lei-reappearance-de`, after  | 53 min 22 s | 127,893 | 2,895         | 103               | 81              | 10,854                   | 0      |
+| `lei-absorption`, after       | 30 min 56 s | 134,918 | 1,119         | 289               | 130             | 13,891                   | 0      |
+| `lei-reappearance`, after     | 63 min 3 s  | 141,942 | 1,119         | 36                | 27              | 13,475                   | 0      |
+
+24 German predecessors have no `SHUTDOWN_DATE` and were skipped. The US runs'
+times fell by 17% with the same candidates examined (7.1 and 14.0 million), so
+the faster German re-runs are mostly the cluster, not the additions.
+
+**Recall, links by lowest score** (the counts behind `recall_by_band`):
+
+| Sweep, half                   | Links | Stage  | 0.35 | 0.50 | 0.60 | 0.70 | 0.80 | 0.90 | Not retrieved | Retrieved, not emitted | Truth at 0.70+ |
+| ----------------------------- | ----- | ------ | ---- | ---- | ---- | ---- | ---- | ---- | ------------- | ---------------------- | -------------- |
+| `lei-absorption-de`, tune     | 1,422 | before | 410  | 348  | 253  | 180  | 101  | 49   | 652           | 360                    | 180 / 6,196    |
+|                               |       | after  | 446  | 375  | 279  | 206  | 128  | 67   | 676           | 300                    | 206 / 4,535    |
+| `lei-absorption-de`, report   | 1,317 | before | 373  | 322  | 238  | 161  | 88   | 46   | 615           | 329                    | 161 / 6,335    |
+|                               |       | after  | 410  | 349  | 269  | 193  | 108  | 58   | 641           | 266                    | 193 / 4,540    |
+| `lei-reappearance-de`, tune   | 66    | before | 39   | 37   | 28   | 20   | 9    | 5    | 12            | 15                     | 20 / 1,944     |
+|                               |       | after  | 42   | 40   | 33   | 21   | 11   | 5    | 11            | 13                     | 21 / 937       |
+| `lei-reappearance-de`, report | 58    | before | 36   | 33   | 27   | 20   | 11   | 2    | 9             | 13                     | 20 / 2,119     |
+|                               |       | after  | 39   | 35   | 26   | 21   | 14   | 5    | 10            | 9                      | 21 / 1,016     |
+| `lei-absorption`, report      | 521   | before | 63   | 57   | 43   | 31   | 16   | 11   | 378           | 80                     | 31 / 5,750     |
+|                               |       | after  | 63   | 57   | 43   | 31   | 16   | 11   | 378           | 80                     | 31 / 5,793     |
+| `lei-reappearance`, report    | 25    | before | 14   | 13   | 10   | 6    | 4    | 1    | 6             | 5                      | 6 / 1,451      |
+|                               |       | after  | 14   | 13   | 10   | 6    | 4    | 1    | 6             | 5                      | 6 / 1,515      |
+
+"Truth at 0.70+" is truth pairs over all pairs at 0.70 and above, undated
+candidates included. The German denominators keep 190 report-half absorption
+links whose successor has no `CREATION_DATE`, as the US one keeps 52.
+
+**The additions cost the US nothing.** Every US band, on both halves of both
+sweeps, holds the same links as before, and the miss split is identical (the
+tune half too: 67 / 62 / 47 / 35 / 16 / 6 of 533 in absorption, 13 / 11 / 10 /
+7 / 5 / 0 of 28 in reappearance). The US pairs at 0.70 and above rose a little
+(5,750 to 5,793 and 1,451 to 1,515 on the report half), most likely because
+the 230 US names carrying a new stop word now compare on fewer words.
+
+**They help Germany.** On the report half, absorption at 0.70 went from 161 to
+193 links (12.2% to 14.7%) and at 0.90 from 46 to 58, while its pairs at 0.70
+and above fell from 6,335 to 4,540, so the truth share there rose from 2.5% to
+4.3%. Reappearance moved by one link at 0.70 (20 to 21 of 58) and three at
+0.90 (2 to 5), and its pairs at 0.70 and above halved. The tune half moved the
+same way. Not every link gained: 26 more report-half absorption links went
+unretrieved (615 to 641), while 63 fewer were retrieved and dropped (329 to
+266). The lost ones were not traced. A stopped word is also gone from the name
+seed's query, so a successor that shared only a legal form and a few other
+words with its predecessor can fall outside the candidate set.
+
+**Germany against the US.** With nothing tuned for it, the German sweeps find
+far more registered successions than the US ones: at 0.70, 193 of 1,317
+report-half absorption links (14.7%, against 31 of 521, 6.0%) and 21 of 58 in
+reappearance (36%, against 6 of 25). The street counts above suggest why: a
+German successor shares its predecessor's headquarters street exactly in 32%
+of links (798 of 2,527) and its city in 55%, against 11% and 26% in the US, so
+more German successions look like the same business at the same address,
+which is what the signals score.
+
+### Worldwide: recommended country by country, not in one sweep
+
+**The yield is there.** Germany alone gave six times the US sweeps' links at
+0.70 (214 report-half links in the two German sweeps, against 37), and five
+countries (IT, DE, ES, NL, SE) hold 12,761 of the register's 22,746
+successions.
+
+**One worldwide sweep is not worth its runtime.** Per predecessor, absorption
+took 0.13 to 0.19 s and reappearance 0.24 to 0.32 s across these runs, so the
+212,502-record worldwide population would take about 8 to 11 hours for
+absorption and 14 to 19 for reappearance, a day of cluster time per pass. Every
+analyzer change needs a reload and that pass again, and the 1% stop-list rule
+cannot be applied to one worldwide population: a country's legal forms are
+under 1% of it (that is how `mbh` was missed).
+
+**Per-country steps compose.** The German additions left every US figure
+unchanged, so a country's stop words and street rules can be added on their
+own and checked against the countries already measured. The recommendation is
+one `-xx` step per country, in order of successions (Italy next, 5,254), each
+with its stop-list check from "German stop words" and its own street-spelling
+count before its first sweep, each sweep about as long as Germany's.
+
 ## Follow-ups
 
 1. **Unrecorded siblings.** Numbered vehicles of one sponsor fill the top
@@ -1356,7 +1595,11 @@ Placeholders stand for the entities, and the numbers inside them are invented.
    or be ruled out.
 4. **Absorption retrieval.** 378 of the report half's 458 misses were never
    retrieved, as on the tune half ("Where the absorption links are lost").
-5. **A worldwide population**, which needs multilingual analyzers.
+5. **More countries, one step each.** Germany needed 33 stop words and a
+   street fold before its sweeps were comparable, and gave six times the US
+   links at 0.70; a single worldwide sweep would take about a day per pass
+   (under "German sweeps"). Italy, with 5,254 successions, is next: profile
+   its stop words and street spellings first, then add `-it` steps.
 6. **Joining GLEIF to FDIC** through `FED_RSSD` or a name match, a non-goal of
    the spec.
 7. **Per-name scoring of `OTHER_NAMES`.** The name signals score the field's

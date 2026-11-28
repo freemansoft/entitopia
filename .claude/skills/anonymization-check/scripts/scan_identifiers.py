@@ -85,13 +85,17 @@ _ORG_SUFFIX = (
     # spelling of one that is. Most GLEIF names end in a European form rather
     # than a US one, and a name no pattern extracts is never looked up, so a
     # real entity's name would pass as clean.
-    r"LIMITED|HOLDING|PARTNERSHIP|B\.V\.|BV|S\.R\.L\.|SRL|S\.L\.|SL|SA|AB|APS|AS|OY|KG"
+    r"LIMITED|HOLDING|PARTNERSHIP|B\.V\.|BV|S\.R\.L\.|SRL|S\.L\.|SL|SA|AB|APS|AS|OY|KG|"
+    # The German legal forms the same measurement found over German names
+    # (GLEIF-Entities README, "German stop words").
+    r"MBH|UG|GBR|EG|E\.V\.?"
 )
 _TITLE_SUFFIX = (
     r"Hospital|Medical Center|Clinic|Health System|Healthcare|Trucking|Transport|"
     r"Logistics|Freight|Hauling|LLC|Inc\.?|Corp\.?|Company|"
     r"Holdings|Partners|Group|L\.P\.|LP|"
-    r"Limited|Ltd\.?|Holding|Partnership|GmbH|B\.V\.|S\.r\.l\.|S\.L\.|S\.A\.|AB|ApS|AS|Oy|KG"
+    r"Limited|Ltd\.?|Holding|Partnership|GmbH|B\.V\.|S\.r\.l\.|S\.L\.|S\.A\.|AB|ApS|AS|Oy|KG|"
+    r"mbH|UG|GbR|eG|e\.V\.?|AG"
 )
 # Bank names end differently from carriers and hospitals ("State Bank",
 # "Savings and Loan Association"), and the town after "Bank of" is often the only

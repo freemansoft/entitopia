@@ -15,6 +15,14 @@
     {
       "name": "lei-absorption",
       "phases": ["index-create", "index-map", "validate", "entity-match"]
+    },
+    {
+      "name": "lei-reappearance-de",
+      "phases": ["index-create", "index-map", "validate", "entity-match"]
+    },
+    {
+      "name": "lei-absorption-de",
+      "phases": ["index-create", "index-map", "validate", "entity-match"]
     }
   ],
   "all_phases": ["index-create", "index-map", "pipelines", "index-populate"],

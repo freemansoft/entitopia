@@ -17,11 +17,18 @@ seed signals by signal type, not by name. Seeding by name, or deleting the
 apparently unused zero-weight signal, would leave the sweep running and
 logging success with its tuned recall quietly gone.
 
+The German sweeps (`lei-reappearance-de`, `lei-absorption-de`) measure how the
+US-tuned configuration carries to another country, so they must stay the US
+configuration with only the country changed. A German config tuned or edited
+on its own would make the README's US-against-German comparison measure two
+configurations instead of two countries, and nothing in a run would show it.
+
 The expected exclusions are written here from the decision the README records
 ("Decisions from the profile"), never read from the config under test, so a
 config edited to drop one fails rather than redefining what is expected.
 """
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,7 +39,14 @@ from matching.population import PopulationSelector
 from matching.signals import build_signal
 from utils import file_utils
 
-SWEEPS = ("lei-reappearance", "lei-absorption")
+# Each sweep and the LEGAL_COUNTRY its population is drawn from.
+SWEEP_COUNTRIES = {
+    "lei-reappearance": "US",
+    "lei-absorption": "US",
+    "lei-reappearance-de": "DE",
+    "lei-absorption-de": "DE",
+}
+SWEEPS = tuple(SWEEP_COUNTRIES)
 
 # From GLEIF-Entities/README.md, "Decisions from the profile": FUND and BRANCH
 # are 25.5% of US inactive records, and 6,527 records are DUPLICATE
@@ -43,7 +57,6 @@ EXPECTED_EXCLUSIONS = {
     ("REGISTRATION_STATUS", "DUPLICATE"),
 }
 
-REQUIRED_TERMS = {("ENTITY_STATUS", "INACTIVE"), ("LEGAL_COUNTRY", "US")}
 
 # Fields carrying the legal (registered) address. A registered agent's street
 # sits on tens of thousands of US legal addresses ("Shared legal addresses" in
@@ -85,7 +98,7 @@ def test_population_excludes_what_profiling_found(step):
     terms = list(_terms(query))
     required = {(f, v) for f, v, negated in terms if not negated}
     excluded = {(f, v) for f, v, negated in terms if negated}
-    assert required == REQUIRED_TERMS
+    assert required == {("ENTITY_STATUS", "INACTIVE"), ("LEGAL_COUNTRY", SWEEP_COUNTRIES[step])}
     assert excluded == EXPECTED_EXCLUSIONS
 
 
@@ -158,3 +171,25 @@ def test_hq_street_seed_retrieves_on_street_tokens_by_signal_type():
     )
     clauses = finder._seed_clauses({"HQ_LOCAL": "100 MAIN ST"})
     assert {"match": {"HQ_LOCAL.tokens": {"query": "100 MAIN ST"}}} in clauses
+
+
+@pytest.mark.parametrize("us_step", ["lei-reappearance", "lei-absorption"])
+def test_german_sweep_is_the_us_sweep_with_another_country(us_step):
+    """Everything but the population must equal the US sweep's, and the population
+    must build the US query with only the country swapped.
+
+    Compared on the raw JSON rather than on chosen keys, so a signal, weight,
+    window, cap or declared rule added to one side alone fails here.
+    """
+    base = Path("GLEIF-Entities") / "configuration"
+    us = json.loads((base / us_step / "entity-match.json").read_text())
+    de = json.loads((base / f"{us_step}-de" / "entity-match.json").read_text())
+    us.pop("population")
+    de.pop("population")
+    assert de == us
+
+    def built(step):
+        return PopulationSelector(None, "entities-000001", _load(step).population).build_query()
+
+    us_query = json.dumps(built(us_step)).replace('"LEGAL_COUNTRY": "US"', '"LEGAL_COUNTRY": "DE"')
+    assert json.loads(us_query) == built(f"{us_step}-de")

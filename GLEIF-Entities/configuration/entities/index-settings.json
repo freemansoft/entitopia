@@ -187,8 +187,46 @@
               "cap",
               "corp",
               "srl",
-              "sa"
+              "sa",
+              "mbh",
+              "und",
+              "stiftung",
+              "ms",
+              "eg",
+              "haftungsbeschrankt",
+              "ug",
+              "e v",
+              "gbr",
+              "gesellschaft",
+              "ag",
+              "schiffahrts",
+              "fur",
+              "verwaltungs",
+              "immobilien",
+              "beteiligungs",
+              "fonds",
+              "mit",
+              "haftung",
+              "beschrankter",
+              "volksbank",
+              "vermogensverwaltung",
+              "consulting",
+              "objekt",
+              "der",
+              "raiffeisenbank",
+              "1",
+              "deutschland",
+              "vermogensverwaltungs",
+              "service",
+              "schiffahrtsgesellschaft",
+              "beteiligungsgesellschaft",
+              "zedora"
             ]
+          },
+          "german_street_fold": {
+            "type": "pattern_replace",
+            "pattern": "strasse\\b",
+            "replacement": "str"
           }
         },
         "analyzer": {
@@ -223,6 +261,7 @@
               "icu_normalizer",
               "icu_folding",
               "punct_white",
+              "german_street_fold",
               "collapse_whitespace",
               "trim"
             ]
@@ -234,6 +273,7 @@
               "icu_normalizer",
               "icu_folding",
               "punct_white",
+              "german_street_fold",
               "unit_designator_stop",
               "street_suffix_canon"
             ]
@@ -249,6 +289,7 @@
               "icu_normalizer",
               "icu_folding",
               "punct_white",
+              "german_street_fold",
               "unit_designator_stop",
               "street_suffix_canon"
             ]

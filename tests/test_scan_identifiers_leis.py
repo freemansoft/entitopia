@@ -151,3 +151,27 @@ def test_gleif_stop_list_legal_forms_are_extracted():
         "Quuxworth Vantage Limited",
         "Zorblat Beheer GmbH",
     } <= _values(text, "name")
+
+
+def test_german_stop_list_legal_forms_are_extracted():
+    # One line per German legal form added to the GLEIF stop list (GLEIF-Entities
+    # README, "German stop words") that the suffix list lacked. A German name
+    # ending in one would otherwise never be extracted, so never looked up.
+    text = (
+        "QUUXWERK MBH; ZORBLAT UG; GLIMMER GBR; WEXO EG; FROBANT E.V.; "
+        "Quuxwerk Beratung mbH; Zorblat Technik UG; Glimmer Partner GbR; "
+        "Wexo Genossen eG; Frobant Verein e.V.; Plinder Werke AG"
+    )
+    assert {
+        "QUUXWERK MBH",
+        "ZORBLAT UG",
+        "GLIMMER GBR",
+        "WEXO EG",
+        "Quuxwerk Beratung mbH",
+        "Zorblat Technik UG",
+        "Glimmer Partner GbR",
+        "Wexo Genossen eG",
+        "Plinder Werke AG",
+    } <= _values(text, "name")
+    assert any(v.startswith("FROBANT E.V") for v in _values(text, "name"))
+    assert any(v.startswith("Frobant Verein e.V") for v in _values(text, "name"))

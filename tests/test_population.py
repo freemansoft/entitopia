@@ -243,6 +243,27 @@ _GLEIF_US_INACTIVE = {
     }
 }
 
+# The German sweeps' population is the US one with the country swapped, written
+# out rather than derived from the US literal so a change to either fails here
+# on its own.
+_GLEIF_DE_INACTIVE = {
+    "bool": {
+        "must": [
+            {"bool": {"must": [{"term": {"ENTITY_STATUS": "INACTIVE"}}]}},
+            {"bool": {"must": [{"term": {"LEGAL_COUNTRY": "DE"}}]}},
+            {"bool": {"must_not": [{"bool": {"must": [{"term": {"CATEGORY": "FUND"}}]}}]}},
+            {"bool": {"must_not": [{"bool": {"must": [{"term": {"CATEGORY": "BRANCH"}}]}}]}},
+            {
+                "bool": {
+                    "must_not": [
+                        {"bool": {"must": [{"term": {"REGISTRATION_STATUS": "DUPLICATE"}}]}}
+                    ]
+                }
+            },
+        ]
+    }
+}
+
 # Captured from the framework before `not` was added. A change to how existing
 # clause kinds resolve would quietly change what a shipped sweep is about, and
 # the FDIC measured figures would move with it.
@@ -270,6 +291,8 @@ _SHIPPED_QUERIES = {
     },
     "GLEIF-Entities/configuration/lei-absorption": _GLEIF_US_INACTIVE,
     "GLEIF-Entities/configuration/lei-reappearance": _GLEIF_US_INACTIVE,
+    "GLEIF-Entities/configuration/lei-absorption-de": _GLEIF_DE_INACTIVE,
+    "GLEIF-Entities/configuration/lei-reappearance-de": _GLEIF_DE_INACTIVE,
 }
 
 
